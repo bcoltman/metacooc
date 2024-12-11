@@ -26,8 +26,15 @@ def print_help():
 
   MetaCoOc v%s
 
-  Tools:
-    setup -> Protein Alignment Score Ratio calculation
+  Main dish:
+    cooccurrence -> determine cooccurence based on detection of organisms in shotgun metagenomes
+
+  Sides:
+    setup -> download tables containing the sample metadata and presence/absence data
+    filter -> filter the data by keyword or sample list
+    ratio -> calculate (co)occurrence
+    search -> query the sample metadata and presence/absence data tables
+    list -> cook up a list of sample accessions based on filtering criteria
 
   Use: metacooc <command> -h for command specific help
     ''' % __version__)

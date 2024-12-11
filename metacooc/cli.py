@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import argparse
 # from metacooc.filter import xyz
 
@@ -33,19 +32,16 @@ def parse_cli():
     args = parser.parse_args()
 
     if args.command == "setup":
-        # do stuff
+        print('placeholder')
     elif args.command == "cooccurrence":
-        # do stuff
+        print('placeholder')
     elif args.command == "filter":
-        # do stuff
+        print('placeholder')
     elif args.command == "ratio":
-        # do stuff
+        print('placeholder')
     elif args.command == "search":
-        # do stuff
+        print('placeholder')
     elif args.command == "list":
-        # do stuff
-
-
-
+        print('placeholder')
 
 
