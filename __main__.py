@@ -26,15 +26,18 @@ def print_help():
 
   MetaCoOc v%s
 
+  Starter:
+    setup -> download tables containing the sample metadata and presence/absence data  
+
   Main dish:
     cooccurrence -> determine cooccurence based on detection of organisms in shotgun metagenomes
 
   Sides:
-    setup -> download tables containing the sample metadata and presence/absence data
+    search -> query the sample metadata and presence/absence data tables  
     filter -> filter the data by keyword or sample list
     ratio -> calculate (co)occurrence
-    search -> query the sample metadata and presence/absence data tables
     list -> cook up a list of sample accessions based on filtering criteria
+    format -> format sandpiper output to sparse matrices
 
   Use: metacooc <command> -h for command specific help
     ''' % __version__)
