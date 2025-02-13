@@ -24,7 +24,7 @@ from metacooc.cli import parse_cli
 def print_help():
     print('''\
 
-  MetaCoOc v%s
+  metacooc v%s
 
   Starter:
     setup -> download tables containing the sample metadata and presence/absence data  
@@ -38,7 +38,7 @@ def print_help():
     ratio -> calculate (co)occurrence
     list -> cook up a list of sample accessions based on filtering criteria
     format -> format sandpiper output to sparse matrices
-    plot -> plot ratios
+    plot -> generate plots based on the output of other menu items
 
   Use: metacooc <command> -h for command specific help
     ''' % __version__)
@@ -50,7 +50,7 @@ def main():
         print_help()
         sys.exit(0)
     elif sys.argv[1] in {'-v', '--v', '-version', '--version'}:
-        print(f"MetaCoOc: version {__version__} {__copyright__} {__author__}")
+        print(f"metacooc: version {__version__} {__copyright__} {__author__}")
         sys.exit(0)
     elif sys.argv[1] in {'-h', '--h', '-help', '--help'}:
         print_help()

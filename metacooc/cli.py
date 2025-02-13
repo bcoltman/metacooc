@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
-from format import format_data
-from download import download_data
-from search import search_data
-from filter import filter_data
-from ratios import calculate_ratios
-from plot import plot_ratios
+# from metacooc.format import format_data
+# from metacooc.download import download_data
+from metacooc.search import search_data
+# from metacooc.filter import filter_data
+# from metacooc.ratios import calculate_ratios
+# from metacooc.plot import plot_ratios
 
 def parse_cli():
     parser = argparse.ArgumentParser(description="Co-occurrence data of microorganisms based on metagenome detection")
