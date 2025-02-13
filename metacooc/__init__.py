@@ -17,7 +17,7 @@
 
 __author__ = 'Ben Coltman'
 __author_email__ = 'ben.coltman@univie.ac.at'
-__copyright__ = 'Copyright 2024'
+__copyright__ = 'Copyright 2025'
 __credits__ = ['Ben Coltman, Daan Speth']
 __description__ = 'Co-occurence patterns from microbial metagenomes'
 __license__ = 'GPL3'

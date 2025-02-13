@@ -46,7 +46,7 @@ def main():
         print_help()
         sys.exit(0)
     elif sys.argv[1] in {'-v', '--v', '-version', '--version'}:
-        print(f"aastk: version {__version__} {__copyright__} {__author__}")
+        print(f"MetaCoOc: version {__version__} {__copyright__} {__author__}")
         sys.exit(0)
     elif sys.argv[1] in {'-h', '--h', '-help', '--help'}:
         print_help()
