@@ -27,18 +27,18 @@ def print_help():
   metacooc v%s
 
   Starter:
-    setup -> download tables containing the sample metadata and presence/absence data  
+    download -> Download required files with metagenome metadata and taxonomic profiles.
 
   Main dish:
-    cooccurrence -> determine cooccurence based on detection of organisms in shotgun metagenomes
+    cooccurrence -> Determine cooccurence based on detection of organisms in shotgun metagenomes.
 
   Sides:
-    search -> query the sample metadata and presence/absence data tables  
-    filter -> filter the data by keyword or sample list
-    ratio -> calculate (co)occurrence
-    list -> cook up a list of sample accessions based on filtering criteria
-    format -> format sandpiper output to sparse matrices
-    plot -> generate plots based on the output of other menu items
+    search -> Query the metagenome metadata and taxonomic profiles.
+    filter -> Filter the taxonomic profiles by keyword or sample list
+    ratio -> Calculate (co)occurrence ratios.
+    list -> Cook up a list of sample accessions based on filtering criteria.
+    format -> Format sandpiper output, or other taxonomic profiles, to metacooc input.
+    plot -> Generate plots based on the output of other menu items.
 
   Use: metacooc <command> -h for command specific help
     ''' % __version__)

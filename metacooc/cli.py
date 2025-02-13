@@ -3,7 +3,7 @@
 import argparse
 # from metacooc.format import format_data
 # from metacooc.download import download_data
-from metacooc.search import search_data
+# from metacooc.search import search_data
 # from metacooc.filter import filter_data
 # from metacooc.ratios import calculate_ratios
 # from metacooc.plot import plot_ratios
