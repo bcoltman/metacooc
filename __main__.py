@@ -38,6 +38,7 @@ def print_help():
     ratio -> calculate (co)occurrence
     list -> cook up a list of sample accessions based on filtering criteria
     format -> format sandpiper output to sparse matrices
+    plot -> plot ratios
 
   Use: metacooc <command> -h for command specific help
     ''' % __version__)
@@ -52,6 +53,10 @@ def main():
         print(f"MetaCoOc: version {__version__} {__copyright__} {__author__}")
         sys.exit(0)
     elif sys.argv[1] in {'-h', '--h', '-help', '--help'}:
+        print_help()
+        sys.exit(0)
+    elif sys.argv[1] not in {'setup', 'cooccurrence', 'search', 'filter', 'ratio', 'list', 'format', 'plot'}:
+        print(f"program not on the menu, choose from the options listed below ")
         print_help()
         sys.exit(0)
     else:
