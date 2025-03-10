@@ -1,0 +1,34 @@
+package:
+  name: metacooc
+  version: "{{ environ.get('CIRCLE_TAG', '0.1.0') }}"
+
+source:
+  url: https://pypi.io/packages/source/m/metacooc/metacooc-{{ version }}.tar.gz
+  sha256: <your sha256 here>
+
+build:
+  noarch: python
+  number: 0
+  script: "{{ PYTHON }} -m pip install . --no-deps -vv"
+  skip: True  # [py<35]
+
+requirements:
+  host:
+    - python
+    - pip
+  run:
+    - python
+    - pandas
+    - numpy
+    - scipy
+    - matplotlib
+    # add any other runtime dependencies here
+
+test:
+  imports:
+    - metacooc
+
+about:
+  home: "https://github.com/bcoltman/metacooc"
+  license: GPL-3.0+
+  summary: "Co-occurrence analysis of microorganisms in metagenomes."
