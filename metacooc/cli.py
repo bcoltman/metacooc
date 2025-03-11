@@ -2,9 +2,14 @@
 import argparse
 import os
 import pickle
-from importlib.resources import files
+from pathlib import Path
 
-DEFAULT_DATA_DIR = os.path.join(str(files(__name__).joinpath("data")))
+# make data directory in case it is needed
+with Path("metacooc") as data_path:
+    DEFAULT_DATA_DIR = str(data_path)+"/data"
+
+if not os.path.exists(DEFAULT_DATA_DIR):
+    os.makedirs(DEFAULT_DATA_DIR)
 
 def parse_cli():
     # ------------------ Parent Parsers ------------------
