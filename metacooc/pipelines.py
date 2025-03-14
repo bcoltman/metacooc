@@ -56,33 +56,24 @@ def run_cooccurrence(args):
       6. Saves the ratios DataFrame as "ratios.tsv" in args.output_dir and plots the results.
     """
     # Step 1. Load the Ingredients object.
+    
     if args.aggregated:
-        ingredients_file = os.path.join(args.data_dir, "ingredients_aggregated.pkl")
+        ingredients_file = os.path.join(args.data_dir, "ingredients_aggregated_genus.pkl")
     else:
         ingredients_file = os.path.join(args.data_dir, "ingredients_raw.pkl")
     if not os.path.exists(ingredients_file):
         raise FileNotFoundError(f"Ingredients file '{ingredients_file}' not found.")
     with open(ingredients_file, "rb") as f:
         ingredients = pickle.load(f)
-
+    
     # Step 2. Perform search.
-    if args.mode.lower() == "taxon":
-        matching_accessions = search_data_obj("taxon", ingredients, args.search_string, rank=args.rank)
-    elif args.mode.lower() == "metadata":
-        # For metadata mode, load the default index if not provided.
-        if args.index_file:
-            with open(args.index_file, "rb") as f:
-                metadata_index = pickle.load(f)
-        else:
-            default_index = "broad_strict_metadata_index.pkl" if args.strict else "broad_metadata_index.pkl"
-            index_path = os.path.join(args.data_dir, default_index)
-            if not os.path.exists(index_path):
-                raise FileNotFoundError(f"Metadata index file '{index_path}' not found.")
-            with open(index_path, "rb") as f:
-                metadata_index = pickle.load(f)
-        matching_accessions = search_data_obj("metadata", metadata_index, args.search_string)
-    else:
-        raise ValueError("Invalid mode. Must be 'taxon' or 'metadata'.")
+    matching_accessions = search_data_obj(args.mode, 
+                                          args.data_dir, 
+                                          args.search_string, 
+                                          args.rank, 
+                                          args.strict, 
+                                          args.column_names)
+                                          
     print(f"Pipeline: Found {len(matching_accessions)} matching accessions.")
 
     # Step 3. Filter the Ingredients object.

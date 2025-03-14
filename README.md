@@ -73,7 +73,6 @@ metacooc search --mode metadata \
                 --data_dir metacooc/data/ \
                 --output_dir metacooc/data/ \
                 --search_string "soil" \
-                --index_type broad \
                 --strict
 ```
 					 
@@ -140,8 +139,11 @@ A key component of **MetaCoOc** is the standardized parsing of SRA metadata. The
 3. **Setting Up the Parsing Environment**:  
    Create and activate a conda environment:
    ```bash
-   mamba env create -n public_sequencing_metadata_corrections -f env.yml
-   conda activate public_sequencing_metadata_corrections
+   conda create -n metacooc
+   conda activate metacooc
+   conda config --add channels conda-forge
+   conda config --set channel_priority strict
+   conda install python==3.13.2 pandas==2.2.3 scipy==1.15.2 matplotlib==3.10.1 iso8601==2.1.0 requests==2.32.3
    ```
 
 4. **Parsing the Metadata**:  
@@ -151,6 +153,8 @@ A key component of **MetaCoOc** is the standardized parsing of SRA metadata. The
 									 --output-file metacooc/data/sra_metadata_parsed.tsv \
 									 --threads 4
    ```
+   
+   
 
 ### Downloading Sandpiper Data
 
@@ -160,16 +164,33 @@ https://zenodo.org/records/11516218/files/sandpiper0.3.0.condensed.csv.gz?downlo
 ```
 After downloading, decompress and process it as needed.
 
+
+### Filtering SRA metadata
+Not all entries in the SRA are in Sandpiper due to various reasons including publishing dates and exclusion of certain datasets. To reduce the size of the metacooc/data/sra_metadata_parsed.tsv file, uploaded to Zenodo, we excluded accessions without an entry in Sandpiper.
+
+```bash
+awk -F'\t' 'NR > 1 { print $1 }' sandpiper0.3.0.condensed.csv | uniq > sandpiper0.3.0.uniqueaccessions.txt
+
+awk -F'\t' 'NR > 1 { print $1 }' sra_metadata_parsed.tsv | uniq > sra_metadata_parsed_uniqueaccessions.txt
+
+awk 'NR==FNR { a[$1]; next } $1 in a' \
+	sandpiper0.3.0.uniqueaccessions.csv \
+	sra_metadata_parsed_uniqueaccessions.txt \
+	> intersection_uniqueaccessions.txt
+
+awk -F'\t' 'NR == FNR { lookup[$1]; next } FNR == 1 || ($1 in lookup)' \
+	intersection_uniqueaccessions.txt \
+	sra_metadata_parsed.tsv \
+	> data/sra_metadata.tsv
+```	
+
 ### Format
 
 Format your raw data into the standardized Ingredients objects and build metadata indices. For example, to process Sandpiper output and NCBI SRA metadata:
 
 ```bash
 metacooc format --tax_profile metacooc/data/sandpiper0.3.0.condensed_intersection.csv \
-                --metadata_file metacooc/data/sra_metadata_parsed.tsv \
                 --output_dir metacooc/data/ \
-                --index_type broad \
-                --strict \
                 --aggregated \
                 --aggregation_pattern "g__"
 ```

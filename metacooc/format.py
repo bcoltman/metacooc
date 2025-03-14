@@ -131,77 +131,34 @@ def format_ingredients(tax_profile: str):
     return raw_ingredients
     
 
-def format_data(tax_profile: str, output_dir: str, metadata_file=None, index_type="broad", strict=False, column=None, aggregated=False, aggregation_pattern=None):
+def format_data(tax_profile: str, output_dir: str, aggregated=False, aggregation_pattern=None):
     """
     Process the sandpiper TSV file and return a raw Ingredients instance.
     """
     # samples, taxa, sample_to_index, taxon_to_index = build_indices(tax_profile)
     # presence_matrix, coverage_matrix = create_sparse_matrices(tax_profile, sample_to_index, taxon_to_index, samples, taxa)
     
-    if tax_profile is not None:
-        # Generate the raw Ingredients object.
-        raw_ingredients = format_ingredients(tax_profile)
-        
-        # Save both objects.
-        output_raw = os.path.join(output_dir, "ingredients_raw.pkl")
-        
-        with open(output_raw, "wb") as f:
-            pickle.dump(raw_ingredients, f)
-        
-        print(f"Raw ingredients saved to {output_raw}")
-        
-        if aggregated & (aggregation_pattern is not None):
-            # Generate the aggregated Ingredients object.
-            aggregated_ingredients = copy.deepcopy(raw_ingredients)
-            aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients, aggregation_pattern=aggregation_pattern)
-            
-            output_agg = os.path.join(output_dir, "ingredients_aggregated.pkl")
-            
-            with open(output_agg, "wb") as f:
-                pickle.dump(aggregated_ingredients, f)
-            print(f"Aggregated ingredients saved to {output_agg}")
+    # Generate the raw Ingredients object.
+    raw_ingredients = format_ingredients(tax_profile)
     
-    if metadata_file is not None:
-        # # Build the index from metadata.tsv in data_dir.
-        # metadata_file = os.path.join(data_dir, "metadata.tsv")
-        if not os.path.exists(metadata_file):
-            raise FileNotFoundError(f"Metadata file '{metadata_file}' not found.")
+    # Save both objects.
+    output_raw = os.path.join(output_dir, "ingredients_raw.pkl")
+    
+    with open(output_raw, "wb") as f:
+        pickle.dump(raw_ingredients, f)
+    
+    print(f"Raw ingredients saved to {output_raw}")
+    
+    if aggregated & (aggregation_pattern is not None):
+        # Generate the aggregated Ingredients object.
+        aggregated_ingredients = copy.deepcopy(raw_ingredients)
+        aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients, aggregation_pattern=aggregation_pattern)
         
-        if index_type == "broad":
-            # For broad index, optionally use a reduced set of columns if strict is True.
-            if strict:
-                index_columns = ["organism", "env_biome_sam", "env_feature_sam", "env_material_sam", "biosamplemodel_sam"]
-                bmi_outfile = os.path.join(output_dir, "broad_strict_metadata_index.pkl")
-                
-                metadata_df = pd.read_csv(metadata_file, delimiter="\t", dtype=str, usecols=["acc"] + index_columns)
-            else:
-                
-                bmi_outfile = os.path.join(output_dir, "broad_metadata_index.pkl")
-                
-                metadata_df = pd.read_csv(metadata_file, delimiter="\t", dtype=str)
-            
-            
-            
-            broad_metadata_index = build_broad_metadata_index(metadata_df, columns=index_columns)
-            
-            with open(bmi_outfile, "wb") as f:
-                pickle.dump(broad_metadata_index, f)
-            
-            print(f"Broad metadata index saved to {bmi_outfile}")
-            
-        else:
-            if not column:
-                raise ValueError("--column is required for to create an exact index for searching.")
-            metadata_df = pd.read_csv(metadata_file, delimiter="\t", dtype=str, usecols=["acc", column])
-            exact_metadata_index = build_exact_metadata_index(metadata_df, column)
-            
-            # Save both objects.
-            emi_outfile = os.path.join(output_dir, f"{column}_metadata_index.pkl")
-            
-            with open(emi_outfile, "wb") as f:
-                pickle.dump(exact_metadata_index, f)
-            
-            print(f"Built exact metadata index for column '{column}' and index saved to {emi_outfile}.")
+        output_agg = os.path.join(output_dir, "ingredients_aggregated.pkl")
+        
+        with open(output_agg, "wb") as f:
+            pickle.dump(aggregated_ingredients, f)
+        print(f"Aggregated ingredients saved to {output_agg}")
 
 def add_taxa_levels_to_ingredients(ingredients: Ingredients, aggregation_pattern="g__") -> Ingredients:
     """
@@ -262,48 +219,3 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients, aggregation_pattern
     new_coverage_matrix = hstack([C, M], format='csr')
     
     return Ingredients(ingredients.samples, new_taxa, new_presence_matrix, new_coverage_matrix)
-
-# --- Functions for Building Metadata Indices (for searching) ---
-
-def build_broad_metadata_index(metadata_df, columns=None):
-    """
-    Build an index for broad (tokenized) metadata searches.
-    
-    Args:
-        metadata_df (pd.DataFrame): The metadata DataFrame.
-        columns (list): List of columns to index. If None, all columns are used.
-        
-    Returns:
-        dict: A dictionary mapping tokens (lowercase) to sets of accession IDs.
-    """
-    if columns is None:
-        columns = metadata_df.columns.tolist()
-    
-    index = {}
-    for _, row in metadata_df.iterrows():
-        acc = row["acc"]
-        text = " ".join([str(row[col]) for col in columns if pd.notnull(row[col])])
-        tokens = set(text.lower().split())
-        for token in tokens:
-            index.setdefault(token, set()).add(acc)
-    
-    return index
-
-def build_exact_metadata_index(metadata_df, column):
-    """
-    Build an index for exact metadata searches on a given column.
-    
-    Args:
-        metadata_df (pd.DataFrame): The metadata DataFrame.
-        column (str): The column to index.
-        
-    Returns:
-        dict: A dictionary mapping each unique (lowercased) value in the column to a set of accession IDs.
-    """
-    index = {}
-    for _, row in metadata_df.iterrows():
-        acc = row["acc"]
-        value = str(row[column]).strip().lower()
-        index.setdefault(value, set()).add(acc)
-    
-    return index

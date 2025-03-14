@@ -31,6 +31,7 @@ Modes:
 import os
 import pickle
 import pandas as pd
+import subprocess
 
 def search_by_taxon(ingredients, search_string, rank=None):
     """
@@ -44,7 +45,7 @@ def search_by_taxon(ingredients, search_string, rank=None):
     prefix = rank_prefixes.get(rank.lower()) if rank else None
     matching_indices = []
     for i, taxon in enumerate(ingredients.taxa):
-        if prefix and not taxon.startswith(prefix):
+        if prefix and not prefix in taxon:
             continue
         if search_string.lower() in taxon.lower():
             matching_indices.append(i)
@@ -54,7 +55,7 @@ def search_by_taxon(ingredients, search_string, rank=None):
     rows, _ = submatrix.nonzero()
     return {ingredients.samples[r] for r in rows}
 
-def search_data_obj(mode, data, search_string, rank=None):
+def search_data_obj(mode, data_dir, search_string, rank=None, strict=False, column_names=None):
     """
     Object-based search function.
     
@@ -64,16 +65,28 @@ def search_data_obj(mode, data, search_string, rank=None):
     Returns:
         set: Matching accession IDs.
     """
+    matching_accessions = set()
     if mode.lower() == "taxon":
-        return search_by_taxon(data, search_string, rank)
+        ingredients_file = os.path.join(data_dir, "ingredients_raw.pkl")
+        if not os.path.exists(ingredients_file):
+            raise FileNotFoundError(f"Ingredients file '{ingredients_file}' not found.")
+        with open(ingredients_file, "rb") as f:
+            ingredients = pickle.load(f)
+        
+        matching_accessions = search_by_taxon(ingredients, search_string, rank)
+    
     elif mode.lower() == "metadata":
-        # Here, data is assumed to be a dict mapping tokens to sets of accessions.
-        return data.get(search_string.strip().lower(), set())
+        metadata = os.path.join(data_dir, "broad_metadata.tsv")
+        
+        matching_accessions = search_in_metadata(metadata, search_string, strict, column_names)
+    
     else:
-        raise ValueError("Invalid mode. Must be 'taxon' or 'metadata'.")
+        raise ValueError("Invalid mode specified. Must be 'taxon' or 'metadata'.")
+        
+    return matching_accessions
 
-def search_data(mode, data_dir, output_dir, search_string, rank=None, 
-                index_type="broad", column=None, strict=False, index_file=None, tag=None):
+def search_data(mode, data_dir, output_dir, search_string, rank=None,
+                column_names=None, strict=False, tag=None):
     """
     File-based search function for metacooc.
     
@@ -88,35 +101,8 @@ def search_data(mode, data_dir, output_dir, search_string, rank=None,
     Returns:
         set: Matching accession IDs.
     """
-    matching_accessions = set()
-    if mode.lower() == "taxon":
-        ingredients_file = os.path.join(data_dir, "ingredients_aggregated.pkl")
-        if not os.path.exists(ingredients_file):
-            raise FileNotFoundError(f"Ingredients file '{ingredients_file}' not found.")
-        with open(ingredients_file, "rb") as f:
-            ingredients = pickle.load(f)
-        matching_accessions = search_by_taxon(ingredients, search_string, rank)
-    elif mode.lower() == "metadata":
-        if index_file:
-            with open(index_file, "rb") as f:
-                metadata_index = pickle.load(f)
-            print(f"Loaded metadata index from {index_file}")
-        else:
-            if index_type.lower() == "broad":
-                fname = "broad_metadata_index.pkl" if not strict else "broad_strict_metadata_index.pkl"
-            else:
-                if not column:
-                    raise ValueError("Exact index requires a column name.")
-                fname = f"{column}_metadata_index.pkl"
-            index_path = os.path.join(data_dir, fname)
-            if not os.path.exists(index_path):
-                raise FileNotFoundError(f"Metadata index file '{index_path}' not found.")
-            with open(index_path, "rb") as f:
-                metadata_index = pickle.load(f)
-            print(f"Used metadata index from {index_path}")
-        matching_accessions = metadata_index.get(search_string.strip().lower(), set())
-    else:
-        raise ValueError("Invalid mode specified. Must be 'taxon' or 'metadata'.")
+    
+    matching_accessions = search_data_obj(mode, data_dir, search_string, rank, strict, column_names)
     
     output_file = os.path.join(output_dir, f"search_results{tag}.txt")
     with open(output_file, "w") as f:
@@ -124,3 +110,91 @@ def search_data(mode, data_dir, output_dir, search_string, rank=None,
             f.write(f"{acc}\n")
     print(f"Found {len(matching_accessions)} matching accessions. Results saved to {output_file}")
 
+def get_column_indices(metadata_file, column_names, delimiter="\t"):
+    """
+    Find the indices of given column names in the metadata file.
+    
+    Args:
+        metadata_file (str): Path to the metadata file.
+        column_names (list of str): The column names to locate.
+        delimiter (str): Column separator (default: tab).
+        
+    Returns:
+        list: The 1-based indices of the columns for AWK (since AWK uses 1-based indexing).
+    """
+    with open(metadata_file, "r") as f:
+        headers = f.readline().strip().split(delimiter)
+    
+    indices = []
+    for column_name in column_names:
+        if column_name not in headers:
+            raise ValueError(f"Column '{column_name}' not found in metadata file.")
+        indices.append(headers.index(column_name) + 1)  # Convert 0-based to 1-based index for AWK
+        
+    return indices
+
+def grep_metadata(search_string, metadata_file, column_names=None, delimiter="\t"):
+    """
+    Search for a token in a large metadata file using optimized grep & awk for multiple columns.
+    
+    Args:
+        search_string (str): The token to search for.
+        metadata_file (str): Path to the metadata file.
+        column_names (list of str or None): List of column names to restrict search to. If None, search whole file.
+        delimiter (str): Column separator (default: tab).
+        
+    Returns:
+        set: A set of matching accession numbers.
+    """
+    if not os.path.exists(metadata_file):
+        raise FileNotFoundError(f"Metadata file '{metadata_file}' not found.")
+        
+    search_string = search_string.strip().lower()
+    
+    # Find column indices if column names are specified
+    column_indices = None
+    if column_names:
+        column_indices = get_column_indices(metadata_file, column_names, delimiter)
+        
+    # Extract accession + specified columns
+    if column_indices:
+        column_indices_str = ",".join(f"${idx}" for idx in column_indices)  # e.g., "$2,$3" for awk
+        awk_command = f"awk -F'{delimiter}' '{{print $1, {column_indices_str}}}' {metadata_file}"
+        
+        # Grep should search only in the extracted columns (not the accession column)
+        grep_command = f"awk -F' ' '"
+        grep_command += " || ".join(f"$i ~ /{search_string}/" for i in range(2, len(column_indices) + 2))
+        grep_command += " {print $1}'"
+        command = f"{awk_command} | {grep_command}"
+        
+    else:
+        # If no specific columns, grep the whole file and extract the first column
+        grep_command = f"grep -i '{search_string}' {metadata_file} | cut -f1"
+        command = grep_command
+        
+    # Run the command
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    
+    # Return a set of unique accession numbers
+    return set(result.stdout.splitlines())
+
+def search_in_metadata(metadata, search_string, strict=False, column_names=None):
+    """
+    Search for a token in metadata files using grep, with optional column restriction to multiple columns.
+    
+    Args:
+        search_string (str): The token to search for.
+        metadata (str): Metadata file.
+        strict (bool): Whether to use the strict metadata file.
+        column_names (list of str or None): List of column names to restrict search to.
+        
+    Returns:
+        set: A set of matching accession numbers.
+    """
+    
+    
+    if strict:
+        column_names = ["acc", "organism", "env_biome_sam", "env_feature_sam", "env_material_sam", "biosamplemodel_sam"]
+        
+    # Perform the search
+    return grep_metadata(search_string, metadata, column_names)

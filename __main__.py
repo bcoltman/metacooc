@@ -56,7 +56,7 @@ def main():
     elif sys.argv[1] in {'-h', '--h', '-help', '--help'}:
         print_help()
         sys.exit(0)
-    elif sys.argv[1] not in {'setup', 'cooccurrence', 'search', 'filter', 'ratio', 'list', 'format', 'plot'}:
+    elif sys.argv[1] not in {'download', 'cooccurrence', 'search', 'filter', 'ratio', 'list', 'format', 'plot'}:
         print(f"program not on the menu, choose from the options listed below ")
         print_help()
         sys.exit(0)
