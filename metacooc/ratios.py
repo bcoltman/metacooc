@@ -93,6 +93,7 @@ def calculate_ratios_obj(filtered, reference, ratio_threshold=None):
     ratios_df = ratios_df.sort_values(by='ratio', ascending=False)
     
     if ratio_threshold is not None:
+        
         filtered_df = ratios_df[ratios_df['ratio'] >= ratio_threshold]
         return ratios_df, filtered_df
     else:

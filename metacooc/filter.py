@@ -49,7 +49,7 @@ def filter_samples_by_taxa_count(ingredients, min_taxa_count):
     new_presence = ingredients.presence_matrix[indices, :]
     new_coverage = ingredients.coverage_matrix[indices, :]
     return Ingredients(new_samples, ingredients.taxa, new_presence, new_coverage)
-
+    
 def filter_data_obj(ingredients, accession_set=None, min_taxa_count=None, min_sample_count=None):
     filtered = ingredients
     if min_taxa_count is not None:

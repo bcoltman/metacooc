@@ -72,7 +72,8 @@ def run_cooccurrence(args):
                                           args.search_string, 
                                           args.rank, 
                                           args.strict, 
-                                          args.column_names)
+                                          args.column_names,
+                                          args.inverse)
                                           
     print(f"Pipeline: Found {len(matching_accessions)} matching accessions.")
 
@@ -82,14 +83,16 @@ def run_cooccurrence(args):
         ingredients,
         accession_set=None,
         min_taxa_count=args.min_taxa_count,
-        min_sample_count=args.min_sample_count
+        min_sample_count=args.min_sample_count,
+        rank=args.rank
     )
     # Create a 'filtered' object further filtered by matching accessions.
     filtered_ingredients = filter_data_obj(
         ingredients,
         accession_set=matching_accessions,
         min_taxa_count=args.min_taxa_count,
-        min_sample_count=args.min_sample_count
+        min_sample_count=args.min_sample_count,
+        rank=args.rank
     )
 
     # Step 4. Calculate ratios.

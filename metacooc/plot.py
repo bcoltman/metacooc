@@ -34,6 +34,8 @@ def plot_ratios_obj(ratios_df, output_plot_file, ratio_threshold=None):
         threshold (float, optional): If provided, a vertical line will be drawn where the ratio
                                      falls below this threshold.
     """
+    ratios_df = ratios_df[ratios_df['ratio'] != 0]
+    
     # Sort the DataFrame by ratio in descending order.
     ratios_df_sorted = ratios_df.sort_values(by='ratio', ascending=False).reset_index(drop=True)
 
