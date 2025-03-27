@@ -83,16 +83,14 @@ def run_cooccurrence(args):
         ingredients,
         accession_set=None,
         min_taxa_count=args.min_taxa_count,
-        min_sample_count=args.min_sample_count,
-        rank=args.rank
+        min_sample_count=args.min_sample_count
     )
     # Create a 'filtered' object further filtered by matching accessions.
     filtered_ingredients = filter_data_obj(
         ingredients,
         accession_set=matching_accessions,
         min_taxa_count=args.min_taxa_count,
-        min_sample_count=args.min_sample_count,
-        rank=args.rank
+        min_sample_count=args.min_sample_count
     )
 
     # Step 4. Calculate ratios.
