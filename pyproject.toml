@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metacooc"
+version = "0.1.0"
+description = "Tool for co-occurrence analysis of microorganisms in metagenomes"
+readme = "README.md"
+license = {text = "GPL3+"}
+authors = [
+    {name = "Benjamin Coltman", email = "benjamin.coltman@univie.ac.at"},
+	{name = "Daan Speth", email = "daan.speth@univie.ac.at"}
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "pandas",
+	"scipy",
+    "matplotlib"
+]
+keywords = ["metagenomics","co-occurrence","bioinformatics"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+
+[project.urls]
+Homepage = "https://github.com/bcoltman/metacooc"
+Documentation = "https://metacooc.readthedocs.io"
+Source = "https://github.com/bcoltman/metacooc"
+Tracker = "https://github.com/bcoltman/metacooc/issues"
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "isort", "mypy"]
