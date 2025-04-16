@@ -37,3 +37,6 @@ Tracker = "https://github.com/bcoltman/metacooc/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "black", "isort", "mypy"]
+
+[project.scripts]
+metacooc = "metacooc.__main__:main"
