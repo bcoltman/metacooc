@@ -2,6 +2,9 @@
 
 **MetaCoOc** is a Python package for co-occurrence analysis of microorganisms in shotgun metagenomes. It provides a suite of command‑line tools that allow you to download necessary files, format raw input data, perform metadata and taxonomic searches, filter datasets, calculate co‑occurrence ratios, and generate plots for data visualization. The package is designed to work both as a step‑by‑step workflow (with individual commands) and as a full in‑memory pipeline (using the `cooccurrence` subcommand).
 
+## WARNING: This repository is in active development. Feel free to explore the package and please share any feedback or issues you encounter
+
+
 ## Overview
 
 The typical workflow with **MetaCoOc** involves:
@@ -24,16 +27,14 @@ cd metacooc
 pip install -e .
 ```
 
-Make sure that your data files are included in the package (or available separately), as the package sets a default data directory relative to its installation.
-
 ## Usage
 
 ### Download
 
-Before any analysis, download the default data files. These include:
-- `ingredients_raw.pkl`
-- `ingredients_aggregated.pkl`
-- `broad_strict_metadata_index.pkl` - a pre‑built metadata index based on select metadata columns \["organism", "env_biome_sam", "env_feature_sam", "env_material_sam", "biosamplemodel_sam"\]
+Before any analysis, download the default data files. MetaCoOc sets a default data directory relative to its installation. These include:
+- `ingredients_raw_1.0.0.pkl`
+- `ingredients_aggregated_1.0.0.pkl`
+- `sra_metadata_1.0.0.tsv`
 
 Run:
 
@@ -51,8 +52,7 @@ Once the files are downloaded and formatted, you can run the full in‑memory pi
 
 ```bash
 metacooc cooccurrence --mode taxon \
-                      --data_dir metacooc/data/ \
-                      --output_dir metacooc/data/ \
+                      --output_dir /path/to/output_dir \
                       --aggregated \
                       --search_string "Nitrospira" \
                       --rank genus \
@@ -70,8 +70,7 @@ You can also run each step separately. For example:
 
 ```bash
 metacooc search --mode metadata \
-                --data_dir metacooc/data/ \
-                --output_dir metacooc/data/ \
+                --output_dir /path/to/output_dir \
                 --search_string "soil" \
                 --strict
 ```
@@ -79,9 +78,8 @@ metacooc search --mode metadata \
 #### Filter
 
 ```bash
-metacooc filter --accessions_file metacooc/data/search_results.txt \
-                --data_dir metacooc/data/ \
-                --output_dir metacooc/data/ \
+metacooc filter --accessions_file /path/to/output_dir/search_results.txt \
+                --output_dir /path/to/output_dir \
                 --aggregated \
                 --min_taxa_count 5 \
                 --min_sample_count 5
@@ -90,20 +88,19 @@ metacooc filter --accessions_file metacooc/data/search_results.txt \
 #### Ratios
 
 ```bash
-metacooc ratio --data_dir metacooc/data/ \
-               --output_dir metacooc/data/ \
+metacooc ratio --output_dir /path/to/output_dir  \
                --ratio_threshold 0.5
 ```
 
 #### Plot
 
 ```bash
-metacooc plot --ratios metacooc/data/ratios.tsv \
-              --output_dir metacooc/data/ \
+metacooc plot --ratios /path/to/output_dir/ratios.tsv \
+              --output_dir /path/to/output_dir \
               --ratio_threshold 0.5
 ```
 
-## Data Preparation and Custom Parsing
+## How we generated and prepared the data on [Zenodo](https://doi.org/10.5281/zenodo.15283587)
 
 ### Parsing NCBI SRA Metadata
 
@@ -147,55 +144,69 @@ A key component of **MetaCoOc** is the standardized parsing of SRA metadata. The
    ```
 
 4. **Parsing the Metadata**:  
-   Run the provided parsing script (adapted and distributed in the `extras` directory of **metacooc**) to generate a cleaned TSV file:
+   Run the provided parsing script (adapted and distributed in the `extras` directory of **metacooc**) to generate a cleaned TSV file. 
+   WARNING: Can take a while as we process and keep all atributes from the NCBI SRA. We chose to use all attributes due to the inconsistency of the metadata attached with samples uploaded to the SRA.
+   We found that relevant information for filtering is often included in a wide range of non-standardised columns and therefore chose to retain all of it.
    ```bash
    utils/parse_merge_sra_metadata.py --json-dir path/to_json_dir \
 									 --output-file metacooc/data/sra_metadata_parsed.tsv \
 									 --threads 4
    ```
-   
-   
-
-### Downloading Sandpiper Data
-
-The sandpiper file is downloaded from Zenodo. For example, use the following URL:
-```
-https://zenodo.org/records/11516218/files/sandpiper0.3.0.condensed.csv.gz?download=1
-```
-After downloading, decompress and process it as needed.
 
 
-### Filtering SRA metadata
-Not all entries in the SRA are in Sandpiper due to various reasons including publishing dates and exclusion of certain datasets. To reduce the size of the metacooc/data/sra_metadata_parsed.tsv file, uploaded to Zenodo, we excluded accessions without an entry in Sandpiper.
+### Downloading Community profiles (Sandpiper Data)
 
+Sandpiper hosts community profiles generated by annotating public metagenome datasets using SingleM.
+
+The data is available to download on Zenodo and the below code highlights how the data was formatted to work with MetaCoOc. 
+
+#### Download and unzip data
 ```bash
-awk -F'\t' 'NR > 1 { print $1 }' sandpiper0.3.0.condensed.csv | uniq > sandpiper0.3.0.uniqueaccessions.txt
-
-awk -F'\t' 'NR > 1 { print $1 }' sra_metadata_parsed.tsv | uniq > sra_metadata_parsed_uniqueaccessions.txt
-
-awk 'NR==FNR { a[$1]; next } $1 in a' \
-	sandpiper0.3.0.uniqueaccessions.csv \
-	sra_metadata_parsed_uniqueaccessions.txt \
-	> intersection_uniqueaccessions.txt
-
-awk -F'\t' 'NR == FNR { lookup[$1]; next } FNR == 1 || ($1 in lookup)' \
-	intersection_uniqueaccessions.txt \
-	sra_metadata_parsed.tsv \
-	> data/sra_metadata.tsv
-```	
+curl https://zenodo.org/records/15233363/files/sandpiper1.0.0.condensed.csv.gz?download=1 -o sandpiper1.0.0.condensed.csv.gz
+gzip -d sandpiper1.0.0.condensed.csv.gz
+```
 
 ### Format
 
 Format your raw data into the standardized Ingredients objects and build metadata indices. For example, to process Sandpiper output and NCBI SRA metadata:
 
 ```bash
-metacooc format --tax_profile metacooc/data/sandpiper0.3.0.condensed_intersection.csv \
+metacooc format --tax_profile metacooc/data/sandpiper1.0.0.condensed.csv \
                 --output_dir metacooc/data/ \
                 --aggregated \
-                --aggregation_pattern "g__"
+                --aggregated_pattern "g__"
 ```
 
 This command processes your raw files, generating both the raw and aggregated Ingredients objects as well as metadata indices that will be used by subsequent commands.
+
+
+
+#### Filtering SRA metadata
+Not all entries in the SRA are in Sandpiper due to various reasons including publishing dates and exclusion of certain datasets. To reduce the size of the metacooc/data/sra_metadata_parsed.tsv file, uploaded to Zenodo, we excluded accessions without an entry in Sandpiper.
+
+```bash
+awk -F'\t' 'NR > 1 { print $1 }' metacooc/data/sandpiper1.0.0.condensed.csv | uniq > metacooc/data/sandpiper1.0.0.uniqueaccessions.txt
+
+awk -F'\t' 'NR > 1 { print $1 }' metacooc/data/sra_metadata.tsv | uniq > metacooc/data/sra_metadata_parsed_uniqueaccessions.txt
+
+awk 'NR==FNR { a[$1]; next } $1 in a' \
+	metacooc/data/sandpiper1.0.0.uniqueaccessions.txt \
+	metacooc/data/sra_metadata_parsed_uniqueaccessions.txt \
+	> metacooc/data/intersection_uniqueaccessions.txt
+	
+	
+awk 'NR==FNR { a[$1]; next } $1 in a' \
+	metacooc/data/sandpiper1.0.0.uniqueaccessions.txt \
+	metacooc/data/sra_metadata_parsed_uniqueaccessions.txt \
+	> metacooc/data/intersection_uniqueaccessions.txt
+
+awk -F'\t' 'NR == FNR { lookup[$1]; next } FNR == 1 || ($1 in lookup)' \
+	metacooc/data/intersection_uniqueaccessions.txt \
+	metacooc/data/sra_metadata_parsed.tsv \
+	> metacooc/data/sra_metadata_1.0.0.tsv
+```	
+
+
 
 ## Default Data Directory
 

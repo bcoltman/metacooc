@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 
+import os
+import warnings
+import pickle
+
 import scipy.sparse as sp
 from typing import List
 import numpy as np
+
+from metacooc._data_config import DATA_VERSION, FILENAMES
 
 class Ingredients:
     """
@@ -35,3 +41,27 @@ class Ingredients:
                 f"{len(self.taxa)} taxa, "
                 f"presence_matrix shape: {self.presence_matrix.shape}, "
                 f"coverage_matrix shape: {self.coverage_matrix.shape}>")
+
+
+
+def load_ingredients(data_dir, aggregated=False):
+    """Load an Ingredients object and check its version."""
+    filename = FILENAMES["ingredients_aggregated"] if aggregated else FILENAMES["ingredients_raw"]
+    filepath = os.path.join(data_dir, filename)
+    
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Ingredients file '{filepath}' not found.")
+        
+    with open(filepath, "rb") as f:
+        ingredients = pickle.load(f)
+        
+    # Check embedded version if present
+    embedded_version = getattr(ingredients, "version", None)
+    if embedded_version and embedded_version != DATA_VERSION:
+        warnings.warn(
+            f"Loaded Ingredients object is version {embedded_version}, "
+            f"but expected {DATA_VERSION}. You may be using outdated or mismatched data.",
+            UserWarning
+        )
+        
+    return ingredients

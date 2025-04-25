@@ -21,12 +21,12 @@ If file paths for ingredients or metadata indices are not explicitly provided, d
 """
 
 import os
-import pickle
 
 from metacooc.search import search_data_obj
 from metacooc.filter import filter_data_obj
 from metacooc.ratios import calculate_ratios_obj
 from metacooc.plot import plot_ratios_obj
+from metacooc.pantry import load_ingredients
 
 def run_cooccurrence(args):
     """
@@ -57,14 +57,7 @@ def run_cooccurrence(args):
     """
     # Step 1. Load the Ingredients object.
     
-    if args.aggregated:
-        ingredients_file = os.path.join(args.data_dir, "ingredients_aggregated_genus.pkl")
-    else:
-        ingredients_file = os.path.join(args.data_dir, "ingredients_raw.pkl")
-    if not os.path.exists(ingredients_file):
-        raise FileNotFoundError(f"Ingredients file '{ingredients_file}' not found.")
-    with open(ingredients_file, "rb") as f:
-        ingredients = pickle.load(f)
+    ingredients = load_ingredients(args.data_dir, args.aggregated)
     
     # Step 2. Perform search.
     matching_accessions = search_data_obj(args.mode, 

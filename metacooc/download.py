@@ -5,9 +5,9 @@ download.py
 Download initial data files for metacooc.
 
 This script downloads the following default files into the specified data directory:
-    - ingredients_raw.pkl
-    - ingredients_aggregated_genus.pkl
-    - sra_metadata.tsv (unzipped from sra_metadata.tsv.gz)
+    - ingredients_raw_<version>.pkl
+    - ingredients_aggregated_genus_<version>.pkl
+    - sra_metadata_<version>.tsv
 
 All download URLs point to gzip-compressed files. This script downloads each file
 to a temporary .gz file, unzips it, and then removes the temporary file.
@@ -22,14 +22,7 @@ import argparse
 import requests
 import gzip
 import shutil
-
-# Mapping of final filenames to their download URLs.
-# Note: The URL always points to a .gz file.
-DOWNLOAD_FILES = {
-    "ingredients_raw.pkl": "https://zenodo.org/records/15025528/files/ingredients_raw.pkl.gz?download=1",
-    "ingredients_aggregated_genus.pkl": "https://zenodo.org/records/15025528/files/ingredients_aggregated_genus.pkl.gz?download=1",
-    "sra_metadata.tsv.gz": "https://zenodo.org/records/15025528/files/sra_metadata.tsv.gz?download=1",
-}
+from metacooc._data_config import DOWNLOAD_URLS
 
 def download_data(data_dir, force=False):
     """
@@ -43,8 +36,8 @@ def download_data(data_dir, force=False):
         os.makedirs(data_dir)
         print(f"Created data directory: {data_dir}")
         
-    for final_name, url in DOWNLOAD_FILES.items():
-        # Determine target file: if final_name ends with .gz, remove the extension after unzipping.
+    for final_name, url in DOWNLOAD_URLS.items():
+        # If the filename includes ".tsv.gz", we keep the .gz and decompress to .tsv
         if final_name.endswith(".gz"):
             target_name = final_name[:-3]
         else:
@@ -57,7 +50,6 @@ def download_data(data_dir, force=False):
             print(f"{target_path} already exists; skipping download.")
             continue
             
-        # Download the file to a temporary path.
         print(f"Downloading {url} to {temp_path} ...")
         response = requests.get(url)
         response.raise_for_status()
@@ -65,12 +57,21 @@ def download_data(data_dir, force=False):
             f.write(response.content)
         print(f"Downloaded {temp_path}")
         
-        # Unzip the downloaded file.
         print(f"Unzipping {temp_path} to {target_path} ...")
         with gzip.open(temp_path, 'rb') as f_in, open(target_path, 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
         print(f"Unzipped to {target_path}")
         
-        # Remove the temporary gz file.
         os.remove(temp_path)
         print(f"Removed temporary file {temp_path}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Download metacooc data files")
+    parser.add_argument("--data_dir", type=str, required=True, help="Target directory for data files")
+    parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
+    args = parser.parse_args()
+    
+    download_data(args.data_dir, force=args.force)
+
+if __name__ == "__main__":
+    main()

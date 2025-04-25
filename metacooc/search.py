@@ -28,9 +28,11 @@ Modes:
       by activating grep’s -v flag (or by inverting awk conditions).
 """
 
-import os
-import pickle
+
 import subprocess
+from metacooc.pantry import load_ingredients #, load_metadata
+
+from metacooc._data_config import FILENAMES
 
 def search_by_taxon(ingredients, search_string, rank=None):
     """
@@ -158,11 +160,7 @@ def search_data_obj(mode, data_dir, search_string, rank=None, strict=False, colu
     """
     matching_accessions = set()
     if mode.lower() == "taxon":
-        ingredients_file = os.path.join(data_dir, "ingredients_raw.pkl")
-        if not os.path.exists(ingredients_file):
-            raise FileNotFoundError(f"Ingredients file '{ingredients_file}' not found.")
-        with open(ingredients_file, "rb") as f:
-            ingredients = pickle.load(f)
+        ingredients = load_ingredients(data_dir)
         
         matching_accessions = search_by_taxon(ingredients, search_string, rank)
         if inverse:
@@ -170,8 +168,12 @@ def search_data_obj(mode, data_dir, search_string, rank=None, strict=False, colu
             matching_accessions = set(ingredients.samples) - matching_accessions
     
     elif mode.lower() == "metadata":
-        metadata_file = os.path.join(data_dir, "sra_metadata.tsv")
+        metadata_file = os.path.join(data_dir, FILENAMES["sra_metadata"])
+        if not os.path.exists(metadata_file):
+            raise FileNotFoundError(f"Expected metadata file '{metadata_file}' not found.")
         matching_accessions = search_in_metadata(metadata_file, search_string, strict, column_names, inverse)
+    # metadata_file = os.path.join(data_dir, "sra_metadata.tsv")
+        # matching_accessions = search_in_metadata(metadata_file, search_string, strict, column_names, inverse)
     
     else:
         raise ValueError("Invalid mode specified. Must be 'taxon' or 'metadata'.")

@@ -16,7 +16,7 @@ Usage (file-based):
 import os
 import pickle
 import numpy as np
-from metacooc.pantry import Ingredients
+from metacooc.pantry import *
 
 def filter_by_accessions(ingredients, accession_set):
     indices = [i for i, acc in enumerate(ingredients.samples) if acc in accession_set]
@@ -68,12 +68,14 @@ def filter_data_obj(ingredients, accession_set=None, min_taxa_count=None, min_sa
 
 def filter_data(accessions_file, data_dir, output_dir, aggregated=False, min_taxa_count=None, min_sample_count=None, tag=None):
     # Load Ingredients object from disk.
-    filename = "ingredients_aggregated.pkl" if aggregated else "ingredients_raw.pkl"
-    path = os.path.join(data_dir, filename)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Ingredients file '{path}' not found.")
-    with open(path, "rb") as f:
-        ingredients = pickle.load(f)
+    ingredients = load_ingredients_object(data_dir, aggregated)
+    
+    # filename = "ingredients_aggregated.pkl" if aggregated else "ingredients_raw.pkl"
+    # path = os.path.join(data_dir, filename)
+    # if not os.path.exists(path):
+        # raise FileNotFoundError(f"Ingredients file '{path}' not found.")
+    # with open(path, "rb") as f:
+        # ingredients = pickle.load(f)
     
     # Apply count-based filters.
     filtered = filter_data_obj(ingredients, None, min_taxa_count, min_sample_count)

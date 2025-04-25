@@ -135,8 +135,6 @@ def format_data(tax_profile: str, output_dir: str, aggregated=False, aggregation
     """
     Process the sandpiper TSV file and return a raw Ingredients instance.
     """
-    # samples, taxa, sample_to_index, taxon_to_index = build_indices(tax_profile)
-    # presence_matrix, coverage_matrix = create_sparse_matrices(tax_profile, sample_to_index, taxon_to_index, samples, taxa)
     
     # Generate the raw Ingredients object.
     raw_ingredients = format_ingredients(tax_profile)

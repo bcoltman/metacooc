@@ -13,12 +13,6 @@ DEFAULT_DATA_DIR = BASE_DIR / "data"
 # Create the directory if it doesn't exist
 DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# # make data directory in case it is needed
-# data_path = Path("metacooc")
-# DEFAULT_DATA_DIR = str(data_path)+"/data"
-
-# if not os.path.exists(DEFAULT_DATA_DIR):
-    # os.makedirs(DEFAULT_DATA_DIR)
 
 def parse_cli():
     

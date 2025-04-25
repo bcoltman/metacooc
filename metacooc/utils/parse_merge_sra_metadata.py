@@ -442,9 +442,6 @@ def main(json_dir, output_file, threads, debug, quiet):
     
     # Save the DataFrame to CSV
     
-    
-    
-    combined_df = combined_df.loc[combined_df.assay_type == "WGS",:]
     combined_df.to_csv(output_file, index=False, sep="\t")
     logging.info(f"Data successfully saved to {output_file}")
    
