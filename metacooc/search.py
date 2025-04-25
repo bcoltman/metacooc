@@ -28,10 +28,10 @@ Modes:
       by activating grep’s -v flag (or by inverting awk conditions).
 """
 
-
+import os
 import subprocess
-from metacooc.pantry import load_ingredients #, load_metadata
 
+from metacooc.pantry import load_ingredients 
 from metacooc._data_config import FILENAMES
 
 def search_by_taxon(ingredients, search_string, rank=None):
