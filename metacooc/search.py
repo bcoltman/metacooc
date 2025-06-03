@@ -5,12 +5,12 @@ search.py
 Combined search functionality for metacooc.
 
 Exposes:
-  1. search_data(mode, data_dir, output_dir, search_string, rank=None, column_names=None,
+  1. search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None, column_names=None,
                  strict=False, tag="", inverse=False)
      - File-based interface: loads files from disk, writes the matching accessions to
        output_dir/search_results.txt, and returns the set of matching accessions.
 
-  2. search_data_obj(mode, data_dir, search_string, rank=None, strict=False,
+  2. search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion=None, strict=False,
                      column_names=None, inverse=False)
      - Object-based interface:
          * For mode "taxon", data is an Ingredients object.
@@ -20,7 +20,7 @@ Exposes:
 Modes:
   - Taxon:
       Loads an Ingredients pickle (e.g., "ingredients_raw.pkl") from data_dir and
-      searches its taxa list for the given search_string (optionally restricting by rank).
+      searches its taxa list for the given search_string (optionally restricting by ranks_for_search_inclusion).
   
   - Metadata:
       Searches a metadata file (e.g., "sra_metadata.tsv") for the search token,
@@ -34,16 +34,21 @@ import subprocess
 from metacooc.pantry import load_ingredients 
 from metacooc._data_config import FILENAMES
 
-def search_by_taxon(ingredients, search_string, rank=None):
+def search_by_taxon(ingredients, search_string, ranks_for_search_inclusion=None):
     """
     Search the Ingredients object's taxa list.
     
     Returns:
         set: Accession IDs from samples where a matching taxon is present.
     """
-    rank_prefixes = {"genus": "g__", "family": "f__", "order": "o__",
-                     "class": "c__", "phylum": "p__", "species": "s__", "domain": "d__"}
-    prefix = rank_prefixes.get(rank.lower()) if rank else None
+    rank_prefixes = {"domain": "d__", 
+                     "phylum": "p__", 
+                     "class": "c__", 
+                     "order": "o__",
+                     "family": "f__",  
+                     "genus": "g__", 
+                     "species": "s__"}
+    prefix = rank_prefixes.get(ranks_for_search_inclusion.lower()) if ranks_for_search_inclusion else None
     matching_indices = []
     for i, taxon in enumerate(ingredients.taxa):
         if prefix and prefix not in taxon:
@@ -148,7 +153,7 @@ def search_in_metadata(metadata, search_string, strict=False, column_names=None,
                         "env_material_sam", "biosamplemodel_sam"]
     return grep_metadata(search_string, metadata, column_names, inverse=inverse)
 
-def search_data_obj(mode, data_dir, search_string, rank=None, strict=False, column_names=None, inverse=False):
+def search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion=None, strict=False, column_names=None, inverse=False):
     """
     Object-based search function.
     
@@ -162,7 +167,7 @@ def search_data_obj(mode, data_dir, search_string, rank=None, strict=False, colu
     if mode.lower() == "taxon":
         ingredients = load_ingredients(data_dir)
         
-        matching_accessions = search_by_taxon(ingredients, search_string, rank)
+        matching_accessions = search_by_taxon(ingredients, search_string, ranks_for_search_inclusion)
         if inverse:
             # For inverse search, return samples that do NOT match.
             matching_accessions = set(ingredients.samples) - matching_accessions
@@ -180,7 +185,7 @@ def search_data_obj(mode, data_dir, search_string, rank=None, strict=False, colu
         
     return matching_accessions
 
-def search_data(mode, data_dir, output_dir, search_string, rank=None,
+def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
                 column_names=None, strict=False, tag="", inverse=False):
     """
     File-based search function for metacooc.
@@ -195,7 +200,7 @@ def search_data(mode, data_dir, output_dir, search_string, rank=None,
     Returns:
         set: Matching accession IDs.
     """
-    matching_accessions = search_data_obj(mode, data_dir, search_string, rank, strict, column_names, inverse)
+    matching_accessions = search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion, strict, column_names, inverse)
     
     output_file = os.path.join(output_dir, f"search_results{tag if tag else ''}.txt")
     with open(output_file, "w") as f:

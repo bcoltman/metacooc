@@ -31,20 +31,20 @@ from metacooc.pantry import load_ingredients
 def run_cooccurrence(args):
     """
     Run the full co-occurrence pipeline in memory.
-
+    
     Expected attributes in args:
       - data_dir, output_dir, aggregated (boolean)
       - mode: "taxon" or "metadata"
-      - search_string, rank (for taxon mode)
+      - search_string, ranks_for_search_inclusion (for taxon mode)
       - index_file (optional, for metadata mode), strict
       - min_taxa_count, min_sample_count
       - ratio_threshold (optional)
-
+    
     The pipeline:
       1. Loads the Ingredients object from args.data_dir. If args.aggregated is True, loads
          "ingredients_aggregated.pkl"; otherwise, loads "ingredients_raw.pkl".
       2. Runs a search using search_data_obj():
-             - For taxon mode, the Ingredients object is searched (optionally restricting by rank).
+             - For taxon mode, the Ingredients object is searched (optionally restricting by ranks_for_search_inclusion).
              - For metadata mode, a default metadata index is loaded from args.data_dir (broad or broad_strict)
                unless args.index_file is provided.
       3. Prints the number of matching accessions.
@@ -63,29 +63,35 @@ def run_cooccurrence(args):
     matching_accessions = search_data_obj(args.mode, 
                                           args.data_dir, 
                                           args.search_string, 
-                                          args.rank, 
+                                          args.ranks_for_search_inclusion, 
                                           args.strict, 
                                           args.column_names,
                                           args.inverse)
                                           
+    if not matching_accessions:
+        print("Pipeline: No matching accessions found. Exiting pipeline.")
+        return
+    
     print(f"Pipeline: Found {len(matching_accessions)} matching accessions.")
-
+    
     # Step 3. Filter the Ingredients object.
     # Create a 'reference' object filtered solely by count thresholds.
     reference_ingredients = filter_data_obj(
         ingredients,
         accession_set=None,
         min_taxa_count=args.min_taxa_count,
-        min_sample_count=args.min_sample_count
+        min_sample_count=args.min_sample_count,
+        filter_rank=args.filter_rank
     )
     # Create a 'filtered' object further filtered by matching accessions.
     filtered_ingredients = filter_data_obj(
         ingredients,
         accession_set=matching_accessions,
         min_taxa_count=args.min_taxa_count,
-        min_sample_count=args.min_sample_count
+        min_sample_count=args.min_sample_count,
+        filter_rank=args.filter_rank
     )
-
+    
     # Step 4. Calculate ratios.
     if args.ratio_threshold is None:
         ratios_df = calculate_ratios_obj(filtered_ingredients, reference_ingredients)
@@ -102,7 +108,7 @@ def run_cooccurrence(args):
         filtered_path = os.path.join(args.output_dir, f"filtered_ratios{args.tag}.tsv")
         filtered_ratios_df.to_csv(filtered_path, sep="\t", index=False)
         print(f"Pipeline: Filtered ratios saved to {filtered_path}")
-
+    
     # Step 5. Plot ratios.
     output_plot_file = os.path.join(args.output_dir, f"ratios_plot{args.tag}.png")
     plot_ratios_obj(ratios_df, output_plot_file=output_plot_file, ratio_threshold=args.ratio_threshold)
