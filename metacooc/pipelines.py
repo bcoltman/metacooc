@@ -57,7 +57,7 @@ def run_cooccurrence(args):
     """
     # Step 1. Load the Ingredients object.
     
-    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients)
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.sandpiper_version)
     
     # Step 2. Perform search. Pass the preloaded ingredients as a custom_ingredients
     matching_accessions = search_data_obj(mode=args.mode, 

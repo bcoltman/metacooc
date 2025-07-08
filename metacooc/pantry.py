@@ -8,7 +8,8 @@ import scipy.sparse as sp
 from typing import List
 import numpy as np
 
-from metacooc._data_config import DATA_VERSION, FILENAMES
+# from metacooc._data_config import DATA_VERSION, FILENAMES
+from metacooc._data_config import *
 
 class Ingredients:
     """
@@ -55,36 +56,72 @@ class Ingredients:
 
 
 
-def load_ingredients(data_dir, aggregated=False, custom_ingredients=None):
-    """Load an Ingredients object and check its version."""
+def load_ingredients(data_dir, aggregated=False, custom_ingredients=None, sandpiper_version=None):
+    """Load an Ingredients object, checking version and download status."""
+    
+    version = sandpiper_version or LATEST_VERSION
+    filenames, _ = get_file_info(version)
+    
     if not custom_ingredients:
-        if aggregated:
-            filename = FILENAMES["ingredients_aggregated"]
-        else:
-            filename = FILENAMES["ingredients_raw"]
+        filename = filenames["ingredients_aggregated"] if aggregated else filenames["ingredients_raw"]
         filepath = os.path.join(data_dir, filename)
     else:
         if isinstance(custom_ingredients, Ingredients):
             return custom_ingredients
-        
         filepath = custom_ingredients
     
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f"Ingredients file '{filepath}' not found.")
-        
+        version_list = ", ".join(sorted(RELEASES.keys()))
+        raise FileNotFoundError(
+            f"Ingredients file '{filepath}' not found.\n"
+            f"You may be missing version {version}. Available versions: {version_list}\n"
+            f"Either download the correct data or specify a version using --sandpiper_version."
+        )
+    
     with open(filepath, "rb") as f:
         ingredients = pickle.load(f)
-        
-    if custom_ingredients:
-        return ingredients
-        
-    # Check embedded version if present
-    embedded_version = getattr(ingredients, "version", None)
-    if embedded_version and embedded_version != DATA_VERSION:
-        warnings.warn(
-            f"Loaded Ingredients object is version {embedded_version}, "
-            f"but expected {DATA_VERSION}. You may be using outdated or mismatched data.",
-            UserWarning
-        )
-        
+    
+    # Skip version check if custom ingredient provided
+    if not custom_ingredients:
+        embedded_version = getattr(ingredients, "version", None)
+        if embedded_version and embedded_version != version:
+            warnings.warn(
+                f"Loaded Ingredients object is version {embedded_version}, "
+                f"but expected {version}. This might indicate a mismatch.",
+                UserWarning,
+            )
+    
     return ingredients
+    
+    # """Load an Ingredients object and check its version."""
+    # if not custom_ingredients:
+        # if aggregated:
+            # filename = FILENAMES["ingredients_aggregated"]
+        # else:
+            # filename = FILENAMES["ingredients_raw"]
+        # filepath = os.path.join(data_dir, filename)
+    # else:
+        # if isinstance(custom_ingredients, Ingredients):
+            # return custom_ingredients
+        
+        # filepath = custom_ingredients
+    
+    # if not os.path.exists(filepath):
+        # raise FileNotFoundError(f"Ingredients file '{filepath}' not found.")
+        
+    # with open(filepath, "rb") as f:
+        # ingredients = pickle.load(f)
+        
+    # if custom_ingredients:
+        # return ingredients
+        
+    # # Check embedded version if present
+    # embedded_version = getattr(ingredients, "version", None)
+    # if embedded_version and embedded_version != DATA_VERSION:
+        # warnings.warn(
+            # f"Loaded Ingredients object is version {embedded_version}, "
+            # f"but expected {DATA_VERSION}. You may be using outdated or mismatched data.",
+            # UserWarning
+        # )
+        
+    # return ingredients

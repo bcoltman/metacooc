@@ -116,7 +116,18 @@ metacooc plot --ratios_file /path/to/output_dir/ratios.tsv \
 
 ## Some alternative ways to use MetaCoOc
 
-#### Custom directory for Ingredients files
+### Using previous versions of Ingredients
+
+Users can use previous versions of the zenodo hosted Ingredients by specifying the version number with the --sandpiper_version flag e.g.
+
+```
+metacooc cooccurrence --mode taxon \
+                      --output_dir /path/to/output_dir \
+                      --search_string "Nitrospira" \
+                      --sandpiper_version "0.3.0"
+```
+
+### Custom directory for Ingredients files
 
 If you have downloaded and setup the Ingredients files in a custom directory, then specify this location with --data_dir. This can be specified for all subfunctions e.g.
 
@@ -130,7 +141,7 @@ metacooc search --mode metadata \
                 --strict
 ```
 
-#### Using own custom_ingredients files
+### Using own custom_ingredients files
 
 Cooccurrence, search and filter can all take a custom_ingredients file. This can be specified using the --custom_ingredients flag
 ```bash

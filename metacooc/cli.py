@@ -34,11 +34,16 @@ def parse_cli():
         action="store_true",
         help="Force re-download even if files exist.",
     )
+    opt.add_argument(
+        "--sandpiper_version",
+        default=None,
+        help="Specify which data version to load (default: latest)"
+    )
     
     def download_command(args):
         from metacooc.download import download_data
         
-        download_data(data_dir=args.data_dir, force=args.force)
+        download_data(data_dir=args.data_dir, force=args.force, sandpiper_version=args.sandpiper_version)
     
     download_sub.set_defaults(func=download_command)
     
@@ -140,6 +145,11 @@ def parse_cli():
         action="store_true",
         help="Return inverse of search string.",
     )
+    opt.add_argument(
+        "--sandpiper_version",
+        default=None,
+        help="Specify which data version to load (default: latest)"
+    )
     
     def search_command(args):
         from metacooc.search import search_data
@@ -155,6 +165,7 @@ def parse_cli():
             strict=args.strict,
             inverse=args.inverse,
             tag=args.tag,
+            sandpiper_version=args.sandpiper_version
         )
     
     search_sub.set_defaults(func=search_command)
@@ -213,6 +224,11 @@ def parse_cli():
         "--custom_ingredients",
         help="Ingredients file to use instead of default"
     )
+    opt.add_argument(
+        "--sandpiper_version",
+        default=None,
+        help="Specify which data version to load (default: latest)"
+    )
     
     def filter_command(args):
         from metacooc.filter import filter_data
@@ -227,7 +243,8 @@ def parse_cli():
             min_sample_count=args.min_sample_count,
             filter_rank=args.filter_rank,
             tag=args.tag,
-            custom_ingredients=args.custom_ingredients
+            custom_ingredients=args.custom_ingredients,
+            sandpiper_version=args.sandpiper_version
         )
     
     filter_sub.set_defaults(func=filter_command)
@@ -371,7 +388,7 @@ def parse_cli():
     )
     opt.add_argument(
         "--custom_ingredients",
-        help="Ingredients file to use instead of default"
+        help="Initial Ingredients file to use instead of default"
     )
     opt.add_argument(
         "--column_names",
@@ -411,10 +428,10 @@ def parse_cli():
             "of results."
         ),
     )
-    opt.add_argument(
-        "--accessions_file",
-        help="File containing accession numbers to filter samples.",
-    )
+    # opt.add_argument(
+        # "--accessions_file",
+        # help="File containing accession numbers to filter samples.",
+    # )
     # Ratio-related optional
     opt.add_argument(
         "--ratio_threshold",
@@ -422,13 +439,18 @@ def parse_cli():
         default=0.5,
         help="Minimum ratio value to keep (default: %(default)s).",
     )
+    # opt.add_argument(
+        # "--filtered_file",
+        # help="Path to the filtered Ingredients pickle file.",
+    # )
+    # opt.add_argument(
+        # "--reference_file",
+        # help="Path to the reference Ingredients pickle file.",
+    # )
     opt.add_argument(
-        "--filtered_file",
-        help="Path to the filtered Ingredients pickle file.",
-    )
-    opt.add_argument(
-        "--reference_file",
-        help="Path to the reference Ingredients pickle file.",
+        "--sandpiper_version",
+        default=None,
+        help="Specify which data version to load (default: latest)"
     )
     
     def cooccurrence_command(args):

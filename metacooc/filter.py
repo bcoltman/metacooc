@@ -112,10 +112,11 @@ def filter_data(accessions_file,
                 min_sample_count=None, 
                 filter_rank=None, 
                 tag=None, 
-                custom_ingredients=None):
+                custom_ingredients=None,
+                sandpiper_version=None):
     
     # Load Ingredients object from disk.
-    ingredients = load_ingredients(data_dir, aggregated, custom_ingredients)
+    ingredients = load_ingredients(data_dir, aggregated, custom_ingredients, sandpiper_version)
     
     # Apply count-based filters.
     filtered = filter_data_obj(ingredients, None, min_taxa_count, min_sample_count, filter_rank)

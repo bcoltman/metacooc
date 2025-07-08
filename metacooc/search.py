@@ -32,7 +32,8 @@ import os
 import subprocess
 
 from metacooc.pantry import load_ingredients 
-from metacooc._data_config import FILENAMES
+from metacooc._data_config import *
+# FILENAMES
 
 def search_by_taxon(ingredients, search_string, ranks_for_search_inclusion=None):
     """
@@ -160,7 +161,8 @@ def search_data_obj(mode,
                     strict=False, 
                     column_names=None, 
                     inverse=False,
-                    custom_ingredients=None):
+                    custom_ingredients=None,
+                    sandpiper_version=None):
     """
     Object-based search function.
     
@@ -173,7 +175,7 @@ def search_data_obj(mode,
     matching_accessions = set()
     if mode.lower() == "taxon":
         
-        ingredients = load_ingredients(data_dir, custom_ingredients=custom_ingredients)
+        ingredients = load_ingredients(data_dir, custom_ingredients=custom_ingredients, sandpiper_version=sandpiper_version)
         
         matching_accessions = search_by_taxon(ingredients, search_string, ranks_for_search_inclusion)
         if inverse:
@@ -181,7 +183,9 @@ def search_data_obj(mode,
             matching_accessions = set(ingredients.samples) - matching_accessions
     
     elif mode.lower() == "metadata":
-        metadata_file = os.path.join(data_dir, FILENAMES["sra_metadata"])
+        version = sandpiper_version or LATEST_VERSION
+        filenames, _ = get_file_info(version)
+        metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
         if not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Expected metadata file '{metadata_file}' not found.")
         matching_accessions = search_in_metadata(metadata_file, search_string, strict, column_names, inverse)
@@ -194,7 +198,7 @@ def search_data_obj(mode,
     return matching_accessions
 
 def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
-                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None):
+                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, sandpiper_version=None):
     """
     File-based search function for metacooc.
     
@@ -208,7 +212,15 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     Returns:
         set: Matching accession IDs.
     """
-    matching_accessions = search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion, strict, column_names, inverse, custom_ingredients)
+    matching_accessions = search_data_obj(mode, 
+                                          data_dir, 
+                                          search_string, 
+                                          ranks_for_search_inclusion, 
+                                          strict, 
+                                          column_names, 
+                                          inverse, 
+                                          custom_ingredients, 
+                                          sandpiper_version)
     
     output_file = os.path.join(output_dir, f"search_results{tag if tag else ''}.txt")
     with open(output_file, "w") as f:
