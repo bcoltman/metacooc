@@ -109,12 +109,12 @@ metacooc ratio --output_dir /path/to/output_dir  \
 Finally, plot it.
 
 ```bash
-metacooc plot --ratios /path/to/output_dir/ratios.tsv \
-              --data_dir /path/to/output_dir--output_dir /path/to/output_dir \
+metacooc plot --ratios_file /path/to/output_dir/ratios.tsv \
+              --output_dir /path/to/output_dir \
               --ratio_threshold 0.5
 ```
 
-### Some alternative ways to use MetaCoOc
+## Some alternative ways to use MetaCoOc
 
 #### Custom directory for Ingredients files
 
@@ -141,20 +141,20 @@ metacooc cooccurrence --mode taxon \
                       --ranks_for_search_inclusion genus \
                       --min_taxa_count 5 \
                       --min_sample_count 5 \
-					  --custom_ingredients /path/to/custom_ingredients.pkl
+                      --custom_ingredients /path/to/custom_ingredients.pkl
 
 metacooc search --mode metadata \
                 --output_dir /path/to/output_dir \
                 --search_string "soil" \
                 --strict \
-				--custom_ingredients /path/to/custom_ingredients.pkl
+                --custom_ingredients /path/to/custom_ingredients.pkl
 
 metacooc filter --accessions_file /path/to/output_dir/search_results.txt \
                 --output_dir /path/to/output_dir \
                 --aggregated \
                 --min_taxa_count 5 \
                 --min_sample_count 5 \
-				--custom_ingredients /path/to/custom_ingredients.pkl
+                --custom_ingredients /path/to/custom_ingredients.pkl
 ```
 
 
