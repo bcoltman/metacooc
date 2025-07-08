@@ -206,8 +206,12 @@ def parse_cli():
         ),
     )
     opt.add_argument(
-        "--accessions",
+        "--accessions_file",
         help="File containing accession numbers to filter samples.",
+    )
+    opt.add_argument(
+        "--custom_ingredients",
+        help="Ingredients file to use instead of default"
     )
     
     def filter_command(args):
@@ -215,7 +219,7 @@ def parse_cli():
         
         args.tag = f"_{args.tag}" if args.tag else ""
         filter_data(
-            accessions=args.accessions,
+            accessions_file=args.accessions_file,
             data_dir=args.data_dir,
             output_dir=args.output_dir,
             aggregated=args.aggregated,
@@ -223,6 +227,7 @@ def parse_cli():
             min_sample_count=args.min_sample_count,
             filter_rank=args.filter_rank,
             tag=args.tag,
+            custom_ingredients=args.custom_ingredients
         )
     
     filter_sub.set_defaults(func=filter_command)
@@ -238,13 +243,18 @@ def parse_cli():
         required=True,
         help="Directory where output files will be saved.",
     )
+    req.add_argument(
+        "--filtered_file",
+        required=True,
+        help="Path to the filtered Ingredients pickle file.",
+    )
+    req.add_argument(
+        "--reference_file",
+        required=True,
+        help="Path to the reference Ingredients pickle file.",
+    )
     
     opt = ratio_sub.add_argument_group("optional arguments")
-    opt.add_argument(
-        "--data_dir",
-        default=DEFAULT_DATA_DIR,
-        help="Directory containing data files (default: %(default)s)",
-    )
     opt.add_argument(
         "--tag",
         default="",
@@ -256,24 +266,15 @@ def parse_cli():
         default=0.5,
         help="Minimum ratio value to keep (default: %(default)s).",
     )
-    opt.add_argument(
-        "--filtered_file",
-        help="Path to the filtered Ingredients pickle file.",
-    )
-    opt.add_argument(
-        "--reference_file",
-        help="Path to the reference Ingredients pickle file.",
-    )
     
     def ratio_command(args):
         from metacooc.ratios import calculate_ratios
         
         args.tag = f"_{args.tag}" if args.tag else ""
         calculate_ratios(
+            reference_ingredients=args.reference_file,
+            filtered_ingredients=args.filtered_file,
             output_dir=args.output_dir,
-            data_dir=args.data_dir,
-            filtered_file=args.filtered_file,
-            reference_file=args.reference_file,
             ratio_threshold=args.ratio_threshold,
             tag=args.tag,
         )
@@ -369,6 +370,10 @@ def parse_cli():
         ),
     )
     opt.add_argument(
+        "--custom_ingredients",
+        help="Ingredients file to use instead of default"
+    )
+    opt.add_argument(
         "--column_names",
         help="Column name for exact index (if required).",
     )
@@ -407,7 +412,7 @@ def parse_cli():
         ),
     )
     opt.add_argument(
-        "--accessions",
+        "--accessions_file",
         help="File containing accession numbers to filter samples.",
     )
     # Ratio-related optional

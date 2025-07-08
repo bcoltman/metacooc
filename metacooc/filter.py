@@ -104,9 +104,18 @@ def filter_data_obj(ingredients, accession_set=None, min_taxa_count=None, min_sa
     
     return filtered
 
-def filter_data(accessions_file, data_dir, output_dir, aggregated=False, min_taxa_count=None, min_sample_count=None, filter_rank=None, tag=None):
+def filter_data(accessions_file, 
+                data_dir, 
+                output_dir, 
+                aggregated=False, 
+                min_taxa_count=None, 
+                min_sample_count=None, 
+                filter_rank=None, 
+                tag=None, 
+                custom_ingredients=None):
+    
     # Load Ingredients object from disk.
-    ingredients = load_ingredients_object(data_dir, aggregated)
+    ingredients = load_ingredients(data_dir, aggregated, custom_ingredients)
     
     # Apply count-based filters.
     filtered = filter_data_obj(ingredients, None, min_taxa_count, min_sample_count, filter_rank)

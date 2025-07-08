@@ -153,7 +153,14 @@ def search_in_metadata(metadata, search_string, strict=False, column_names=None,
                         "env_material_sam", "biosamplemodel_sam"]
     return grep_metadata(search_string, metadata, column_names, inverse=inverse)
 
-def search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion=None, strict=False, column_names=None, inverse=False):
+def search_data_obj(mode, 
+                    data_dir, 
+                    search_string, 
+                    ranks_for_search_inclusion=None, 
+                    strict=False, 
+                    column_names=None, 
+                    inverse=False,
+                    custom_ingredients=None):
     """
     Object-based search function.
     
@@ -165,7 +172,8 @@ def search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion=No
     """
     matching_accessions = set()
     if mode.lower() == "taxon":
-        ingredients = load_ingredients(data_dir)
+        
+        ingredients = load_ingredients(data_dir, custom_ingredients=custom_ingredients)
         
         matching_accessions = search_by_taxon(ingredients, search_string, ranks_for_search_inclusion)
         if inverse:
@@ -186,7 +194,7 @@ def search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion=No
     return matching_accessions
 
 def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
-                column_names=None, strict=False, tag="", inverse=False):
+                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None):
     """
     File-based search function for metacooc.
     
@@ -200,7 +208,7 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     Returns:
         set: Matching accession IDs.
     """
-    matching_accessions = search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion, strict, column_names, inverse)
+    matching_accessions = search_data_obj(mode, data_dir, search_string, ranks_for_search_inclusion, strict, column_names, inverse, custom_ingredients)
     
     output_file = os.path.join(output_dir, f"search_results{tag if tag else ''}.txt")
     with open(output_file, "w") as f:

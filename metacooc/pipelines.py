@@ -57,16 +57,17 @@ def run_cooccurrence(args):
     """
     # Step 1. Load the Ingredients object.
     
-    ingredients = load_ingredients(args.data_dir, args.aggregated)
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients)
     
-    # Step 2. Perform search.
-    matching_accessions = search_data_obj(args.mode, 
-                                          args.data_dir, 
-                                          args.search_string, 
-                                          args.ranks_for_search_inclusion, 
-                                          args.strict, 
-                                          args.column_names,
-                                          args.inverse)
+    # Step 2. Perform search. Pass the preloaded ingredients as a custom_ingredients
+    matching_accessions = search_data_obj(mode=args.mode, 
+                                          data_dir=args.data_dir, 
+                                          search_string=args.search_string, 
+                                          ranks_for_search_inclusion=args.ranks_for_search_inclusion, 
+                                          strict=args.strict, 
+                                          column_names=args.column_names,
+                                          inverse=args.inverse,
+                                          custom_ingredients=ingredients)
                                           
     if not matching_accessions:
         print("Pipeline: No matching accessions found. Exiting pipeline.")

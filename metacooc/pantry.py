@@ -41,19 +41,42 @@ class Ingredients:
                 f"{len(self.taxa)} taxa, "
                 f"presence_matrix shape: {self.presence_matrix.shape}, "
                 f"coverage_matrix shape: {self.coverage_matrix.shape}>")
+    
+    def copy(self):
+        """
+        Create and return a deep copy of the current Ingredients instance.
+        """
+        return Ingredients(
+            samples=self.samples.copy(),
+            taxa=self.taxa.copy(),
+            presence_matrix=self.presence_matrix.copy(),
+            coverage_matrix=self.coverage_matrix.copy()
+        )
 
 
 
-def load_ingredients(data_dir, aggregated=False):
+def load_ingredients(data_dir, aggregated=False, custom_ingredients=None):
     """Load an Ingredients object and check its version."""
-    filename = FILENAMES["ingredients_aggregated"] if aggregated else FILENAMES["ingredients_raw"]
-    filepath = os.path.join(data_dir, filename)
+    if not custom_ingredients:
+        if aggregated:
+            filename = FILENAMES["ingredients_aggregated"]
+        else:
+            filename = FILENAMES["ingredients_raw"]
+        filepath = os.path.join(data_dir, filename)
+    else:
+        if isinstance(custom_ingredients, Ingredients):
+            return custom_ingredients
+        
+        filepath = custom_ingredients
     
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Ingredients file '{filepath}' not found.")
         
     with open(filepath, "rb") as f:
         ingredients = pickle.load(f)
+        
+    if custom_ingredients:
+        return ingredients
         
     # Check embedded version if present
     embedded_version = getattr(ingredients, "version", None)

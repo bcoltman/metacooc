@@ -68,6 +68,7 @@ You can also run each step separately. For example:
 
 #### Search (File-Based)
 
+We filter all metagenomes based on the word soil being listed in their metadata
 ```bash
 metacooc search --mode metadata \
                 --output_dir /path/to/output_dir \
@@ -76,6 +77,8 @@ metacooc search --mode metadata \
 ```
 					 
 #### Filter
+
+We then filter our Ingredients based on the resulting accession list
 
 ```bash
 metacooc filter --accessions_file /path/to/output_dir/search_results.txt \
@@ -87,18 +90,73 @@ metacooc filter --accessions_file /path/to/output_dir/search_results.txt \
 					 
 #### Ratios
 
+The last function created two Ingredients. One is an intermediate file, filtered according to:
+- minimum taxa counts - which is a threshold for sample inclusion based on the minimum unique taxa in sample
+- minimum sample counts - which is a threshold for taxa inclusion based on the number of samples it is detected in 
+
+The other is a further filtered version of this file, filtering out the samples that didn't contain "soil" in their metadata
+
+
+We use this intermediate file as our reference and compare our filtered file to it
 ```bash
 metacooc ratio --output_dir /path/to/output_dir  \
-               --ratio_threshold 0.5
+               --ratio_threshold 0.5 \
+			   --reference_file /path/to/output_dir/ingredients_counts_filtered.pkl \
+			   --filtered_file /path/to/output_dir/ingredients_all_filtered.pkl
 ```
 
 #### Plot
+Finally, plot it.
 
 ```bash
 metacooc plot --ratios /path/to/output_dir/ratios.tsv \
-              --output_dir /path/to/output_dir \
+              --data_dir /path/to/output_dir--output_dir /path/to/output_dir \
               --ratio_threshold 0.5
 ```
+
+### Some alternative ways to use MetaCoOc
+
+#### Custom directory for Ingredients files
+
+If you have downloaded and setup the Ingredients files in a custom directory, then specify this location with --data_dir. This can be specified for all subfunctions e.g.
+
+By default, it will still search for the Ingredients files which are specified within _data_config.py, which is updated upon a new release of metacooc
+
+```bash
+metacooc search --mode metadata \
+                --data_dir /path/to/data_dir \
+				--output_dir /path/to/output_dir \
+                --search_string "soil" \
+                --strict
+```
+
+#### Using own custom_ingredients files
+
+Cooccurrence, search and filter can all take a custom_ingredients file. This can be specified using the --custom_ingredients flag
+```bash
+metacooc cooccurrence --mode taxon \
+                      --output_dir /path/to/output_dir \
+                      --aggregated \
+                      --search_string "Nitrospira" \
+                      --ranks_for_search_inclusion genus \
+                      --min_taxa_count 5 \
+                      --min_sample_count 5 \
+					  --custom_ingredients /path/to/custom_ingredients.pkl
+
+metacooc search --mode metadata \
+                --output_dir /path/to/output_dir \
+                --search_string "soil" \
+                --strict \
+				--custom_ingredients /path/to/custom_ingredients.pkl
+
+metacooc filter --accessions_file /path/to/output_dir/search_results.txt \
+                --output_dir /path/to/output_dir \
+                --aggregated \
+                --min_taxa_count 5 \
+                --min_sample_count 5 \
+				--custom_ingredients /path/to/custom_ingredients.pkl
+```
+
 
 ## How we generated and prepared the data on [Zenodo](https://doi.org/10.5281/zenodo.15283587)
 
