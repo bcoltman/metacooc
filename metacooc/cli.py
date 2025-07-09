@@ -146,6 +146,10 @@ def parse_cli():
         help="Return inverse of search string.",
     )
     opt.add_argument(
+        "--custom_ingredients",
+        help="Ingredients file to use instead of default"
+    )
+    opt.add_argument(
         "--sandpiper_version",
         default=None,
         help="Specify which data version to load (default: latest)"
@@ -165,7 +169,8 @@ def parse_cli():
             strict=args.strict,
             inverse=args.inverse,
             tag=args.tag,
-            sandpiper_version=args.sandpiper_version
+            custom_ingredients=args.custom_ingredients
+            sandpiper_version=args.sandpiper_version            
         )
     
     search_sub.set_defaults(func=search_command)
