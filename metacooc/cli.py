@@ -169,7 +169,7 @@ def parse_cli():
             strict=args.strict,
             inverse=args.inverse,
             tag=args.tag,
-            custom_ingredients=args.custom_ingredients
+            custom_ingredients=args.custom_ingredients,
             sandpiper_version=args.sandpiper_version            
         )
     
