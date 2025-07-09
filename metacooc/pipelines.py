@@ -93,6 +93,9 @@ def run_cooccurrence(args):
         filter_rank=args.filter_rank
     )
     
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+
     # Step 4. Calculate ratios.
     if args.ratio_threshold is None:
         ratios_df = calculate_ratios_obj(filtered_ingredients, reference_ingredients)
