@@ -27,7 +27,7 @@ import shutil
 from metacooc._data_config import *
 # get_file_info, RELEASES, LATEST_VERSION
 
-def download_data(data_dir, force=False, sandpiper_version=None):
+def download_data(data_dir, sandpiper_version=None, force=False):
     """
     Download data files for a specific Sandpiper version into data_dir.
     
@@ -130,7 +130,7 @@ def main():
     parser.add_argument("--sandpiper_version", default=None, help="Specify which data version to load (default: latest)")
     args = parser.parse_args()
     
-    download_data(args.data_dir, force=args.force, args.sandpiper_version)
+    download_data(args.data_dir, args.sandpiper_version, force=args.force)
 
 if __name__ == "__main__":
     main()
