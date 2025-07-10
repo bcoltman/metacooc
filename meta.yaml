@@ -22,7 +22,7 @@ requirements:
     - numpy
     - scipy
     - matplotlib
-    # add any other runtime dependencies here
+    - requests
 
 test:
   imports:
