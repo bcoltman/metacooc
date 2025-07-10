@@ -115,6 +115,9 @@ def filter_data(accessions_file,
                 custom_ingredients=None,
                 sandpiper_version=None):
     
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+
     # Load Ingredients object from disk.
     ingredients = load_ingredients(data_dir, aggregated, custom_ingredients, sandpiper_version)
     

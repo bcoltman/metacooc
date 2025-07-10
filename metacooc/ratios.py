@@ -125,6 +125,9 @@ def calculate_ratios(reference_ingredients,
     Returns:
         pd.DataFrame: The (optionally filtered) ratios DataFrame.
     """
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+    
     reference = load_ingredients(data_dir=None, custom_ingredients=reference_ingredients)
     filtered = load_ingredients(data_dir=None, custom_ingredients=filtered_ingredients)
     # , filtered = load_ingredients(data_dir, filtered_file, reference_file)

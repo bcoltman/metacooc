@@ -222,6 +222,9 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
                                           custom_ingredients, 
                                           sandpiper_version)
     
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+
     output_file = os.path.join(output_dir, f"search_results{tag if tag else ''}.txt")
     with open(output_file, "w") as f:
         for acc in sorted(matching_accessions):
