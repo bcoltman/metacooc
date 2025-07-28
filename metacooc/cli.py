@@ -59,13 +59,17 @@ def parse_cli():
         required=True,
         help="Directory where output files will be saved.",
     )
-    
+    req.add_argument(
+        "--tax_profile",
+        required=True,
+        help="Taxonomic profile TSV file.",
+    )
     # Optional arguments group
     opt = format_sub.add_argument_group("optional arguments")
     
     opt.add_argument(
-        "--tax_profile",
-        help="Taxonomic profile TSV file.",
+        "--sample_to_biome_file",
+        help="A CSV file linking SRA accessions to biome classifications.",
     )
     opt.add_argument(
         "--aggregated",
@@ -73,8 +77,8 @@ def parse_cli():
         help="Use the aggregated Ingredients object.",
     )
     opt.add_argument(
-        "--aggregated_pattern",
-        help="Taxonomic level up to which to aggregate (e.g., 'g__').",
+        "--tag",
+        help="Optional tag to append to output filenames for distinction.",
     )
     
     def format_command(args):
@@ -83,8 +87,10 @@ def parse_cli():
         format_data(
             tax_profile=args.tax_profile,
             output_dir=args.output_dir,
+            sample_to_biome_file=args.sample_to_biome_file,
             aggregated=args.aggregated,
-            aggregation_pattern=args.aggregated_pattern,
+            # aggregation_level=args.aggregation_level,
+            tag=args.tag
         )
     
     format_sub.set_defaults(func=format_command)
@@ -97,14 +103,19 @@ def parse_cli():
     req = search_sub.add_argument_group("required arguments")
     req.add_argument(
         "--mode",
-        choices=["taxon", "metadata"],
+        choices=["taxon", "metadata", "biome"],
         required=True,
-        help="Search mode: 'taxon' or 'metadata'.",
+        help="Search mode: 'taxon', 'metadata' or 'biome'.",
     )
     req.add_argument(
         "--search_string",
         required=True,
-        help="Search string to query.",
+        type=str,
+        help=(
+        "Search string to query as a single token. "
+        "Use '|' to separate OR‑terms and '+' to separate AND‑terms. "
+        "Examples: 'foo|bar', 'foo+baz', 'foo|bar+baz|qux'."
+        )
     )
     req.add_argument(
         "--output_dir",
@@ -133,12 +144,12 @@ def parse_cli():
     )
     opt.add_argument(
         "--column_names",
-        help="Column name for exact index (if required).",
+        help="Restrict metadata search to a these columns.",
     )
     opt.add_argument(
         "--strict",
         action="store_true",
-        help="Restrict search to a reduced set of columns.",
+        help="Restrict metadata search to a pre-defined reduced set of columns.",
     )
     opt.add_argument(
         "--inverse",
@@ -356,14 +367,19 @@ def parse_cli():
     req = cooc_sub.add_argument_group("required arguments")
     req.add_argument(
         "--mode",
-        choices=["taxon", "metadata"],
+        choices=["taxon", "metadata", "biome"],
         required=True,
-        help="Search mode: 'taxon' or 'metadata'.",
+        help="Search mode: 'taxon', 'metadata' or 'biome'.",
     )
     req.add_argument(
         "--search_string",
         required=True,
-        help="Search string to query.",
+        type=str,
+        help=(
+        "Search string to query as a single token. "
+        "Use '|' to separate OR‑terms and '+' to separate AND‑terms. "
+        "Examples: 'foo|bar', 'foo+baz', 'foo|bar+baz|qux'."
+        )
     )
     req.add_argument(
         "--output_dir",
@@ -433,10 +449,6 @@ def parse_cli():
             "of results."
         ),
     )
-    # opt.add_argument(
-        # "--accessions_file",
-        # help="File containing accession numbers to filter samples.",
-    # )
     # Ratio-related optional
     opt.add_argument(
         "--ratio_threshold",
@@ -444,14 +456,6 @@ def parse_cli():
         default=0.5,
         help="Minimum ratio value to keep (default: %(default)s).",
     )
-    # opt.add_argument(
-        # "--filtered_file",
-        # help="Path to the filtered Ingredients pickle file.",
-    # )
-    # opt.add_argument(
-        # "--reference_file",
-        # help="Path to the reference Ingredients pickle file.",
-    # )
     opt.add_argument(
         "--sandpiper_version",
         default=None,
@@ -466,6 +470,59 @@ def parse_cli():
         run_cooccurrence(args)
     
     cooc_sub.set_defaults(func=cooccurrence_command)
+    
+    # ----------------------------
+    # BIOME_DISTRIBUTION SUBCOMMAND
+    # ----------------------------
+    biome_sub = subparsers.add_parser(
+        "biome_distribution", help="Return the biome distribution of Ingredients."
+    )
+    
+    req = biome_sub.add_argument_group("required arguments")
+    req.add_argument(
+        "--output_dir",
+        required=True,
+        help="Directory where output files will be saved.",
+    )
+    
+    opt = biome_sub.add_argument_group("optional arguments")
+    opt.add_argument(
+        "--data_dir",
+        default=DEFAULT_DATA_DIR,
+        help="Directory containing data files (default: %(default)s)",
+    )
+    opt.add_argument(
+        "--tag",
+        default="",
+        help="Optional tag to append to output filenames for distinction.",
+    )
+    opt.add_argument(
+        "--custom_ingredients",
+        help="Initial Ingredients file to use instead of default"
+    )
+    opt.add_argument(
+        "--aggregated",
+        action="store_true",
+        help="Use the aggregated Ingredients object.",
+    )
+    opt.add_argument(
+        "--sandpiper_version",
+        default=None,
+        help="Specify which data version to load (default: latest)"
+    )
+    opt.add_argument(
+        "--return_all_taxa",
+        action="store_true",
+        help="Specify whether to return distributions of all taxa (Not aggregated - original values) (default: True)"
+    )
+    def biome_distribution_command(args):
+        from metacooc.pipelines import run_biome_distribution
+        
+        args.tag = f"_{args.tag}" if args.tag else ""
+        # Bundle everything into one args object for the pipeline
+        run_biome_distribution(args)
+    
+    biome_sub.set_defaults(func=biome_distribution_command)
     
     # --------------
     # Parse & Dispatch

@@ -6,29 +6,18 @@ Converts a raw sandpiper taxonomic profile (TSV file) into two sparse matrix rep
     1. A raw Ingredients object (species-level only)
     2. An aggregated Ingredients object (with additional taxonomic levels added)
 
-Also provides functions for building metadata indices:
-    - build_broad_metadata_index: Creates a tokenized index over specified metadata columns.
-    - build_exact_metadata_index: Creates an index for exact matching on a given column.
-
-Usage (for formatting):
-  metacooc format --data_dir /path/to/data --output_dir /path/to/out [--pattern g__]
-
-The script expects a file "sandpiper.tsv" in the data directory.
 """
 
-import os
-import re
-import argparse
-import pickle
-import copy
-
-import pandas as pd
 import numpy as np
+import os
+import pandas as pd
+import pickle
+import re
 from scipy.sparse import csr_matrix, hstack
+import warnings
 
-from metacooc.pantry import Ingredients  # Simple container class for your data
+from metacooc.pantry import Ingredients
 
-# --- Functions for creating Ingredients objects ---
 
 def build_indices(tax_profile: str):
     """
@@ -118,7 +107,7 @@ def create_sparse_matrices(tax_profile: str, sample_to_index: dict, taxon_to_ind
     
     return presence_matrix, coverage_matrix
 
-def format_ingredients(tax_profile: str):
+def format_ingredients(tax_profile: str, sample_to_biome=None):
     """
     Process the sandpiper TSV file and return a raw Ingredients instance.
     """
@@ -126,94 +115,146 @@ def format_ingredients(tax_profile: str):
     presence_matrix, coverage_matrix = create_sparse_matrices(tax_profile, sample_to_index, taxon_to_index, samples, taxa)
     
     # Generate the raw Ingredients object.
-    raw_ingredients = Ingredients(samples, taxa, presence_matrix, coverage_matrix)
+    raw_ingredients = Ingredients(samples, taxa, presence_matrix, coverage_matrix, sample_to_biome)
     
     return raw_ingredients
-    
 
-def format_data(tax_profile: str, output_dir: str, aggregated=False, aggregation_pattern=None):
+def format_data(tax_profile: str, output_dir: str, sample_to_biome_file=None, aggregated=False, tag=''):
     """
     Process the sandpiper TSV file and return a raw Ingredients instance.
     """
+    # Load either the custom sample_to_biome_file if specified, or load from data_dir
+    if sample_to_biome_file:
+        if os.path.exists(sample_to_biome_file):
+            df = pd.read_csv(sample_to_biome_file)
+            sample_to_biome = dict(zip(df["accession"], df["biome"]))
+                # with open(sample_to_biome_file, "rb") as f:
+                # sample_to_biome = pickle.load(f)
+        else:
+            warnings.warn(
+                f"Biome mapping file '{sample_to_biome_file}' not found",
+                UserWarning
+            )
     
     # Generate the raw Ingredients object.
-    raw_ingredients = format_ingredients(tax_profile)
+    raw_ingredients = format_ingredients(tax_profile, sample_to_biome)
+    
+    os.makedirs(output_dir, exist_ok=True)
     
     # Save both objects.
-    output_raw = os.path.join(output_dir, "ingredients_raw.pkl")
+    output_raw = os.path.join(output_dir, f"ingredients_raw{'_' + tag if tag else ""}.pkl")
     
     with open(output_raw, "wb") as f:
         pickle.dump(raw_ingredients, f)
     
     print(f"Raw ingredients saved to {output_raw}")
     
-    if aggregated & (aggregation_pattern is not None):
+    if aggregated:
         # Generate the aggregated Ingredients object.
-        aggregated_ingredients = copy.deepcopy(raw_ingredients)
-        aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients, aggregation_pattern=aggregation_pattern)
+        aggregated_ingredients = raw_ingredients.copy()
         
-        output_agg = os.path.join(output_dir, "ingredients_aggregated.pkl")
-        
+        aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients)
+        output_agg = os.path.join(output_dir, f"ingredients_aggregated{'_' + tag if tag else ''}.pkl")
         with open(output_agg, "wb") as f:
             pickle.dump(aggregated_ingredients, f)
         print(f"Aggregated ingredients saved to {output_agg}")
 
-def add_taxa_levels_to_ingredients(ingredients: Ingredients, aggregation_pattern="g__") -> Ingredients:
+
+
+def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
     """
-    Add aggregated taxonomic levels to an Ingredients instance.
-    This function splits the raw taxa strings, extracts the level specified by the regex aggregation_pattern,
-    and computes a new aggregated presence matrix which is concatenated to the original.
-    
-    Args:
-        ingredients (Ingredients): The Ingredients instance to process.
-        aggregation_pattern (str): Regex aggregation_pattern for taxonomic level aggregation (default: "g__").
-    
-    Returns:
-        Ingredients: Updated Ingredients with extra aggregated columns.
+    Flat direct mapping taxonomy aggregation while preserving 'Root; d__…' as own entry:
+    - original taxa (finest resolution) kept as-is
+    - for each higher rank (genus → family → order → class → phylum → domain),
+      build a single mapping from every raw taxon to its ancestor at that rank
+      and aggregate in one matmul.
     """
-    level_names = ["Root", "d__", "p__", "c__", "o__", "f__", "g__", "s__"]
+    # 1) Grab raw taxa and split so first column is 'Root; d__…'
+    raw_taxa = list(ingredients.taxa)
+    split_regex = r"; (?=(?:p__|c__|o__|f__|g__|s__))"
+    taxa_df = pd.Series(raw_taxa).str.split(split_regex, expand=True)
     
-    taxa_series = pd.Series(ingredients.taxa)
-    taxa_df = taxa_series.str.split("; ", expand=True)
-    taxa_df.columns = level_names[:taxa_df.shape[1]]
+    # Assign column prefixes and true codes
+    col_prefixes = ["Root; d__", "p__", "c__", "o__", "f__", "g__", "s__"]
+    rank_codes   = ["d__",      "p__",  "c__",  "o__",  "f__",  "g__",  "s__"]
+    taxa_df.columns = col_prefixes[: taxa_df.shape[1]]
     
-    target_level = next((level for level in level_names if re.fullmatch(aggregation_pattern, level)), None)
-    if not target_level or target_level not in taxa_df.columns:
-        print(f"No matching level found for aggregation_pattern: {aggregation_pattern}")
-        return ingredients
+    # 2) Build lineage_map from raw strings for full-label lookup
+    lineage_map = {}
+    for raw in raw_taxa:
+        parts = raw.split("; ")
+        for j, val in enumerate(parts):
+            code = val[:3]
+            lineage_map[(code, val)] = lineage_map.get(
+                (code, val),
+                "; ".join(parts[: j + 1])
+            )
     
-    higher_level_taxa = taxa_df[target_level]
-    unique_levels = higher_level_taxa.dropna().unique()
+    # 3) Original matrices
+    raw_P = ingredients.presence_matrix  # (n_samples, n_raw)
+    raw_C = ingredients.coverage_matrix  # (n_samples, n_raw)
     
-    num_taxa = len(ingredients.taxa)
-    num_unique_levels = len(unique_levels)
-    row_indices = []
-    col_indices = []
-    data = []
+    # Initialize blocks with raw data
+    P_blocks = [raw_P]
+    C_blocks = [raw_C]
+    labels   = list(raw_taxa)
+    n_raw    = len(raw_taxa)
     
-    level_to_index = {level: idx for idx, level in enumerate(unique_levels)}
-    
-    for taxon_idx, level in enumerate(higher_level_taxa):
-        if pd.isnull(level):
+    # 4) Flat mapping per higher rank
+    # iterate through each prefix+code pair
+    for col_prefix, code in zip(col_prefixes, rank_codes):
+        # skip species level (already raw)
+        if code == "s__":
             continue
-        level_idx = level_to_index[level]
-        row_indices.append(taxon_idx)
-        col_indices.append(level_idx)
-        data.append(1)
-    
-    T = csr_matrix((data, (row_indices, col_indices)), shape=(num_taxa, num_unique_levels), dtype=int)
-    P = ingredients.presence_matrix
-    L = P @ T
-    L.data = np.ones_like(L.data) # This binarizes the aggregated presence values.
-    
-    aggregated_taxa = list(unique_levels)
-    new_taxa = ingredients.taxa + aggregated_taxa
-    
-    new_presence_matrix = hstack([P, L], format='csr')
-    
-    C = ingredients.coverage_matrix
-    M = C @ T
+        if col_prefix not in taxa_df.columns:
+            print(col_prefix)
+            continue
         
-    new_coverage_matrix = hstack([C, M], format='csr')
+        # series of labels at this rank (e.g. 'Root; d__Bacteria', 'p__Proteobacteria', ...)
+        series = taxa_df[col_prefix]
+        mask   = series.notna()
+        if not mask.any():
+            continue
+            
+        rows = series.index[mask].tolist()
+        labels_at_rank = sorted(series[mask].unique())
+        
+        # build sparse mapping T: raw -> labels_at_rank
+        cols = [labels_at_rank.index(series[i]) for i in rows]
+        data = np.ones(len(rows), dtype=int)
+        T = csr_matrix((data, (rows, cols)), shape=(n_raw, len(labels_at_rank)), dtype=int)
+        
+        # aggregate presence & coverage
+        P_cur = raw_P @ T
+        P_cur.data[:] = 1
+        C_cur = raw_C @ T
+        
+        # label columns: use lineage_map with correct lookup for root case
+        agg_labels = []
+        for lab in labels_at_rank:
+            # for domain: lab == 'Root; d__X'
+            if code == "d__" and lab.startswith("Root; "):
+                # strip 'Root; ' to get 'd__X'
+                lookup = lab.split("; ", 1)[1]
+            else:
+                lookup = lab
+            full_lin = lineage_map[(code, lookup)]
+            agg_labels.append(f"{full_lin} AGGREGATED")
+            
+        # collect
+        P_blocks.append(P_cur)
+        C_blocks.append(C_cur)
+        labels.extend(agg_labels)
     
-    return Ingredients(ingredients.samples, new_taxa, new_presence_matrix, new_coverage_matrix)
+    # 5) Stitch everything side by side
+    full_P = hstack(P_blocks, format="csr")
+    full_C = hstack(C_blocks, format="csr")
+    
+    return Ingredients(
+        samples=ingredients.samples,
+        taxa=labels,
+        presence_matrix=full_P,
+        coverage_matrix=full_C,
+        sample_to_biome=ingredients.sample_to_biome,
+    )
+

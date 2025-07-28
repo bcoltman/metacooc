@@ -29,41 +29,6 @@ import pandas as pd
 from metacooc.pantry import load_ingredients 
 
 
-
-# def load_ingredients(data_dir=None, filtered_file=None, reference_file=None):
-    # """
-    # Load the filtered and reference Ingredients objects.
-
-    # Parameters:
-        # data_dir (str): Directory to search for default files if file paths are not provided.
-        # filtered_file (str): Path to the filtered Ingredients pickle.
-        # reference_file (str): Path to the reference Ingredients pickle.
-
-    # Returns:
-        # tuple: (reference, filtered) Ingredients objects.
-    # """
-    # if filtered_file:
-        # if not os.path.exists(filtered_file):
-            # raise FileNotFoundError(f"Filtered Ingredients file '{filtered_file}' not found.")
-    # elif data_dir:
-        # filtered_file = os.path.join(data_dir, "ingredients_all_filtered.pkl")
-    # else:
-        # raise ValueError("Either 'data_dir' or 'filtered_file' must be provided.")
-        
-    # if reference_file:
-        # if not os.path.exists(reference_file):
-            # raise FileNotFoundError(f"Reference Ingredients file '{reference_file}' not found.")
-    # elif data_dir:
-        # reference_file = os.path.join(data_dir, "ingredients_counts_filtered.pkl")
-    # else:
-        # raise ValueError("Either 'data_dir' or 'reference_file' must be provided.")
-    
-    # with open(filtered_file, "rb") as f:
-        # filtered = pickle.load(f)
-    # with open(reference_file, "rb") as f:
-        # reference = pickle.load(f)
-    # return reference, filtered
-
 def calculate_ratios_obj(filtered, reference, ratio_threshold=None):
     """
     In-memory ratio calculation.

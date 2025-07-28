@@ -21,6 +21,7 @@ If file paths for ingredients or metadata indices are not explicitly provided, d
 """
 
 import os
+import pandas as pd
 
 from metacooc.search import search_data_obj
 from metacooc.filter import filter_data_obj
@@ -47,6 +48,8 @@ def run_cooccurrence(args):
              - For taxon mode, the Ingredients object is searched (optionally restricting by ranks_for_search_inclusion).
              - For metadata mode, a default metadata index is loaded from args.data_dir (broad or broad_strict)
                unless args.index_file is provided.
+             - For biome mode, filters based on the pre-defined biomes specified by manual allocation of accessions 
+               to broad metadata categories
       3. Prints the number of matching accessions.
       4. Applies count-based filtering via filter_data_obj() to create two objects:
              - reference_ingredients: filtered only by min_taxa_count and min_sample_count.
@@ -104,11 +107,12 @@ def run_cooccurrence(args):
         print(f"Pipeline: Ratios saved to {output_path}")
     else:
         print(f"Pipeline: Applying threshold filtering: ratio >= {args.ratio_threshold}.")
-        # Assume calculate_ratios_obj() returns a tuple when threshold filtering is applied.
         ratios_df, filtered_ratios_df = calculate_ratios_obj(filtered_ingredients, reference_ingredients, args.ratio_threshold)
+        
         output_path = os.path.join(args.output_dir, f"ratios{args.tag}.tsv")
         ratios_df.to_csv(output_path, sep="\t", index=False)
         print(f"Pipeline: Ratios saved to {output_path}")
+        
         filtered_path = os.path.join(args.output_dir, f"filtered_ratios{args.tag}.tsv")
         filtered_ratios_df.to_csv(filtered_path, sep="\t", index=False)
         print(f"Pipeline: Filtered ratios saved to {filtered_path}")
@@ -117,3 +121,30 @@ def run_cooccurrence(args):
     output_plot_file = os.path.join(args.output_dir, f"ratios_plot{args.tag}.png")
     plot_ratios_obj(ratios_df, output_plot_file=output_plot_file, ratio_threshold=args.ratio_threshold)
     print("Pipeline: Plotting complete.")
+
+def run_biome_distribution(args):
+    """
+    Determine and export the biome dsitribution of taxa across all annotated metagenomes
+    """
+    
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.sandpiper_version)
+    biomes, presence, coverage, n_dropped = ingredients.biome_distribution()
+    biome_by_taxa_df = pd.DataFrame(data=presence.todense(), columns=ingredients.taxa, index=biomes)
+    
+    if args.return_all_taxa:
+        output_path = os.path.join(args.output_dir, f"taxa_biome_distribution{args.tag}.tsv")
+        biome_by_taxa_df.T.to_csv(output_path, sep="\t")
+    
+    elif args.aggregated:
+        if not [i for i in biome_by_taxa_df.columns if "agg" in i]:
+            print("WARNING: Ingredients did not contain aggregated taxa. Only species will be output")
+        indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v or "AGG" in v]
+        biome_by_agg_df = biome_by_taxa_df.iloc[:, indices].T
+        output_path = os.path.join(args.output_dir, f"taxa_biome_distribution{"_aggregated" if args.aggregated else ""}{args.tag}.tsv")
+        biome_by_agg_df.T.to_csv(output_path, sep="\t")
+    
+    else:
+        indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v]
+        biome_by_species_df = biome_by_taxa_df.iloc[:, indices].T
+        output_path = os.path.join(args.output_dir, f"taxa_biome_distribution{"_aggregated" if args.aggregated else ""}{args.tag}_species.tsv")
+        biome_by_species_df.to_csv(output_path, sep="\t")
