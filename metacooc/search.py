@@ -202,8 +202,8 @@ def _parse_query(q: str) -> List[List[str]]:
 
 def search_data_obj(
     mode: str,
-    data_dir: str,
     search_string: str,
+    data_dir: str = None,
     ranks_for_search_inclusion=None,
     strict=False,
     column_names=None,
@@ -217,6 +217,10 @@ def search_data_obj(
     if mode == "metadata":
         version = sandpiper_version or LATEST_VERSION
         filenames, _ = get_file_info(version)
+        if not data_dir:
+            raise ValueError(
+                "data_dir must be provided if searching metadata"
+            )
         metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
         if not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
