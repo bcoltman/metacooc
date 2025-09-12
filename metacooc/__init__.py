@@ -15,17 +15,19 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = 'Benjamin L Coltman'
-__author_email__ = 'benjamin.coltman@univie.ac.at'
-__copyright__ = 'Copyright 2025'
-__credits__ = ['Benjamin : Coltman, Daan Speth']
-__description__ = 'Co-occurence patterns from microbial metagenomes'
-__license__ = 'GPL3'
-__maintainer__ = 'Benjamin L Coltman, Daan Speth'
-__maintainer_email__ = 'daan.speth@univie.ac.at'
-__name__ = 'metacooc'
-__python_requires__ = '>=3.8'
-__status__ = 'development'
-__title__ = 'metacooc'
-__url__ = 'https://github.com/bcoltman/metacooc'
-__version__ = '1.0.1'
+from .version import (
+    __version__,
+    __author__,
+    __author_email__,
+    __copyright__,
+    __credits__,
+    __description__,
+    __license__,
+    __maintainer__,
+    __maintainer_email__,
+    __name__,
+    __python_requires__,
+    __status__,
+    __title__,
+    __url__
+)

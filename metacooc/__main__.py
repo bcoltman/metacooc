@@ -37,7 +37,6 @@ def print_help():
     search -> Query the metagenome metadata and taxonomic profiles.
     filter -> Filter the taxonomic profiles by keyword or sample list
     ratio -> Calculate (co)occurrence ratios.
-    list -> Cook up a list of sample accessions based on filtering criteria.
     format -> Format sandpiper output, or other taxonomic profiles, to metacooc input.
     plot -> Generate plots based on the output of other menu items.
     biome_distribution -> Output a TSV file of taxa occurence per pre-determined biomes
@@ -57,7 +56,7 @@ def main():
     elif sys.argv[1] in {'-h', '--h', '-help', '--help'}:
         print_help()
         sys.exit(0)
-    elif sys.argv[1] not in {'download', 'cooccurrence', 'search', 'filter', 'ratio', 'list', 'format', 'plot', 'biome_distribution'}:
+    elif sys.argv[1] not in {'download', 'cooccurrence', 'search', 'filter', 'ratio', 'format', 'plot', 'biome_distribution'}:
         print(f"program not on the menu, choose from the options listed below ")
         print_help()
         sys.exit(0)

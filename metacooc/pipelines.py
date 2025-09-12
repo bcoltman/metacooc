@@ -80,45 +80,50 @@ def run_cooccurrence(args):
     
     # Step 3. Filter the Ingredients object.
     # Create a 'reference' object filtered solely by count thresholds.
-    reference_ingredients = filter_data_obj(
+    reference_ingredients, is_successful = filter_data_obj(
         ingredients,
         accession_set=None,
         min_taxa_count=args.min_taxa_count,
         min_sample_count=args.min_sample_count,
         filter_rank=args.filter_rank
     )
+    if not is_successful:
+        return
+    
     # Create a 'filtered' object further filtered by matching accessions.
-    filtered_ingredients = filter_data_obj(
+    filtered_ingredients, is_successful = filter_data_obj(
         ingredients,
         accession_set=matching_accessions,
         min_taxa_count=args.min_taxa_count,
         min_sample_count=args.min_sample_count,
         filter_rank=args.filter_rank
     )
-
+    if not is_successful:
+        return
+    
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir)
 
     # Step 4. Calculate ratios.
     if args.ratio_threshold is None:
         ratios_df = calculate_ratios_obj(filtered_ingredients, reference_ingredients)
-        output_path = os.path.join(args.output_dir, f"ratios{args.tag}.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}ratios.tsv")
         ratios_df.to_csv(output_path, sep="\t", index=False)
         print(f"Pipeline: Ratios saved to {output_path}")
     else:
         print(f"Pipeline: Applying threshold filtering: ratio >= {args.ratio_threshold}.")
         ratios_df, filtered_ratios_df = calculate_ratios_obj(filtered_ingredients, reference_ingredients, args.ratio_threshold)
         
-        output_path = os.path.join(args.output_dir, f"ratios{args.tag}.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}ratios.tsv")
         ratios_df.to_csv(output_path, sep="\t", index=False)
         print(f"Pipeline: Ratios saved to {output_path}")
         
-        filtered_path = os.path.join(args.output_dir, f"filtered_ratios{args.tag}.tsv")
+        filtered_path = os.path.join(args.output_dir, f"{args.tag}filtered_ratios.tsv")
         filtered_ratios_df.to_csv(filtered_path, sep="\t", index=False)
         print(f"Pipeline: Filtered ratios saved to {filtered_path}")
     
     # Step 5. Plot ratios.
-    output_plot_file = os.path.join(args.output_dir, f"ratios_plot{args.tag}.png")
+    output_plot_file = os.path.join(args.output_dir, f"{args.tag}ratios_plot.png")
     plot_ratios_obj(ratios_df, output_plot_file=output_plot_file, ratio_threshold=args.ratio_threshold)
     print("Pipeline: Plotting complete.")
 
@@ -132,7 +137,7 @@ def run_biome_distribution(args):
     biome_by_taxa_df = pd.DataFrame(data=presence.todense(), columns=ingredients.taxa, index=biomes)
     
     if args.return_all_taxa:
-        output_path = os.path.join(args.output_dir, f"taxa_biome_distribution{args.tag}.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
         biome_by_taxa_df.T.to_csv(output_path, sep="\t")
     
     elif args.aggregated:
@@ -140,11 +145,11 @@ def run_biome_distribution(args):
             print("WARNING: Ingredients did not contain aggregated taxa. Only species will be output")
         indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v or "AGG" in v]
         biome_by_agg_df = biome_by_taxa_df.iloc[:, indices].T
-        output_path = os.path.join(args.output_dir, f"taxa_biome_distribution{"_aggregated" if args.aggregated else ""}{args.tag}.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution{"_aggregated" if args.aggregated else ""}.tsv")
         biome_by_agg_df.T.to_csv(output_path, sep="\t")
     
     else:
         indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v]
         biome_by_species_df = biome_by_taxa_df.iloc[:, indices].T
-        output_path = os.path.join(args.output_dir, f"taxa_biome_distribution{"_aggregated" if args.aggregated else ""}{args.tag}_species.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution{"_aggregated" if args.aggregated else ""}_species.tsv")
         biome_by_species_df.to_csv(output_path, sep="\t")

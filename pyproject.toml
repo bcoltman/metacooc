@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metacooc"
-version = "1.0.1"
+version = {attr = "metacooc.version.__version__"}
 description = "Tool for co-occurrence analysis of microorganisms in metagenomes"
 readme = "README.md"
 license = "GPL-3.0-or-later"

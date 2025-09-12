@@ -38,30 +38,49 @@ def plot_ratios_obj(ratios_df, output_plot_file, ratio_threshold=None):
     
     # Sort the DataFrame by ratio in descending order.
     ratios_df_sorted = ratios_df.sort_values(by='ratio', ascending=False).reset_index(drop=True)
-
+    
+    
     # Create the plot.
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(ratios_df_sorted['ratio'].values, marker='o', markersize=5)
-    ax.set_xlabel('Taxa (ordered by ratio)')
-    ax.set_ylabel('Ratio')
-    ax.set_title('Taxon Ratios')
+    
+    # Set labels with larger font size
+    ax.set_xlabel('Taxa (ordered by ratio)', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Ratio', fontsize=14, fontweight='bold')
+    ax.set_title('Taxon Ratios', fontsize=16, fontweight='bold', pad=20)
+    
+    # Set y-axis limits
     ax.set_ylim(-0.05, 1.05)
-    ax.grid(True)
-
-    # Mark the threshold if provided.
+    
+    # Customize grid appearance
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Customize tick labels
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    
+    # Mark the threshold if provided
     if ratio_threshold is not None:
-        # Identify the last index where ratio is >= threshold.
         threshold_indices = ratios_df_sorted[ratios_df_sorted['ratio'] >= ratio_threshold].index
         if len(threshold_indices) > 0:
             cutoff_index = threshold_indices[-1]
-            ax.axvline(x=cutoff_index, color='red', linestyle='--', label=f'Threshold = {ratio_threshold}')
-            ax.legend()
+            ax.axvline(
+                x=cutoff_index,
+                color='red',
+                linestyle='--',
+                linewidth=2,
+                label=f'Threshold = {ratio_threshold}'
+            )
+            ax.legend(fontsize=12)
         else:
-            print(f"No taxa found with ratio >= {threshold}")
-
+            print(f"No taxa found with ratio >= {ratio_threshold}")
+    
+    # Adjust layout to prevent clipping of labels
     fig.tight_layout()
-    fig.savefig(output_plot_file)
+    
+    # Save the plot
+    fig.savefig(output_plot_file, dpi=300, bbox_inches='tight')
     plt.close(fig)
+    
     print(f"Plot saved to {output_plot_file}")
 
 def plot_ratios(ratios_file, output_dir, ratio_threshold=None, tag=None):
@@ -79,5 +98,5 @@ def plot_ratios(ratios_file, output_dir, ratio_threshold=None, tag=None):
     if not os.path.exists(ratios_file):
         raise FileNotFoundError(f"Ratios file '{ratios_file}' not found.")
     ratios_df = pd.read_csv(ratios_file, sep="\t")
-    output_plot_file = os.path.join(output_dir, f"ratios_plot{tag}.png")
+    output_plot_file = os.path.join(output_dir, f"{tag}ratios_plot.png")
     plot_ratios_obj(ratios_df, output_plot_file=output_plot_file, ratio_threshold=ratio_threshold)

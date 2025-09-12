@@ -10,6 +10,26 @@ DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def positive_int(value):
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not an integer")
+    
+    if ivalue <= 0:
+        raise argparse.ArgumentTypeError(f"{value} is not a positive integer")
+    return ivalue
+
+def validate_ratio_threshold(value):
+    try:
+        value = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not a valid float.")
+    
+    if value < 0.0 or value > 1.0:
+        raise argparse.ArgumentTypeError("Ratio threshold must be between 0 and 1.")
+    return value
+
 def parse_cli():
     parser = argparse.ArgumentParser(
         description="Co-occurrence data of microorganisms based on metagenome detection"
@@ -37,7 +57,7 @@ def parse_cli():
     opt.add_argument(
         "--sandpiper_version",
         default=None,
-        help="Specify which data version to load (default: latest)"
+        help="Specify which data version to load (default: latest). Versions available for download can be listed with 'metacooc download --list_versions'"
     )
     opt.add_argument(
         "--force",
@@ -77,13 +97,13 @@ def parse_cli():
         help="A CSV file linking SRA accessions to biome classifications.",
     )
     opt.add_argument(
+        "--tag",
+        help="Optional tag to prepend to output filenames for distinction.",
+    )
+    opt.add_argument(
         "--aggregated",
         action="store_true",
         help="Use the aggregated Ingredients object.",
-    )
-    opt.add_argument(
-        "--tag",
-        help="Optional tag to append to output filenames for distinction.",
     )
     
     def format_command(args):
@@ -94,7 +114,6 @@ def parse_cli():
             output_dir=args.output_dir,
             sample_to_biome_file=args.sample_to_biome_file,
             aggregated=args.aggregated,
-            # aggregation_level=args.aggregation_level,
             tag=args.tag
         )
     
@@ -105,30 +124,38 @@ def parse_cli():
     # ----------------------------
     search_sub = subparsers.add_parser("search", help="Perform a file-based search.")
     
-    req = search_sub.add_argument_group("required arguments")
+    # Required arguments group
+    req = search_sub.add_argument_group("required arguments (unless --list_column_names is used)")
     req.add_argument(
         "--mode",
         choices=["taxon", "metadata", "biome"],
-        required=True,
         help="Search mode: 'taxon', 'metadata' or 'biome'.",
     )
     req.add_argument(
         "--search_string",
-        required=True,
         type=str,
         help=(
-        "Search string to query as a single token. "
-        "Use '|' to separate OR‑terms and '+' to separate AND‑terms. "
-        "Examples: 'foo|bar', 'foo+baz', 'foo|bar+baz|qux'."
-        )
+            "Search string to query as a single token. "
+            "Use '|' to separate OR-terms and '+' to separate AND-terms. "
+            "Examples: 'foo|bar', 'foo+baz', 'foo|bar+baz|qux'. "
+            "Search string must be wrapped in single or double quotes if it "
+            "contains a special character or space e.g. 's__Escherichia coli'."
+        ),
     )
     req.add_argument(
         "--output_dir",
-        required=True,
         help="Directory where output files will be saved.",
     )
     
     opt = search_sub.add_argument_group("optional arguments")
+    opt.add_argument(
+    "--ranks_for_search_inclusion",
+    choices=["domain", "phylum", "class", "order", "family", "genus", "species"],
+    help=(
+        "Taxa identified at a rank higher than this rank are excluded "
+        "in taxon search mode."
+    ),
+    )
     opt.add_argument(
         "--data_dir",
         default=DEFAULT_DATA_DIR,
@@ -137,44 +164,53 @@ def parse_cli():
     opt.add_argument(
         "--tag",
         default="",
-        help="Optional tag to append to output filenames for distinction.",
-    )
-    opt.add_argument(
-        "--ranks_for_search_inclusion",
-        choices=["domain", "phylum", "class", "order", "family", "genus", "species"],
-        help=(
-            "Taxa identified at a rank higher than this rank are excluded "
-            "in taxon search mode."
-        ),
+        help="Optional tag to prepend to output filenames for distinction.",
     )
     opt.add_argument(
         "--column_names",
-        help="Restrict metadata search to a these columns.",
-    )
-    opt.add_argument(
-        "--strict",
-        action="store_true",
-        help="Restrict metadata search to a pre-defined reduced set of columns.",
-    )
-    opt.add_argument(
-        "--inverse",
-        action="store_true",
-        help="Return inverse of search string.",
+        nargs='+',
+        help="meta mode only: Restrict metadata search to within specified columns. Multiple entries can be specified as e.g. --column_names 'hello' 'world'",
     )
     opt.add_argument(
         "--custom_ingredients",
-        help="Ingredients file to use instead of default"
+        help="Path to an Ingredients file to use instead of default. This Ingredients will be used, regardless of whether data_dir is specified. "
     )
     opt.add_argument(
         "--sandpiper_version",
         default=None,
-        help="Specify which data version to load (default: latest)"
+        help="Specify which data version to load (default: latest). Versions available for download can be listed with 'metacooc download --list_versions'"
+    )
+    opt.add_argument(
+        "--strict",
+        action="store_true",
+        help="meta mode only: Restrict metadata search to within a pre-defined and reduced set of columns i.e. ['acc', 'organism', 'env_biome_sam', 'env_feature_sam','env_material_sam', 'biosamplemodel_sam']",
+    )
+    opt.add_argument(
+        "--inverse",
+        action="store_true",
+        help="meta mode only: Return inverse of search e.g. if using search_term 'soil' in metadata mode, then it will return all entries without soil.",
+    )
+    
+    # Standalone argument for listing column names
+    search_sub.add_argument(
+        "--list_column_names",
+        action="store_true",
+        help="meta mode only: WARNING: Will produce lots of output! List available column names from NCBI metadata",
     )
     
     def search_command(args):
         from metacooc.search import search_data
         
-        args.tag = f"_{args.tag}" if args.tag else ""
+        # If --list_column_names is specified, skip checking for required arguments
+        if not args.list_column_names:
+            if not args.mode or not args.search_string or not args.output_dir:
+                search_sub.error("The following arguments are required unless --list_column_names is used: --mode, --search_string, --output_dir")
+                
+        if args.aggregated:
+            args.tag = f"{args.tag}_aggregated_" if args.tag else "aggregated_"
+        else:
+            args.tag = f"{args.tag}_" if args.tag else ""
+        
         search_data(
             mode=args.mode,
             data_dir=args.data_dir,
@@ -186,23 +222,26 @@ def parse_cli():
             inverse=args.inverse,
             tag=args.tag,
             custom_ingredients=args.custom_ingredients,
-            sandpiper_version=args.sandpiper_version            
+            sandpiper_version=args.sandpiper_version,
+            list_column_names=args.list_column_names,
         )
-    
+        
     search_sub.set_defaults(func=search_command)
     
     # ----------------------------
     # FILTER SUBCOMMAND
     # ----------------------------
-    filter_sub = subparsers.add_parser("filter", help="Filter data by accession numbers.")
-    
+    filter_sub = subparsers.add_parser("filter", help="Filter data by accession numbers or other criteria.")
+
+    # Required arguments group
     req = filter_sub.add_argument_group("required arguments")
     req.add_argument(
         "--output_dir",
         required=True,
         help="Directory where output files will be saved.",
     )
-    
+
+    # Optional arguments group
     opt = filter_sub.add_argument_group("optional arguments")
     opt.add_argument(
         "--data_dir",
@@ -212,22 +251,21 @@ def parse_cli():
     opt.add_argument(
         "--tag",
         default="",
-        help="Optional tag to append to output filenames for distinction.",
+        help="Optional tag to prepend to output filenames for distinction.",
     )
     opt.add_argument(
         "--min_taxa_count",
-        type=int,
+        type=positive_int,
         help="Minimum number of taxa a sample must have to be included.",
     )
     opt.add_argument(
         "--min_sample_count",
-        type=int,
+        type=positive_int,
         help="Minimum number of samples in which a taxon must be present.",
     )
     opt.add_argument(
-        "--aggregated",
-        action="store_true",
-        help="Use the aggregated Ingredients object.",
+        "--accessions_file",
+        help="File containing accession numbers to filter by.",
     )
     opt.add_argument(
         "--filter_rank",
@@ -238,23 +276,32 @@ def parse_cli():
         ),
     )
     opt.add_argument(
-        "--accessions_file",
-        help="File containing accession numbers to filter samples.",
-    )
-    opt.add_argument(
         "--custom_ingredients",
-        help="Ingredients file to use instead of default"
+        help="Ingredients file to use instead of default",
     )
     opt.add_argument(
         "--sandpiper_version",
         default=None,
-        help="Specify which data version to load (default: latest)"
+        help="Specify which data version to load (default: latest). Versions available for download can be listed with 'metacooc download --list_versions'",
+    )
+    opt.add_argument(
+        "--aggregated",
+        action="store_true",
+        help="Use the aggregated Ingredients object.",
     )
     
     def filter_command(args):
         from metacooc.filter import filter_data
         
-        args.tag = f"_{args.tag}" if args.tag else ""
+        # Validate that at least one filtering option is provided
+        if not any([args.min_taxa_count, args.min_sample_count, args.accessions_file, args.filter_rank]):
+            filter_sub.error("At least one of the following arguments is required: --min_taxa_count, --min_sample_count, --accessions_file, or --filter_rank")
+        
+        if args.aggregated:
+            args.tag = f"{args.tag}_aggregated_" if args.tag else "aggregated_"
+        else:
+            args.tag = f"{args.tag}_" if args.tag else ""
+        
         filter_data(
             accessions_file=args.accessions_file,
             data_dir=args.data_dir,
@@ -265,7 +312,7 @@ def parse_cli():
             filter_rank=args.filter_rank,
             tag=args.tag,
             custom_ingredients=args.custom_ingredients,
-            sandpiper_version=args.sandpiper_version
+            sandpiper_version=args.sandpiper_version,
         )
     
     filter_sub.set_defaults(func=filter_command)
@@ -296,11 +343,11 @@ def parse_cli():
     opt.add_argument(
         "--tag",
         default="",
-        help="Optional tag to append to output filenames for distinction.",
+        help="Optional tag to prepend to output filenames for distinction.",
     )
     opt.add_argument(
         "--ratio_threshold",
-        type=float,
+        type=validate_ratio_threshold,
         default=0.5,
         help="Minimum ratio value to keep (default: %(default)s).",
     )
@@ -308,7 +355,7 @@ def parse_cli():
     def ratio_command(args):
         from metacooc.ratios import calculate_ratios
         
-        args.tag = f"_{args.tag}" if args.tag else ""
+        args.tag = f"{args.tag}_" if args.tag else ""
         calculate_ratios(
             reference_ingredients=args.reference_file,
             filtered_ingredients=args.filtered_file,
@@ -340,19 +387,19 @@ def parse_cli():
     opt.add_argument(
         "--tag",
         default="",
-        help="Optional tag to append to output filenames for distinction.",
+        help="Optional tag to prepend to output filenames for distinction.",
     )
     opt.add_argument(
         "--ratio_threshold",
-        type=float,
+        type=validate_ratio_threshold,
         default=0.5,
-        help="Minimum ratio value to keep (default: %(default)s).",
+        help="Ratio threshold to include on plot (default: %(default)s).",
     )
     
     def plot_command(args):
         from metacooc.plot import plot_ratios
         
-        args.tag = f"_{args.tag}" if args.tag else ""
+        args.tag = f"{args.tag}_" if args.tag else ""
         plot_ratios(
             ratios_file=args.ratios_file,
             output_dir=args.output_dir,
@@ -401,7 +448,7 @@ def parse_cli():
     opt.add_argument(
         "--tag",
         default="",
-        help="Optional tag to append to output filenames for distinction.",
+        help="Optional tag to prepend to output filenames for distinction.",
     )
     # Search-related optional
     opt.add_argument(
@@ -418,7 +465,8 @@ def parse_cli():
     )
     opt.add_argument(
         "--column_names",
-        help="Column name for exact index (if required).",
+        nargs='+',
+        help="meta mode only: Restrict metadata search to within specified columns. Multiple entries can be specified as e.g. --column_names 'hello' 'world'",
     )
     opt.add_argument(
         "--strict",
@@ -433,12 +481,12 @@ def parse_cli():
     # Filter-related optional
     opt.add_argument(
         "--min_taxa_count",
-        type=int,
+        type=positive_int,
         help="Minimum number of taxa a sample must have to be included.",
     )
     opt.add_argument(
         "--min_sample_count",
-        type=int,
+        type=positive_int,
         help="Minimum number of samples in which a taxon must be present.",
     )
     opt.add_argument(
@@ -457,20 +505,23 @@ def parse_cli():
     # Ratio-related optional
     opt.add_argument(
         "--ratio_threshold",
-        type=float,
+        type=validate_ratio_threshold,
         default=0.5,
-        help="Minimum ratio value to keep (default: %(default)s).",
+        help="Minimum ratio value to keep in filtered output and to plot on the output plot (default: %(default)s).",
     )
     opt.add_argument(
         "--sandpiper_version",
         default=None,
-        help="Specify which data version to load (default: latest)"
+        help="Specify which data version to load (default: latest). Versions available for download can be listed with 'metacooc download --list_versions'"
     )
     
     def cooccurrence_command(args):
         from metacooc.pipelines import run_cooccurrence
         
-        args.tag = f"_{args.tag}" if args.tag else ""
+        if args.aggregated:
+            args.tag = f"{args.tag}_aggregated_" if args.tag else "aggregated_"
+        else:
+            args.tag = f"{args.tag}_" if args.tag else ""
         # Bundle everything into one args object for the pipeline
         run_cooccurrence(args)
     
@@ -499,21 +550,21 @@ def parse_cli():
     opt.add_argument(
         "--tag",
         default="",
-        help="Optional tag to append to output filenames for distinction.",
+        help="Optional tag to prepend to output filenames for distinction.",
     )
     opt.add_argument(
         "--custom_ingredients",
         help="Initial Ingredients file to use instead of default"
     )
     opt.add_argument(
+        "--sandpiper_version",
+        default=None,
+        help="Specify which data version to load (default: latest). Versions available for download can be listed with 'metacooc download --list_versions'"
+    )
+    opt.add_argument(
         "--aggregated",
         action="store_true",
         help="Use the aggregated Ingredients object.",
-    )
-    opt.add_argument(
-        "--sandpiper_version",
-        default=None,
-        help="Specify which data version to load (default: latest)"
     )
     opt.add_argument(
         "--return_all_taxa",
@@ -523,7 +574,10 @@ def parse_cli():
     def biome_distribution_command(args):
         from metacooc.pipelines import run_biome_distribution
         
-        args.tag = f"_{args.tag}" if args.tag else ""
+        if args.aggregated:
+            args.tag = f"{args.tag}_aggregated_" if args.tag else "aggregated_"
+        else:
+            args.tag = f"{args.tag}_" if args.tag else ""
         # Bundle everything into one args object for the pipeline
         run_biome_distribution(args)
     

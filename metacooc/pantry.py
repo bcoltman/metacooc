@@ -256,7 +256,13 @@ def load_ingredients(
             return custom_ingredients
         filepath = custom_ingredients
     
+    
     if not os.path.exists(filepath):
+        if custom_ingredients:
+            raise FileNotFoundError(
+            f"{custom_ingredients} is either not found or isn't an Ingredients object"
+            )
+        
         avail = ", ".join(sorted(RELEASES.keys()))
         raise FileNotFoundError(
             f"Ingredients file '{filepath}' not found.\n"

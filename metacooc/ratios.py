@@ -99,7 +99,7 @@ def calculate_ratios(reference_ingredients,
     if ratio_threshold is None:
         ratios_df = calculate_ratios_obj(filtered, reference)
         
-        output_path = os.path.join(output_dir, f"ratios{tag}.tsv")
+        output_path = os.path.join(output_dir, f"{tag}ratios.tsv")
         ratios_df.to_csv(output_path, sep="\t", index=False)
         print(f"Ratios saved to {output_path}")
         
@@ -107,10 +107,10 @@ def calculate_ratios(reference_ingredients,
         print(f"Applied threshold filtering: ratio >= {ratio_threshold}.")
         ratios_df, filtered_df = calculate_ratios_obj(filtered, reference, ratio_threshold)
         
-        output_path = os.path.join(output_dir, f"ratios{tag}.tsv")
+        output_path = os.path.join(output_dir, f"{tag}ratios.tsv")
         ratios_df.to_csv(output_path, sep="\t", index=False)
         print(f"Ratios saved to {output_path}")
         
-        output_path = os.path.join(output_dir, f"filtered_ratios{tag}.tsv")
-        ratios_df.to_csv(output_path, sep="\t", index=False)
+        output_path = os.path.join(output_dir, f"{tag}filtered_ratios.tsv")
+        filtered_df.to_csv(output_path, sep="\t", index=False)
         print(f"Filtered ratios saved to {output_path}")

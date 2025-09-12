@@ -81,7 +81,8 @@ def get_column_indices(metadata_file, column_names, delimiter="\t"):
     indices = []
     for column_name in column_names:
         if column_name not in headers:
-            raise ValueError(f"Column '{column_name}' not found in metadata file.")
+            print(f"Column '{column_name}' not found in metadata file.")
+            # raise ValueError(f"Column '{column_name}' not found in metadata file.")
         indices.append(headers.index(column_name) + 1)  # Convert 0-based to 1-based index for AWK
         
     return indices
@@ -103,6 +104,7 @@ def grep_metadata(search_string, metadata_file, column_names=None, delimiter="\t
         set: A set of matching accession numbers.
     """
     if not os.path.exists(metadata_file):
+        f"Column '{column_name}' not found in metadata file."
         raise FileNotFoundError(f"Metadata file '{metadata_file}' not found.")
         
     search_string = search_string.strip().lower()
@@ -200,6 +202,7 @@ def _parse_query(q: str) -> List[List[str]]:
             groups.append(terms)
     return groups
 
+
 def search_data_obj(
     mode: str,
     search_string: str,
@@ -275,7 +278,7 @@ def search_data_obj(
     return total_hits
 
 def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
-                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, sandpiper_version=None):
+                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, sandpiper_version=None, list_column_names=False):
     """
     File‑based search wrapper for metacooc.
     
@@ -293,7 +296,7 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     You can also invert the match by passing `inverse=True` in any mode.
     
     The results (one accession per line) are written to
-        {output_dir}/search_results{tag}.txt
+        {output_dir}/{tag}search_results.txt
     
     Parameters
     ----------
@@ -325,6 +328,22 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     set
         The set of matching accession IDs (written to the output file).
     """
+    if list_column_names:
+            
+        version = sandpiper_version or LATEST_VERSION
+        filenames, _ = get_file_info(version)
+        if not data_dir:
+            raise ValueError(
+                "data_dir must be provided if searching metadata"
+            )
+        metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
+        if not os.path.exists(metadata_file):
+            raise FileNotFoundError(f"Missing '{metadata_file}'")
+        with open(metadata_file, "r") as f:
+            headers = f.readline().strip().split("\t")
+            print(headers)
+        return
+    
     matching_accessions = search_data_obj(mode,
                                           search_string, 
                                           data_dir, 
@@ -338,7 +357,7 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
         
-    output_file = os.path.join(output_dir, f"search_results{tag}.txt")
+    output_file = os.path.join(output_dir, f"{tag}search_results.txt")
     with open(output_file, "w") as f:
         for acc in sorted(matching_accessions):
             f.write(f"{acc}\n")

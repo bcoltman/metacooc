@@ -142,7 +142,7 @@ def format_data(tax_profile: str, output_dir: str, sample_to_biome_file=None, ag
     os.makedirs(output_dir, exist_ok=True)
     
     # Save both objects.
-    output_raw = os.path.join(output_dir, f"ingredients_raw{'_' + tag if tag else ""}.pkl")
+    output_raw = os.path.join(output_dir, f"{tag}ingredients_raw.pkl")
     
     with open(output_raw, "wb") as f:
         pickle.dump(raw_ingredients, f)
@@ -154,7 +154,7 @@ def format_data(tax_profile: str, output_dir: str, sample_to_biome_file=None, ag
         aggregated_ingredients = raw_ingredients.copy()
         
         aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients)
-        output_agg = os.path.join(output_dir, f"ingredients_aggregated{'_' + tag if tag else ''}.pkl")
+        output_agg = os.path.join(output_dir, f"{tag}ingredients_aggregated.pkl")
         with open(output_agg, "wb") as f:
             pickle.dump(aggregated_ingredients, f)
         print(f"Aggregated ingredients saved to {output_agg}")
