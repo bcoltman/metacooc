@@ -40,12 +40,3 @@ def get_file_info(version):
     }
     
     return filenames, download_urls
-    
-        # "ingredients_aggregated_genus": f"ingredients_aggregated_genus_{version}.pkl",
-        # "ingredients_aggregated_family": f"ingredients_aggregated_family_{version}.pkl",
-        # "ingredients_aggregated_order": f"ingredients_aggregated_order_{version}.pkl",
-        # "ingredients_aggregated_class": f"ingredients_aggregated_class_{version}.pkl",
-        # "ingredients_aggregated_phylum": f"ingredients_aggregated_phylum_{version}.pkl",
-        # "ingredients_aggregated_domain": f"ingredients_aggregated_domain_{version}.pkl",
-        
-        # filenames["ingredients_aggregated_genus"]: f"{base_url}/{filenames['ingredients_aggregated']}.gz?download=1",

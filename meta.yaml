@@ -1,34 +1,119 @@
+{% set name = "metacooc" %}
+{% set version = "1.0.1" %}
+
 package:
-  name: metacooc
-  version: "{{ environ.get('CIRCLE_TAG', '0.1.0') }}"
+  name: {{ name|lower }}
+  version: {{ version }}
 
 source:
-  url: https://pypi.io/packages/source/m/metacooc/metacooc-{{ version }}.tar.gz
-  sha256: <your sha256 here>
+  # Prefer PyPI sdist for reproducible builds:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  sha256: d58439c548433adcda98e695be53e526ba940a4b9c44fb9a05d92cd495cdd47f  # <- update if you switch to PyPI sdist
 
 build:
   noarch: python
   number: 0
-  script: "{{ PYTHON }} -m pip install . --no-deps -vv"
-  skip: True  # [py<35]
+  skip: true  # [py<38]
+  script: {{ PYTHON }} -m pip install . -vv
 
 requirements:
   host:
-    - python
+    - python >=3.8
     - pip
   run:
-    - python
-    - pandas
+    - python >=3.8
     - numpy
+    - pandas
     - scipy
     - matplotlib
-    - requests
 
 test:
   imports:
     - metacooc
+  commands:
+    - metacooc --help
+    - pip check
+  requires:
+    - pip
 
 about:
-  home: "https://github.com/bcoltman/metacooc"
-  license: GPL-3.0+
-  summary: "Co-occurrence analysis of microorganisms in metagenomes."
+  home: https://github.com/bcoltman/metacooc
+  license: GPL-3.0-or-later
+  license_file: LICENSE
+  summary: Co-occurrence analysis of microorganisms in metagenomes.
+  doc_url: https://metacooc.readthedocs.io
+  dev_url: https://github.com/bcoltman/metacooc
+
+extra:
+  recipe-maintainers:
+    - bcoltman
+    - dspeth
+
+# context:
+  # name: metacooc
+  # version: "1.0.1"
+
+# package:
+  # name: ${{ name|lower }}
+  # version: ${{ version }}
+
+# source:
+  # # url: https://pypi.org/packages/source/${{ name[0] }}/${{ name }}/${{ name }}-${{ version }}.tar.gz
+  # # If getting the source from GitHub, remove the line above,
+  # # uncomment the line below, and modify as needed. Use releases if available:
+  # url: https://github.com/bcoltman/metacooc/releases/download/${{ version }}/${{ name }}-${{ version }}.tar.gz
+  # # and otherwise fall back to archive:
+  # # url: https://github.com/simplejson/simplejson/archive/v${{ version }}.tar.gz
+  # sha256: d58439c548433adcda98e695be53e526ba940a4b9c44fb9a05d92cd495cdd47f
+  # # sha256 is the preferred checksum -- you can get it for a file with:
+  # #  `openssl sha256 <file name>`,
+  # # or, in one go without keeping the file with:
+  # # `curl -L <url> | sha256
+  # # You may need the packages or openssl and/or curl, available on conda-forge:
+  # #  `conda install openssl curl -c conda-forge``
+
+# build:
+  # noarch: python
+  # number: 0
+  # # script: "{{ PYTHON }} -m pip install . --no-deps -vv"
+  # script: "{{ PYTHON }} -m pip install . -vv"
+  # skip: True  # [py<38]
+
+# requirements:
+  # host:
+    # - python
+    # - pip
+  # run:
+    # - python
+    # - pandas
+    # - numpy
+    # - scipy
+    # - matplotlib
+  # test:
+    # - pip
+
+# test:
+  # imports:
+    # - metacooc
+  # commands:
+    # - metacooc --help
+    # - pip check
+
+
+# about:
+  # home: "https://github.com/bcoltman/metacooc"
+  # license: GPL-3.0+
+  # license_file: LICENSE
+  # summary: "Co-occurrence analysis of microorganisms in metagenomes."
+  # # description: |
+    # # simplejson is a simple, fast, complete, correct and extensible
+    # # JSON <https://json.org> encoder and decoder for Python 2.5+ and
+    # # Python 3.3+. It is pure Python code with no dependencies, but includes
+    # # an optional C extension for a serious speed boost.
+  # # documentation: https://metacooc.readthedocs.io/
+  # repository: https://github.com/bcoltman/metacooc
+
+# extra:
+  # recipe-maintainers:
+    # - bcoltman
+    # - dspeth

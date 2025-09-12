@@ -235,7 +235,6 @@ class Ingredients:
 def load_ingredients(
     data_dir: Optional[str] = None,
     aggregated: bool = False,
-    # aggregation_level = "genus",
     custom_ingredients=None,
     sandpiper_version: Optional[str] = None,
     sample_to_biome_file=None) -> Ingredients:

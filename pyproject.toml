@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metacooc"
-version = "0.1.0"
+version = "1.0.1"
 description = "Tool for co-occurrence analysis of microorganisms in metagenomes"
 readme = "README.md"
-license = {text = "GPL3+"}
+license = "GPL-3.0-or-later"
 authors = [
     {name = "Benjamin Coltman", email = "benjamin.coltman@univie.ac.at"},
 	{name = "Daan Speth", email = "daan.speth@univie.ac.at"}
@@ -24,7 +24,6 @@ keywords = ["metagenomics","co-occurrence","bioinformatics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
@@ -40,3 +39,7 @@ dev = ["pytest", "black", "isort", "mypy"]
 
 [project.scripts]
 metacooc = "metacooc.__main__:main"
+
+[tool.setuptools]
+packages = ["metacooc"]
+include-package-data = true
