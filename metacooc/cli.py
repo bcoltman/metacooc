@@ -31,7 +31,7 @@ def parse_cli():
     )
     opt.add_argument(
         "--list-versions",
-        default=DEFAULT_DATA_DIR,
+        action="store_true",
         help="List available version",
     )
     opt.add_argument(

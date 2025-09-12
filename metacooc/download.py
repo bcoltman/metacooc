@@ -113,9 +113,11 @@ def main():
     parser.add_argument("--data_dir", type=str, required=True, help="Target directory for data files")
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
     parser.add_argument("--sandpiper_version", default=None, help="Specify which data version to load (default: latest)")
+    parser.add_argument("--list_versions", action="store_true", help="Specify which data version to load (default: latest)")
+    args = parser.parse_args()
     args = parser.parse_args()
     
-    download_data(args.data_dir, args.list_versions, args.sandpiper_version, force=args.force)
+    download_data(args.data_dir, list_versions=args.list_versions, sandpiper_version=args.sandpiper_version, force=args.force)
 
 if __name__ == "__main__":
     main()
