@@ -325,9 +325,9 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     set
         The set of matching accession IDs (written to the output file).
     """
-    matching_accessions = search_data_obj(mode, 
-                                          data_dir, 
+    matching_accessions = search_data_obj(mode,
                                           search_string, 
+                                          data_dir, 
                                           ranks_for_search_inclusion, 
                                           strict, 
                                           column_names, 

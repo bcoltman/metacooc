@@ -30,20 +30,25 @@ def parse_cli():
         help="Directory containing data files (default: %(default)s)",
     )
     opt.add_argument(
-        "--force",
-        action="store_true",
-        help="Force re-download even if files exist.",
+        "--list-versions",
+        default=DEFAULT_DATA_DIR,
+        help="List available version",
     )
     opt.add_argument(
         "--sandpiper_version",
         default=None,
         help="Specify which data version to load (default: latest)"
     )
+    opt.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-download even if files exist.",
+    )
     
     def download_command(args):
         from metacooc.download import download_data
         
-        download_data(data_dir=args.data_dir, force=args.force, sandpiper_version=args.sandpiper_version)
+        download_data(data_dir=args.data_dir, force=args.force, list_versions=args.list_versions, sandpiper_version=args.sandpiper_version)
     
     download_sub.set_defaults(func=download_command)
     
