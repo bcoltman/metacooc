@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metacooc"
-version = {attr = "metacooc.version.__version__"}
+dynamic = ["version"]
 description = "Tool for co-occurrence analysis of microorganisms in metagenomes"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -27,6 +27,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "metacooc.version.__version__" }
 
 [project.urls]
 Homepage = "https://github.com/bcoltman/metacooc"
