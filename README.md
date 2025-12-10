@@ -189,45 +189,12 @@ gzip -d sandpiper1.0.0.condensed.csv.gz
 Format your raw data into the standardized Ingredients objects. The **format** command processes your raw files, generating both the raw and aggregated Ingredients objects that will be used by **MetaCoOc** commands.For example, to process Sandpiper output (two column csv):
 
 ```bash
-metacooc format --tax_profile metacooc/data/sandpiper1.0.0.condensed.csv \
-                --output_dir metacooc/data/ \
-                --aggregated \
-				--sample_to_biome_file metacooc/data/sample_to_biome_1.0.0.csv \
-				--tag "1.0.0"
-
-
-sbatch --job-name="metacoocc_sandpiper" \
-			--cpus-per-task=1 \
-			--mem="50G" \
-			--time="0-01:00:00" \
-			--output=log/%x-%j.out \
-			--error=log/%x-%j.err \
-			--wrap="module load conda && conda activate metacooc && \
-					srun metacooc format --tax_profile /lisc/data/work/dome/kitzinger/coltman/metacooccur/metacooc/data/sandpiper1.0.0.condensed.csv \
-					--output_dir /lisc/data/scratch/dome/kitzinger/coltman/metacooc/ \
-					--aggregated \
-					--sample_to_biome_file /lisc/data/work/dome/kitzinger/coltman/metacooccur/metacooc/data/sample_to_biome_1.0.1.csv \
-					--tag "1.0.1""
-
-sbatch --job-name="metacoocc_globdb" \
-			--cpus-per-task=1 \
-			--mem="50G" \
-			--time="0-01:00:00" \
-			--output=log/%x-%j.out \
-			--error=log/%x-%j.err \
-			--wrap="module load conda && conda activate metacooc && \
-					srun metacooc format --tax_profile /lisc/data/work/dome/kitzinger/coltman/metacooccur/metacooc/data/sandpiper_globdb.csv \
-					--output_dir /lisc/data/scratch/dome/kitzinger/coltman/metacooc/ \
-					--aggregated \
-					--sample_to_biome_file /lisc/data/work/dome/kitzinger/coltman/metacooccur/metacooc/data/sample_to_biome_1.0.1.csv \
-					--tag "globdb""
 
 metacooc format --tax_profile metacooc/data/sandpiper1.0.0.condensed.csv \
-                --output_dir metacooc/data/ \
-                --aggregated \
-                --aggregation_pattern "genus" \
-				--sample_to_biome_file metacooc/data/sample_to_biome_1.0.0.csv \
-				--tag "1.0.0"
+					--output_dir metacooc/data/ \
+					--aggregated \
+					--sample_to_biome_file metacooc/data/sample_to_biome_1.0.2.tsv \
+					--tag "1.0.2""
 ```
 
 ### Metadata associated with metagenomes

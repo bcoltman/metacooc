@@ -15,6 +15,7 @@ import pickle
 import re
 from scipy.sparse import csr_matrix, hstack
 import warnings
+from typing import Optional
 
 from metacooc.pantry import Ingredients
 
@@ -119,46 +120,58 @@ def format_ingredients(tax_profile: str, sample_to_biome=None):
     
     return raw_ingredients
 
-def format_data(tax_profile: str, output_dir: str, sample_to_biome_file=None, aggregated=False, tag=''):
+def format_data(
+    tax_profile: str,
+    output_dir: str,
+    sample_to_biome_file: Optional[str] = None,
+    aggregated: bool = False,
+    tag: str = "",
+):
     """
     Process the sandpiper TSV file and return a raw Ingredients instance.
+    
+    Args:
+        tax_profile (str): Path to the tax profile TSV file.
+        output_dir (str): Directory to save the output.
+        sample_to_biome_file (str, optional): Path to the biome mapping file.
+        aggregated (bool, optional): Whether to generate aggregated ingredients.
+        tag (str, optional): Tag for output filenames.
     """
-    # Load either the custom sample_to_biome_file if specified, or load from data_dir
+    # Load the biome mapping file if specified
+    sample_to_biome = {}
     if sample_to_biome_file:
         if os.path.exists(sample_to_biome_file):
-            df = pd.read_csv(sample_to_biome_file)
-            sample_to_biome = dict(zip(df["accession"], df["biome"]))
-                # with open(sample_to_biome_file, "rb") as f:
-                # sample_to_biome = pickle.load(f)
+            df = pd.read_csv(sample_to_biome_file, dtype=str, sep="\t")
+            # CSV has columns: accession, level_1, level_2
+            sample_to_biome = {
+                row["accession"]: (row["level_1"], row["level_2"])
+                for _, row in df.iterrows()
+            }
         else:
             warnings.warn(
                 f"Biome mapping file '{sample_to_biome_file}' not found",
-                UserWarning
+                UserWarning,
             )
     
-    # Generate the raw Ingredients object.
+    # Generate the raw Ingredients object
     raw_ingredients = format_ingredients(tax_profile, sample_to_biome)
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # Save both objects.
-    output_raw = os.path.join(output_dir, f"{tag}ingredients_raw.pkl")
-    
+    # Save the raw Ingredients object
+    output_raw = os.path.join(output_dir, f"ingredients_raw{"_" + tag if tag}.pkl")
     with open(output_raw, "wb") as f:
         pickle.dump(raw_ingredients, f)
-    
     print(f"Raw ingredients saved to {output_raw}")
     
     if aggregated:
-        # Generate the aggregated Ingredients object.
+        # Generate the aggregated Ingredients object
         aggregated_ingredients = raw_ingredients.copy()
-        
         aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients)
-        output_agg = os.path.join(output_dir, f"{tag}ingredients_aggregated.pkl")
+        output_agg = os.path.join(output_dir, f"ingredients_aggregated{"_" + tag if tag}.pkl")
         with open(output_agg, "wb") as f:
             pickle.dump(aggregated_ingredients, f)
         print(f"Aggregated ingredients saved to {output_agg}")
-
 
 
 def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:

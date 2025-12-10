@@ -24,9 +24,9 @@ class Ingredients:
         presence_matrix (sp.csr_matrix): Binary presence/absence.
         coverage_matrix (sp.csr_matrix): Coverage values.
         total_counts (np.ndarray): Cached per-taxon counts.
-        sample_to_biome (Dict[str,str]): Mapping sample→biome.
-        biomes_order (List[str]): Unique biomes.
-        sample_biome_indices (np.ndarray): Per-sample biome index (-1 if missing).
+        sample_to_biome (Dict[str, Tuple[str, str]]): Mapping sample to (biome_level_1, biome_level_2).
+        biomes_order (Dict[str, List[str]]): Unique biomes for each level.
+        sample_biome_indices (Dict[str, np.ndarray]): Per-sample biome index for each level (-1 if missing).
     """
     def __init__(
         self,
@@ -185,42 +185,79 @@ class Ingredients:
     
     def _allocate_biomes(self):
         """
-        Precompute biome order & per-sample biome indices.
+        Precompute biome order and per-sample biome indices for both levels.
         """
-        biomes: List[str] = []
-        idxs: List[int] = []
+        biomes_level_1: List[str] = []
+        biomes_level_2: List[str] = []
+        idxs_level_1: List[int] = []
+        idxs_level_2: List[int] = []
+        
         for s in self.samples:
-            b = self.sample_to_biome.get(s)
-            if b is None:
-                idxs.append(-1)
+            biome = self.sample_to_biome.get(s, (None, None))
+            b1, b2 = biome
+            
+            # Level 1
+            if b1 is None:
+                idxs_level_1.append(-1)
             else:
-                if b not in biomes:
-                    biomes.append(b)
-                idxs.append(biomes.index(b))
-        self.biomes_order = biomes
-        self.sample_biome_indices = np.array(idxs, dtype=int)
-    
-    def biome_distribution(self):
-        biomes = self.biomes_order
-        idxs   = self.sample_biome_indices
+                if b1 not in biomes_level_1:
+                    biomes_level_1.append(b1)
+                idxs_level_1.append(biomes_level_1.index(b1))
+                
+            # Level 2
+            if b2 is None:
+                idxs_level_2.append(-1)
+            else:
+                if b2 not in biomes_level_2:
+                    biomes_level_2.append(b2)
+                idxs_level_2.append(biomes_level_2.index(b2))
+                
+        self.biomes_order = {
+            "level_1": biomes_level_1,
+            "level_2": biomes_level_2,
+        }
+        self.sample_biome_indices = {
+            "level_1": np.array(idxs_level_1, dtype=int),
+            "level_2": np.array(idxs_level_2, dtype=int),
+        }
+        
+    def biome_distribution(self, level: str = "level_1"):
+        """
+        Compute biome distribution for the specified level.
+        
+        Args:
+            level (str): Biome level to use ("level_1" or "level_2").
+            
+        Returns:
+            Tuple[List[str], sp.csr_matrix, sp.csr_matrix, int]:
+                - Unique biomes for the level.
+                - Presence matrix for the level.
+                - Coverage matrix for the level.
+                - Number of samples with missing biome assignments.
+        """
+        if level not in ("level_1", "level_2"):
+            raise ValueError("level must be 'level_1' or 'level_2'")
+        
+        biomes = self.biomes_order[level]
+        idxs = self.sample_biome_indices[level]
         n_biomes = len(biomes)
         n_samples = len(idxs)
         
-        # 1) build biome‐assignment matrix
+        # 1) Build biome-assignment matrix
         assigned = idxs >= 0
         rows = idxs[assigned]
         cols = np.nonzero(assigned)[0]
         data = np.ones_like(rows, dtype=int)
         B = sp.csr_matrix((data, (rows, cols)), shape=(n_biomes, n_samples))
         
-        # 2) presence counts
+        # 2) Presence counts
         Pbin = (self._presence_matrix > 0).astype(int)
         presence = B @ Pbin
         
-        # 3) coverage means
+        # 3) Coverage means
         coverage_sums = B @ self._coverage_matrix
         counts = np.array(B.sum(axis=1)).ravel()
-        # make a copy for means
+        # Make a copy for means
         coverage = coverage_sums.tolil()
         for b in range(n_biomes):
             if counts[b] > 0:
