@@ -60,6 +60,61 @@ metacooc cooccurrence --mode taxon \
                       --min_sample_count 5
 ```
 
+metacooc cooccurrence --mode taxon \
+                      --output_dir results \
+                      --custom_ingredients globdb_ingredients_raw.pkl \
+                      --search_string "g__Nitrospira_D" \
+					  --filter_rank species \
+                      --min_taxa_count 5 \
+                      --min_sample_count 5 \
+					  --tag nitrospira_test \
+					  --threshold 0.5 \
+					  --large
+					  
+					  
+					  
+metacooc cooccurrence --mode taxon \
+                      --output_dir results \
+                      --search_string "d__Archaea" \
+                      --ranks_for_search_inclusion species \
+					  --filter_rank species \
+					  --threshold 0.5 \
+                      --min_taxa_count 50 \
+                      --min_sample_count 20 \
+					  --large \
+					  --custom_ingredients globdb_ingredients_raw.pkl
+					  
+metacooc cooccurrence --mode taxon \
+                      --output_dir results \
+                      --search_string "s__Nitrosospira sp900100985" \
+                      --ranks_for_search_inclusion species \
+					  --filter_rank species \
+					  --threshold 0.5 \
+                      --min_taxa_count 5 \
+                      --min_sample_count 5 \
+					  --custom_ingredients globdb_ingredients_raw.pkl \
+					  --tag nitrospira_test 
+					  
+					  
+metacooc cooccurrence --mode biome \
+                      --output_dir results \
+                      --search_string soil \
+					  --filter_rank species \
+					  --threshold 0.5 \
+                      --min_taxa_count 50 \
+                      --min_sample_count 20 \
+					  --custom_ingredients globdb_ingredients_raw.pkl
+
+metacooc cooccurrence --mode metadata \
+                      --output_dir results \
+                      --search_string soil \
+					  --filter_rank species \
+					  --threshold 0.5 \
+                      --min_taxa_count 50 \
+                      --min_sample_count 20 \
+					  --custom_ingredients globdb_ingredients_raw.pkl
+					  
+
 You can also include a ratio threshold (e.g., only include taxa with ratio ≥ 0.5) by adding `--ratio_threshold 0.5`.
 
 ### Running Individual Steps

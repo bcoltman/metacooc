@@ -37,18 +37,13 @@ def download_data(data_dir, list_versions=False, sandpiper_version=None, force=F
         sandpiper_version (str): Version to download (default: latest available).
     """
     if list_versions:
-        avail = ", ".join(sorted(RELEASES.keys()))
+        avail = ", ".join(available_versions())
         print(f"Available: {avail}")
         return
-        
-    version = sandpiper_version or LATEST_VERSION
-    
-    try:
-        filenames, download_urls = get_file_info(version)
-        
-    except ValueError as e:
-        print(f"[ERROR] {e}")
-        return
+
+    version = sandpiper_version or LATEST_VERSION  # defaults to latest *_gtdb
+
+    filenames, download_urls = get_file_info(version)
         
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)

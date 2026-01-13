@@ -3,15 +3,25 @@
 import os
 import pickle
 import warnings
+import re
+from collections import defaultdict
+
 from typing import List, Dict, Tuple, Optional
 
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
-# from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
 from metacooc._data_config import *
+from metacooc.utils import (
+    _RANK_PREFIXES, 
+    _PREFIX_TO_RANK, 
+    _parse_tokens, 
+    _token_rank, 
+    _terminal_rank_prefix, 
+    _deepest_rank_token
+)
 
 
 class Ingredients:
@@ -46,7 +56,10 @@ class Ingredients:
         self.sample_to_biome = sample_to_biome or {}
         if self.sample_to_biome:
             self._allocate_biomes()
-    
+        
+        self._rank_lookups = None
+        self._terminal_rank_prefixes = None
+        
     def __getstate__(self):
         state = {
             "samples": self.samples,
@@ -60,6 +73,11 @@ class Ingredients:
         if hasattr(self, "biomes_order"):
             state["biomes_order"] = self.biomes_order
             state["sample_biome_indices"] = self.sample_biome_indices
+        
+        if hasattr(self, "_rank_lookups") and self._rank_lookups is not None:
+            state["_rank_lookups"] = self._rank_lookups
+            state["_terminal_rank_prefixes"] = self._terminal_rank_prefixes
+            
         return state
     
     def __setstate__(self, state):
@@ -67,6 +85,9 @@ class Ingredients:
         self.taxa = state["taxa"]
         object.__setattr__(self, "_presence_matrix", state.get("_presence_matrix"))
         object.__setattr__(self, "_coverage_matrix", state.get("_coverage_matrix"))
+        
+        self._rank_lookups = state.get("_rank_lookups", None)
+        self._terminal_rank_prefixes = state.get("_terminal_rank_prefixes", None)
         
         # restore or compute total_counts
         if "total_counts" in state and state["total_counts"] is not None:
@@ -82,6 +103,38 @@ class Ingredients:
             self.sample_biome_indices = state["sample_biome_indices"]
         elif self.sample_to_biome:
             self._allocate_biomes()
+    
+    def _invalidate_taxa_caches(self):
+        self._rank_lookups = None
+        self._terminal_rank_prefixes = None
+    
+    def _build_taxa_lookups(self):
+        """
+        Build per-rank exact-token lookups and terminal rank prefixes.
+        _rank_lookups[rank][token] -> set(col_idx)
+        """
+        lookups = {rank: defaultdict(set) for rank in _RANK_PREFIXES.keys()}
+        term_prefixes = []
+        
+        for i, taxon in enumerate(self.taxa):
+            tokens = _parse_tokens(taxon)
+            term_prefixes.append(_terminal_rank_prefix(tokens))
+            for tok in tokens:
+                r = _token_rank(tok)
+                if r is None or r == "root":
+                    continue
+                lookups[r][tok].add(i)
+                    
+        self._rank_lookups = lookups
+        self._terminal_rank_prefixes = term_prefixes
+        
+    def _ensure_taxa_lookups(self):
+        if self._rank_lookups is None or self._terminal_rank_prefixes is None:
+            self._build_taxa_lookups()
+    
+    def build_taxa_lookup(self) -> None:
+        """Build (or rebuild) the per-rank taxa lookup caches."""
+        self._build_taxa_lookups()
     
     @property
     def presence_matrix(self) -> sp.csr_matrix:
@@ -174,6 +227,7 @@ class Ingredients:
         self._coverage_matrix = self._coverage_matrix[:, idxs]
         # update counts and caches
         self.total_counts = self._compute_total_counts()
+        self._invalidate_taxa_caches()
         
     def filtered_taxa(self, mask) -> 'Ingredients':
         """
@@ -187,30 +241,37 @@ class Ingredients:
         """
         Precompute biome order and per-sample biome indices for both levels.
         """
-        biomes_level_1: List[str] = []
-        biomes_level_2: List[str] = []
-        idxs_level_1: List[int] = []
-        idxs_level_2: List[int] = []
+        biomes_level_1: list[str] = []
+        biomes_level_2: list[str] = []
+        idxs_level_1: list[int] = []
+        idxs_level_2: list[int] = []
+        
+        # maps biome -> index
+        idx_map1: dict[str, int] = {}
+        idx_map2: dict[str, int] = {}
         
         for s in self.samples:
-            biome = self.sample_to_biome.get(s, (None, None))
-            b1, b2 = biome
+            b1, b2 = self.sample_to_biome.get(s, (None, None))
             
-            # Level 1
             if b1 is None:
                 idxs_level_1.append(-1)
             else:
-                if b1 not in biomes_level_1:
+                idx = idx_map1.get(b1)
+                if idx is None:
+                    idx = len(biomes_level_1)
                     biomes_level_1.append(b1)
-                idxs_level_1.append(biomes_level_1.index(b1))
+                    idx_map1[b1] = idx
+                idxs_level_1.append(idx)
                 
-            # Level 2
             if b2 is None:
                 idxs_level_2.append(-1)
             else:
-                if b2 not in biomes_level_2:
+                idx = idx_map2.get(b2)
+                if idx is None:
+                    idx = len(biomes_level_2)
                     biomes_level_2.append(b2)
-                idxs_level_2.append(biomes_level_2.index(b2))
+                    idx_map2[b2] = idx
+                idxs_level_2.append(idx)
                 
         self.biomes_order = {
             "level_1": biomes_level_1,
@@ -285,7 +346,6 @@ def load_ingredients(
             raise ValueError(
                 "data_dir must be provided when not using custom_ingredients"
             )
-        # key = f"ingredients_aggregated_{aggregation_level}" if aggregated else "ingredients_raw"
         key = f"ingredients_aggregated" if aggregated else "ingredients_raw"
         filepath = os.path.join(data_dir, filenames[key])
     else:

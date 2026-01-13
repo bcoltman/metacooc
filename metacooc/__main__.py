@@ -30,16 +30,18 @@ def print_help():
   Starter:
     download -> Download required files with metagenome metadata and taxonomic profiles.
 
-  Main dish:
-    cooccurrence -> Determine cooccurence based on detection of organisms in shotgun metagenomes.
+  Main dishes:
+    cooccurrence -> Identify co-occurring prokaryotes across shotgun metagenomes.
+    association  -> Identify prokaryotes associated with metadata terms, biomes, or other taxa.
+    structure    -> Quantify community structure (e.g. nestedness, overlap, checkerboard patterns) in taxonomic profiles.
 
   Sides:
     search -> Query the metagenome metadata and taxonomic profiles.
-    filter -> Filter the taxonomic profiles by keyword or sample list
-    ratio -> Calculate (co)occurrence ratios.
+    filter -> Filter the taxonomic profiles by keyword or sample list.
+    analysis -> Perform association, cooccurrence or structural analysis.
     format -> Format sandpiper output, or other taxonomic profiles, to metacooc input.
     plot -> Generate plots based on the output of other menu items.
-    biome_distribution -> Output a TSV file of taxa occurence per pre-determined biomes
+    biome_distribution -> Output a TSV file of taxa occurrence per pre-determined biomes.
 
   Use: metacooc <command> -h for command specific help
     ''' % __version__)
@@ -56,7 +58,7 @@ def main():
     elif sys.argv[1] in {'-h', '--h', '-help', '--help'}:
         print_help()
         sys.exit(0)
-    elif sys.argv[1] not in {'download', 'cooccurrence', 'search', 'filter', 'ratio', 'format', 'plot', 'biome_distribution'}:
+    elif sys.argv[1] not in {'download', 'cooccurrence', 'association', 'structure', 'search', 'filter', 'analysis', 'format', 'plot', 'biome_distribution'}:
         print(f"program not on the menu, choose from the options listed below ")
         print_help()
         sys.exit(0)

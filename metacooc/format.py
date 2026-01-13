@@ -159,7 +159,7 @@ def format_data(
     os.makedirs(output_dir, exist_ok=True)
     
     # Save the raw Ingredients object
-    output_raw = os.path.join(output_dir, f"ingredients_raw{"_" + tag if tag}.pkl")
+    output_raw = os.path.join(output_dir, f"ingredients_raw{f'_{tag}' if tag else ""}.pkl")
     with open(output_raw, "wb") as f:
         pickle.dump(raw_ingredients, f)
     print(f"Raw ingredients saved to {output_raw}")
@@ -168,7 +168,7 @@ def format_data(
         # Generate the aggregated Ingredients object
         aggregated_ingredients = raw_ingredients.copy()
         aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients)
-        output_agg = os.path.join(output_dir, f"ingredients_aggregated{"_" + tag if tag}.pkl")
+        output_agg = os.path.join(output_dir, f"ingredients_aggregated{f'_{tag}' if tag else ""}.pkl")
         with open(output_agg, "wb") as f:
             pickle.dump(aggregated_ingredients, f)
         print(f"Aggregated ingredients saved to {output_agg}")

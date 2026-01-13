@@ -28,39 +28,94 @@ Modes:
       by activating grep’s -v flag (or by inverting awk conditions).
 """
 
-import os
-import subprocess
-from typing import List, Set
+import os, subprocess, shlex
+from typing import List, Set, Optional
 
-from metacooc.pantry import load_ingredients 
+from metacooc.pantry import load_ingredients
+from metacooc.utils import (
+    _RANK_PREFIXES, 
+    _PREFIX_TO_RANK, 
+    _parse_tokens, 
+    _token_rank, 
+    _terminal_rank_prefix, 
+    _deepest_rank_token
+)
+
 from metacooc._data_config import *
 
-def search_by_taxon(ingredients, search_string, ranks_for_search_inclusion=None):
+
+def _search_taxon_columns(
+    ingredients,
+    search_string: str,
+    ranks_for_search_inclusion: Optional[str] = None,
+) -> Set[int]:
     """
-    Search the Ingredients object's taxa list.
+    Core column-resolution logic used by search_by_taxon and other utilities.
     
     Returns:
-        set: Accession IDs from samples where a matching taxon is present.
+        Set[int]: column indices in ingredients.taxa matching the search_string.
     """
-    rank_prefixes = {"domain": "d__", 
-                     "phylum": "p__", 
-                     "class": "c__", 
-                     "order": "o__",
-                     "family": "f__",  
-                     "genus": "g__", 
-                     "species": "s__"}
-    
-    prefix = rank_prefixes.get(ranks_for_search_inclusion.lower()) if ranks_for_search_inclusion else None
-    matching_indices = []
-    for i, taxon in enumerate(ingredients.taxa):
-        if prefix and prefix not in taxon:
-            continue
-        if search_string.lower() in taxon.lower():
-            matching_indices.append(i)
-    if not matching_indices:
+    if not search_string or not search_string.strip():
         return set()
-    submatrix = ingredients.presence_matrix[:, matching_indices]
-    rows, _ = submatrix.nonzero()
+        
+    ingredients._ensure_taxa_lookups()
+    
+    rank, token = _deepest_rank_token(search_string)
+    if rank is None:
+        return set()
+    
+    # If searching by 'Root', that means “everything”
+    if rank == "root":
+        num_cols = ingredients.presence_matrix.shape[1]
+        candidates: Set[int] = set(range(num_cols))
+    else:
+        candidates = set(ingredients._rank_lookups[rank].get(token, ()))
+    
+    if not candidates:
+        return set()
+    
+    if ranks_for_search_inclusion:
+        rp = ranks_for_search_inclusion.strip().lower()
+        if rp not in _RANK_PREFIXES:
+            raise ValueError(
+                f"Unknown rank '{ranks_for_search_inclusion}'. "
+                f"Expected one of: {', '.join(_RANK_PREFIXES.keys())}"
+            )
+        
+        lookups_for_rank = ingredients._rank_lookups.get(rp, {})
+        if lookups_for_rank:
+            cols_with_rank = set().union(*lookups_for_rank.values())
+            candidates &= cols_with_rank
+        else:
+            # No taxa have this rank at all
+            return set()
+        
+        if not candidates:
+            return set()
+    
+    return candidates
+
+def search_by_taxon(
+    ingredients,
+    search_string: str,
+    ranks_for_search_inclusion: Optional[str] = None,
+) -> set:
+    """
+    Exact taxonomy search using ONLY the deepest ranked token from `search_string`,
+    backed by a per-rank lookup cache on the Ingredients object.
+    
+    Returns a set of sample IDs that contain any of the matching taxa.
+    """
+    candidates = _search_taxon_columns(
+        ingredients,
+        search_string,
+        ranks_for_search_inclusion=ranks_for_search_inclusion,
+    )
+    if not candidates:
+        return set()
+    
+    sub = ingredients.presence_matrix[:, sorted(candidates)]
+    rows, _ = sub.nonzero()
     return {ingredients.samples[r] for r in rows}
 
 def get_column_indices(metadata_file, column_names, delimiter="\t"):
@@ -82,60 +137,38 @@ def get_column_indices(metadata_file, column_names, delimiter="\t"):
     for column_name in column_names:
         if column_name not in headers:
             print(f"Column '{column_name}' not found in metadata file.")
-            # raise ValueError(f"Column '{column_name}' not found in metadata file.")
+            raise ValueError(f"Column '{column_name}' not found in metadata file.")
         indices.append(headers.index(column_name) + 1)  # Convert 0-based to 1-based index for AWK
         
     return indices
 
+
 def grep_metadata(search_string, metadata_file, column_names=None, delimiter="\t", inverse=False):
-    """
-    Search for a token in a large metadata file using optimized grep & awk for multiple columns,
-    with support for inverse search via grep's -v flag or by inverting awk conditions.
-    
-    Args:
-        search_string (str): The token to search for.
-        metadata_file (str): Path to the metadata file.
-        column_names (list of str or None): List of column names to restrict search to.
-            If None, the whole file is searched.
-        delimiter (str): Column separator (default: tab).
-        inverse (bool): If True, perform an inverse search (lines that do NOT match).
-        
-    Returns:
-        set: A set of matching accession numbers.
-    """
     if not os.path.exists(metadata_file):
-        f"Column '{column_name}' not found in metadata file."
         raise FileNotFoundError(f"Metadata file '{metadata_file}' not found.")
-        
-    search_string = search_string.strip().lower()
-    
-    # If no specific columns are provided, use grep directly with the -v flag if inverse is True.
+
+    needle = search_string.strip()
+
     if not column_names:
-        flag = "-iv" if inverse else "-i"
-        command = f"grep {flag} '{search_string}' {metadata_file} | cut -f1"
+        # Fast path: whole-line search. grep -iF is usually faster than awk+tower/IGNORECASE.
+        flag = "-ivF" if inverse else "-iF"
+        cmd = f"LC_ALL=C grep {flag} {shlex.quote(needle)} {shlex.quote(metadata_file)} | cut -f1"
     else:
-        # Find column indices for the specified column names.
-        column_indices = get_column_indices(metadata_file, column_names, delimiter)
-        column_indices_str = ",".join(f"${idx}" for idx in column_indices)  # e.g., "$2,$3" for awk
-        awk_command = f"awk -F'{delimiter}' '{{print $1, {column_indices_str}}}' {metadata_file}"
-        
+        col_idxs = get_column_indices(metadata_file, column_names, delimiter)
         if inverse:
-            # Inverse: build condition so that all specified columns do NOT match search_string.
-            conditions = []
-            for i in range(2, len(column_indices) + 2):
-                conditions.append(f"$${i} !~ /{search_string}/")
-            condition_str = " && ".join(conditions)
+            conds = [f'index(${i}, needle)==0' for i in col_idxs]
+            cond = " && ".join(conds)
         else:
-            # Normal: any column matches search_string.
-            conditions = []
-            for i in range(2, len(column_indices) + 2):
-                conditions.append(f"$${i} ~ /{search_string}/")
-            condition_str = " || ".join(conditions)
-        grep_command = f"awk -F' ' '{{if({condition_str}) print $1}}'"
-        command = f"{awk_command} | {grep_command}"
-    
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    return set(result.stdout.splitlines())
+            conds = [f'index(${i}, needle)>0' for i in col_idxs]
+            cond = " || ".join(conds)
+        # IGNORECASE=1 makes index() case-insensitive without tolower()
+        cmd = (
+            f"LC_ALL=C awk -F'{delimiter}' -v IGNORECASE=1 -v needle={shlex.quote(needle)} "
+            f"'NR==1{{next}} {cond} {{print $1}}' {shlex.quote(metadata_file)}"
+        )
+
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    return set(line for line in result.stdout.splitlines() if line)
 
 def search_in_metadata(metadata, search_string, strict=False, column_names=None, inverse=False):
     """
@@ -159,35 +192,29 @@ def search_in_metadata(metadata, search_string, strict=False, column_names=None,
 
 def search_by_biome(ingredients, biome_names):
     """
-    Return all sample IDs whose sample_to_biome matches one of biome_names.
-    
-    Validates that each requested biome is in ingredients.biomes_order.
+    Return sample IDs whose biome (level_1 or level_2) matches any of `biome_names`.
     """
-    # ensure we have precomputed biomes
     if not hasattr(ingredients, "biomes_order"):
         ingredients._allocate_biomes()
-    available = set(ingredients.biomes_order)
+        
+    # Accept "name1,name2" or list-like
+    requested = (
+        [b.strip() for b in biome_names.split(",")]
+        if isinstance(biome_names, str)
+        else list(biome_names)
+    )
     
-    # normalize input to list
-    if isinstance(biome_names, str):
-        requested = [b.strip() for b in biome_names.split(",")]
-    else:
-        requested = list(biome_names)
-    
-    # validate
+    available = set(ingredients.biomes_order.get("level_1", [])) | \
+                set(ingredients.biomes_order.get("level_2", []))
     bad = [b for b in requested if b not in available]
     if bad:
-        raise ValueError(
-            f"Unknown biome(s): {bad}. "
-            f"Available biomes are: {sorted(available)}"
-        )
-    
-    # gather matching samples
-    return {
-        sample
-        for sample, biome in ingredients.sample_to_biome.items()
-        if biome in requested
-    }
+        raise ValueError(f"Unknown biome(s): {bad}. Available: {sorted(available)}")
+        
+    out = set()
+    for sample, (b1, b2) in ingredients.sample_to_biome.items():
+        if (b1 in requested) or (b2 in requested):
+            out.add(sample)
+    return out
 
 def _parse_query(q: str) -> List[List[str]]:
     groups = []
@@ -202,9 +229,29 @@ def _parse_query(q: str) -> List[List[str]]:
             groups.append(terms)
     return groups
 
+# def _parse_query(q: str) -> List[List[List[str]]]:
+    # """
+    # ',' → separate queries  (highest-level OR)
+    # '|' → OR within a query
+    # '+' → AND terms
+    # """
+    # queries = []
+    
+    # for comma_block in q.split(","):
+        # or_groups = []
+        # for or_part in comma_block.split("|"):
+            # terms = [t.strip() for t in or_part.split("+") if t.strip()]
+            # if terms:
+                # or_groups.append(terms)
+                
+        # if or_groups:
+            # queries.append(or_groups)
+            
+    # return queries
+
 
 def search_data_obj(
-    mode: str,
+    search_mode: str,
     search_string: str,
     data_dir: str = None,
     ranks_for_search_inclusion=None,
@@ -214,10 +261,10 @@ def search_data_obj(
     custom_ingredients=None,
     sandpiper_version=None
 ) -> Set:
-    mode = mode.lower()
+    search_mode = search_mode.lower()
     
     # 1) metadata: raw regex search
-    if mode == "metadata":
+    if search_mode == "metadata":
         version = sandpiper_version or LATEST_VERSION
         filenames, _ = get_file_info(version)
         if not data_dir:
@@ -235,9 +282,9 @@ def search_data_obj(
     loader, search_fn = {
         "taxon": (load_ingredients, search_by_taxon),
         "biome": (load_ingredients, search_by_biome)
-    }.get(mode, (None, None))
+    }.get(search_mode, (None, None))
     if loader is None:
-        raise ValueError("mode must be 'taxon', 'metadata' or 'biome'")
+        raise ValueError("search_mode must be 'taxon', 'metadata' or 'biome'")
     
     ingredients = loader(
         data_dir,
@@ -249,7 +296,7 @@ def search_data_obj(
     groups = _parse_query(search_string)
     
     # biome mode doesn’t support AND‑chains
-    if mode == "biome":
+    if search_mode == "biome":
         for terms in groups:
             if len(terms) > 1:
                 raise ValueError(
@@ -261,7 +308,7 @@ def search_data_obj(
     total_hits: Set = set()
     for terms in groups:
         # first term
-        if mode == "taxon":
+        if search_mode == "taxon":
             hits = search_fn(ingredients, terms[0], ranks_for_search_inclusion)
         else:  # biome
             hits = search_fn(ingredients, terms[0])
