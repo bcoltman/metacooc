@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import re
 import numpy as np
 import scipy.sparse as sp
 from typing import Iterable, Tuple
@@ -64,32 +63,35 @@ def stream_csr_upper_threshold(
     """
     Stream strict upper-triangle entries (i < j) from CSR matrix M with val > threshold.
     Avoids COO conversion (no coo.row allocation).
-
+    
     Yields arrays: (i, j, val)
     """
     if not sp.isspmatrix_csr(M):
         M = M.tocsr(copy=False)
-
+    
+    if M.shape[0] != M.shape[1]:
+        raise ValueError("stream_csr_upper_threshold expects a square matrix")
+        
     indptr = M.indptr
     indices = M.indices
     data = M.data
     n = M.shape[0]
-
+    
     rows_out, cols_out, vals_out = [], [], []
-
+    
     for r0 in range(0, n, chunk_rows):
         r1 = min(r0 + chunk_rows, n)
-
+        
         rows_out.clear(); cols_out.clear(); vals_out.clear()
-
+        
         for i in range(r0, r1):
             s, e = indptr[i], indptr[i + 1]
             if s == e:
                 continue
-
+                
             cols = indices[s:e]
             vals = data[s:e]
-
+            
             m = (cols > i) & (vals > threshold)
             if np.any(m):
                 c = cols[m]
@@ -97,7 +99,7 @@ def stream_csr_upper_threshold(
                 rows_out.append(np.full(c.size, i, dtype=cols.dtype))
                 cols_out.append(c)
                 vals_out.append(v)
-
+                
         if rows_out:
             yield (np.concatenate(rows_out),
                    np.concatenate(cols_out),

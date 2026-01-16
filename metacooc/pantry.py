@@ -46,8 +46,9 @@ class Ingredients:
         coverage_matrix: sp.csr_matrix,
         sample_to_biome: Dict[str, str] = None,
     ):
-        self.samples = samples
         self.taxa = taxa
+        self.samples = samples
+        
         object.__setattr__(self, "_presence_matrix", presence_matrix)
         object.__setattr__(self, "_coverage_matrix", coverage_matrix)
         self.total_counts = self._compute_total_counts()
@@ -111,7 +112,7 @@ class Ingredients:
     def _build_taxa_lookups(self):
         """
         Build per-rank exact-token lookups and terminal rank prefixes.
-        _rank_lookups[rank][token] -> set(col_idx)
+        _rank_lookups[rank][token] -> set(taxon_idx)
         """
         lookups = {rank: defaultdict(set) for rank in _RANK_PREFIXES.keys()}
         term_prefixes = []
@@ -154,12 +155,12 @@ class Ingredients:
         self._coverage_matrix = mat
     
     def _compute_total_counts(self) -> np.ndarray:
-        return np.array((self._presence_matrix > 0).sum(axis=0)).flatten()
+        return np.array((self._presence_matrix > 0).sum(axis=1)).flatten()
     
     def __repr__(self):
         return (
-            f"<Ingredients: {len(self.samples)} samples, "
-            f"{len(self.taxa)} taxa, "
+            f"<Ingredients: {len(self.taxa)} taxa, "
+            f"{len(self.samples)} samples, "
             f"presence: {self.presence_matrix.shape}, "
             f"coverage: {self.coverage_matrix.shape}>"
         )
@@ -191,8 +192,8 @@ class Ingredients:
             raise ValueError("mask must be a list or numpy array of bools or ints")
         # apply
         self.samples = [self.samples[i] for i in idxs]
-        self._presence_matrix = self._presence_matrix[idxs, :]
-        self._coverage_matrix = self._coverage_matrix[idxs, :]
+        self._presence_matrix = self._presence_matrix[:, idxs]
+        self._coverage_matrix = self._coverage_matrix[:, idxs]
         self.total_counts = self._compute_total_counts()
         if getattr(self, 'sample_to_biome', None):
             self._allocate_biomes()
@@ -223,8 +224,8 @@ class Ingredients:
             raise ValueError("mask must be a list or numpy array of bools or ints")
         # apply
         self.taxa = [self.taxa[i] for i in idxs]
-        self._presence_matrix = self._presence_matrix[:, idxs]
-        self._coverage_matrix = self._coverage_matrix[:, idxs]
+        self._presence_matrix = self._presence_matrix[idxs, :]
+        self._coverage_matrix = self._coverage_matrix[idxs, :]
         # update counts and caches
         self.total_counts = self._compute_total_counts()
         self._invalidate_taxa_caches()
@@ -313,10 +314,10 @@ class Ingredients:
         
         # 2) Presence counts
         Pbin = (self._presence_matrix > 0).astype(int)
-        presence = B @ Pbin
+        presence = B @ Pbin.T
         
         # 3) Coverage means
-        coverage_sums = B @ self._coverage_matrix
+        coverage_sums = B @ self._coverage_matrix.T
         counts = np.array(B.sum(axis=1)).ravel()
         # Make a copy for means
         coverage = coverage_sums.tolil()

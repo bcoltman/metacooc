@@ -64,7 +64,7 @@ def filter_samples_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank):
         
     # Count presence of those taxa per sample
     sample_counts = np.array(
-        ingredients.presence_matrix[:, taxa_mask].sum(axis=1)
+        ingredients.presence_matrix[taxa_mask, :].sum(axis=0)
     ).ravel()
     
     # Keep samples with at least min_taxa_count taxa at this rank
@@ -76,7 +76,7 @@ def filter_samples_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank):
 
 def filter_taxa_by_sample_count(ingredients, min_sample_count):
     # keep taxa present in at least min_sample_count samples
-    taxa_counts = np.array((ingredients.presence_matrix > 0).sum(axis=0)).flatten()
+    taxa_counts = np.array((ingredients.presence_matrix > 0).sum(axis=1)).flatten()
     mask = taxa_counts >= min_sample_count
     if not mask.any():
         return None
@@ -84,7 +84,7 @@ def filter_taxa_by_sample_count(ingredients, min_sample_count):
 
 def filter_taxa_by_rank(ingredients, filter_rank):
     """
-    Keep columns whose *terminal* token is at the requested rank.
+    Keep taxa whose *terminal* token is at the requested rank.
     e.g., filter_rank='species' keeps only s__... features.
     """
     if not filter_rank:
@@ -176,7 +176,7 @@ def filter_data(accessions_file,
     
     if null_scope is None:
         
-        null, is_successful = filter_data_obj(ingredients, 
+        null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=None, 
                                               min_taxa_count=min_taxa_count if threshold_null else 0, 
                                               min_sample_count=min_sample_count if threshold_null else 0, 
@@ -187,7 +187,7 @@ def filter_data(accessions_file,
             return
         
     elif null_scope == "local":
-        null, is_successful = filter_data_obj(ingredients, 
+        null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=None, 
                                               min_taxa_count=min_taxa_count if threshold_null else 0, 
                                               min_sample_count=min_sample_count if threshold_null else 0, 
@@ -197,7 +197,7 @@ def filter_data(accessions_file,
         if not is_successful:
             return
                                               
-        null = determine_taxa_context(null,
+        null_ingredients = determine_taxa_context(null_ingredients,
                                       focal_taxa=null_taxa_query,
                                       degree=local_degree,
                                       min_shared_samples_between_taxa=min_shared_samples_between_taxa)
@@ -245,7 +245,7 @@ def filter_data(accessions_file,
     
     intermediate_path = os.path.join(output_dir, f"{tag}ingredients_null.pkl")
     with open(intermediate_path, "wb") as f:
-        pickle.dump(null, f)
+        pickle.dump(null_ingredients, f)
     print(f"Null Ingredients saved to {intermediate_path}")
     
     # If an accessions file is provided, load it and filter.

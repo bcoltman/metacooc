@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Optional, Iterable, Tuple, List, Set
-from metacooc.search import _search_taxon_columns
+from metacooc.search import _search_taxon_rows
 
 def cluster_taxa(
     ingredients,
@@ -48,7 +48,7 @@ def cluster_taxa(
         prior to clustering.
     """
     # 1) Sample × sample co-occurrence (shared taxa counts)
-    samp_coocc = ingredients._presence_matrix @ ingredients._presence_matrix.T
+    samp_coocc = ingredients._presence_matrix.T @ ingredients._presence_matrix
     samp_coocc.setdiag(0)
     
     # Count how many samples each sample overlaps with (shares ≥ threshold taxa)
@@ -66,20 +66,20 @@ def cluster_taxa(
         ingredients._clusters_cache = []
         ingredients._clusters_valid = True
         return []
-    matrix = ingredients._presence_matrix[sample_mask, :]
+    matrix = ingredients._presence_matrix[: sample_mask]
     
     # 3) Filter taxa by presence
-    taxa_counts = np.array((matrix > 0).sum(axis=0)).flatten()
+    taxa_counts = np.array((matrix > 0).sum(axis=1)).flatten()
     taxon_mask = taxa_counts > 0
     if not np.any(taxon_mask):
         ingredients._clusters_cache = []
         ingredients._clusters_valid = True
         return []
-    matrix = matrix[:, taxon_mask]
+    matrix = matrix[taxon_mask, :]
     pruned_taxa = [t for t, keep in zip(ingredients.taxa, taxon_mask) if keep]
     
     # 4) Build taxa co-occurrence graph
-    coocc = matrix.T @ matrix
+    coocc = matrix @ matrix.T
     coocc.setdiag(0)
     adj = (coocc >= min_cooccurrence_count).astype(int)
     adj.eliminate_zeros()
@@ -100,7 +100,7 @@ def _resolve_focal_taxa_indices(ingredients, focal_taxa):
     """
     Resolve focal_taxa (indices, full tax strings, or rank tokens) → np.ndarray[int].
     
-    Uses the same deepest-token logic as search_by_taxon, via _search_taxon_columns.
+    Uses the same deepest-token logic as search_by_taxon, via _search_taxon_rows.
     """
     # Normalise to list
     if isinstance(focal_taxa, (str, int, np.integer)):
@@ -136,9 +136,9 @@ def _resolve_focal_taxa_indices(ingredients, focal_taxa):
             pass
             
         # 2) fall back to taxonomy-based search using deepest ranked token
-        col_idxs = _search_taxon_columns(ingredients, t)
-        if col_idxs:
-            indices.update(col_idxs)
+        row_idxs = _search_taxon_rows(ingredients, t)
+        if row_idxs:
+            indices.update(row_idxs)
         else:
             not_found.append(t)
             
@@ -180,7 +180,7 @@ def determine_taxa_context(
         taxon identifiers.
         
     focal_taxa : int | str | list[int | str]
-        One or more focal taxa, specified by column index, full taxon string, or
+        One or more focal taxa, specified by taxa index, full taxon string, or
         taxonomy token.
         
     degree : int, optional (≥1)
@@ -206,7 +206,7 @@ def determine_taxa_context(
         raise ValueError("min_shared_samples_between_taxa must be ≥ 1")
         
     P = ingredients.presence_matrix  # CSR binary
-    n_samples, n_taxa = P.shape
+    n_taxa, n_samples = P.shape
     
     focal_idx = _resolve_focal_taxa_indices(ingredients, focal_taxa)
     if focal_idx.size == 0:
@@ -219,14 +219,12 @@ def determine_taxa_context(
     frontier_taxa[focal_idx] = True
     visited_taxa[focal_idx] = True
     
-    P_T = P.T
-    
     for step in range(degree):
         if not frontier_taxa.any():
             break
             
         # taxa → samples
-        sample_hits = (P @ frontier_taxa.astype(int)) > 0
+        sample_hits = (P.T @ frontier_taxa.astype(int)) > 0
         new_samples = np.asarray(sample_hits).ravel() & ~visited_samples
         visited_samples |= new_samples
         
@@ -234,14 +232,14 @@ def determine_taxa_context(
             break
             
         # samples → taxa (candidates seen in the new samples)
-        candidate_taxa = (P_T @ new_samples.astype(int)) > 0
+        candidate_taxa = (P @ new_samples.astype(int)) > 0
         candidate_taxa = np.asarray(candidate_taxa).ravel()
         
         # enforce minimum shared samples between "the two" taxa
         if min_shared_samples_between_taxa > 1:
-            frontier_cols = np.where(frontier_taxa)[0]
+            frontier_rows = np.where(frontier_taxa)[0]
             # shared sample counts between each frontier taxon and every taxon
-            shared = (P[:, frontier_cols].T @ P)  # (n_frontier x n_taxa)
+            shared = (P[frontier_rows, :] @ P.T)  # (n_frontier x n_taxa)
             # require co-occurrence with at least one frontier taxon in >= K samples
             shared_max = np.asarray(shared.max(axis=0)).ravel()
             candidate_taxa &= (shared_max >= min_shared_samples_between_taxa)

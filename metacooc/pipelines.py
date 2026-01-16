@@ -103,7 +103,7 @@ def run_shared_pipeline_setup(args):
     
     sub_samples = int_ingredients.samples
     
-    taxa_universe = select_taxa_universe(int_ingredients, args.filter_rank)
+    taxa_universe = select_taxa_universe(int_ingredients, rank=args.filter_rank)
     
     
     if args.null_scope is None:
@@ -185,8 +185,7 @@ def run_shared_pipeline_setup(args):
             "Fix by widening null_biome/null_scope or narrowing search_string."
         )
     
-    if not os.path.isdir(args.output_dir):
-        os.makedirs(args.output_dir)
+    os.makedirs(args.output_dir, exist_ok=True)
     
     return null_ingredients, filtered_ingredients, taxa_universe, args.output_dir
 
@@ -225,7 +224,7 @@ def run_structure(args):
         return
     
     print(f"Pipeline: Structure analysis being performed on Filtered Ingredients Presence Matrix with "
-          f"{filt_ing.presence_matrix.shape[0]} rows & {filt_ing.presence_matrix.shape[1]} columns")
+          f"{filt_ing.presence_matrix.shape[0]} taxa & {filt_ing.presence_matrix.shape[1]} samples")
     
     structure_df = structure_obj(
             filt_ing,
@@ -234,9 +233,10 @@ def run_structure(args):
             nm_random_state=args.nm_random_state
         )
     
-    output_path = os.path.join(out_dir, f"{args.tag}_structure.tsv")
+    null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
+    output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_structure.tsv")
     structure_df.to_csv(output_path, sep="\t", index=False)
-    print(f"Pipeline: {args.null_scope if args.null_scope is not None else ""} structure analysis saved to {output_path}")
+    print(f"Pipeline: {null_scope_prefix} structure analysis saved to {output_path}")
     
 
 def run_association(args):
@@ -271,7 +271,7 @@ def run_association(args):
         return
     
     print(f"Pipeline: Association analysis being performed with Null Ingredients Presence Matrix with "
-          f"{null_ing.presence_matrix.shape[0]} rows & {null_ing.presence_matrix.shape[1]} columns")
+          f"{null_ing.presence_matrix.shape[0]} taxa & {null_ing.presence_matrix.shape[1]} samples")
       
     single_df = association_obj(
             null_ing,
@@ -283,11 +283,12 @@ def run_association(args):
             nm_random_state=args.nm_random_state
         )
     
-    output_path = os.path.join(out_dir, f"{args.tag}{args.null_scope}_association.tsv")
+    null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
+    output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_association.tsv")
     single_df.to_csv(output_path, sep="\t", index=False)
-    print(f"Pipeline: {args.null_scope if args.null_scope is not None else ""} association analysis saved to {output_path}")
+    print(f"Pipeline: {null_scope_prefix} association analysis saved to {output_path}")
     
-    output_plot_file = os.path.join(out_dir, f"{args.tag}{args.null_scope}_plot.png")
+    output_plot_file = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_plot.png")
     plot_analysis_obj(single_df, out_file=output_plot_file)
     print(f"Pipeline: Plotting {output_plot_file} complete.")
 
@@ -324,7 +325,7 @@ def run_cooccurrence(args):
         return
     
     print(f"Pipeline: Cooccurrence analysis being performed with Null Ingredients Presence Matrix with "
-          f"{null_ing.presence_matrix.shape[0]} rows & {null_ing.presence_matrix.shape[1]} columns")
+          f"{null_ing.presence_matrix.shape[0]} taxa & {null_ing.presence_matrix.shape[1]} samples")
       
     edges_df, nodes_df = cooccurrence_obj(
         null_ing,
@@ -338,11 +339,12 @@ def run_cooccurrence(args):
     )
     # filter_rank=args.filter_rank,
     if edges_df is not None:
-        output_path = os.path.join(out_dir, f"{args.tag}{args.null_scope}_edges.tsv")
+        null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
+        output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_edges.tsv")
         edges_df.to_csv(output_path, sep="\t", index=False)
         print(f"Pipeline: Taxon edges analysis saved to {output_path}")
         
-        output_path = os.path.join(out_dir, f"{args.tag}{args.null_scope}_nodes.tsv")
+        output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_nodes.tsv")
         nodes_df.to_csv(output_path, sep="\t", index=False)
         print(f"Pipeline: Taxon nodes analysis saved to {output_path}")
 
@@ -371,5 +373,5 @@ def run_biome_distribution(args):
     else:
         indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v]
         biome_by_species_df = biome_by_taxa_df.iloc[:, indices].T
-        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution{"_aggregated" if args.aggregated else ""}_species.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution_species.tsv")
         biome_by_species_df.to_csv(output_path, sep="\t")

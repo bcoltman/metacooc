@@ -39,11 +39,6 @@ def format_tag(tag, aggregated):
 def add_subcommand(subparsers, name, help_text, func):
     sub = subparsers.add_parser(name, help=help_text)
     sub.set_defaults(func=func)
-    return sub
-
-def add_subcommand(subparsers, name, help_text, func):
-    sub = subparsers.add_parser(name, help=help_text)
-    sub.set_defaults(func=func)
     func.__subparser__ = sub  # Attach the subparser to the function
     return sub
 
@@ -552,10 +547,10 @@ def filter_command(args, subparser):
     )
 
 def analysis_command(args):
-    from metacooc.analysis import taxon_coccurrence, taxon_association, metadata_association
+    from metacooc.analysis import association, cooccurrence
     args.tag = format_tag(args.tag, False)
     if args.analysis_type == "cooccurence":
-        taxon_coccurrence(
+        cooccurrence(
             null_ingredients=args.null_file,
             filtered_ingredients=args.filtered_file,
             output_dir=args.output_dir,
@@ -749,7 +744,7 @@ def parse_cli():
     add_null_scope_args(assoc_sub, group=opt)
     add_filter_args(assoc_sub, group=opt)
     add_null_model_args(assoc_sub, group=opt)
-    add_fisher_args(cooc_sub, group=opt)
+    add_fisher_args(assoc_sub, group=opt)
     add_threshold_arg(assoc_sub, group=opt)
     
     # Association subcommand

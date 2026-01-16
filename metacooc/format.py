@@ -13,7 +13,7 @@ import os
 import pandas as pd
 import pickle
 import re
-from scipy.sparse import csr_matrix, hstack
+from scipy.sparse import csr_matrix, vstack
 import warnings
 from typing import Optional
 
@@ -89,20 +89,20 @@ def create_sparse_matrices(tax_profile: str, sample_to_index: dict, taxon_to_ind
         
         data_presence.extend([1] * len(chunk))
         data_coverage.extend(coverage_values)
-        row_indices.extend(sample_indices)
-        col_indices.extend(taxon_indices)
+        row_indices.extend(taxon_indices)
+        col_indices.extend(sample_indices)
     
     num_samples = len(samples)
     num_taxa = len(taxa)
     
     presence_matrix = csr_matrix(
         (data_presence, (row_indices, col_indices)),
-        shape=(num_samples, num_taxa),
+        shape=(num_taxa, num_samples),
         dtype=int
     )
     coverage_matrix = csr_matrix(
         (data_coverage, (row_indices, col_indices)),
-        shape=(num_samples, num_taxa),
+        shape=(num_taxa, num_samples),
         dtype=float
     )
     
@@ -204,14 +204,14 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
             )
     
     # 3) Original matrices
-    raw_P = ingredients.presence_matrix  # (n_samples, n_raw)
-    raw_C = ingredients.coverage_matrix  # (n_samples, n_raw)
+    raw_P = ingredients.presence_matrix  # (n_raw_taxa, n_samples)
+    raw_C = ingredients.coverage_matrix  # (n_raw_taxa, n_samples)
     
     # Initialize blocks with raw data
     P_blocks = [raw_P]
     C_blocks = [raw_C]
     labels   = list(raw_taxa)
-    n_raw    = len(raw_taxa)
+    n_raw_taxa    = len(raw_taxa)
     
     # 4) Flat mapping per higher rank
     # iterate through each prefix+code pair
@@ -231,16 +231,17 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
             
         rows = series.index[mask].tolist()
         labels_at_rank = sorted(series[mask].unique())
+        n_labels_at_rank = len(labels_at_rank)
         
         # build sparse mapping T: raw -> labels_at_rank
         cols = [labels_at_rank.index(series[i]) for i in rows]
         data = np.ones(len(rows), dtype=int)
-        T = csr_matrix((data, (rows, cols)), shape=(n_raw, len(labels_at_rank)), dtype=int)
+        T = csr_matrix((data, (rows, cols)), shape=(n_raw_taxa, n_labels_at_rank), dtype=int)
         
         # aggregate presence & coverage
-        P_cur = raw_P @ T
+        P_cur = T.T @ raw_P
         P_cur.data[:] = 1
-        C_cur = raw_C @ T
+        C_cur = T.T @ raw_C
         
         # label columns: use lineage_map with correct lookup for root case
         agg_labels = []
@@ -259,9 +260,9 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
         C_blocks.append(C_cur)
         labels.extend(agg_labels)
     
-    # 5) Stitch everything side by side
-    full_P = hstack(P_blocks, format="csr")
-    full_C = hstack(C_blocks, format="csr")
+    # 5) Stitch everything vertically
+    full_P = vstack(P_blocks, format="csr")
+    full_C = vstack(C_blocks, format="csr")
     
     return Ingredients(
         samples=ingredients.samples,

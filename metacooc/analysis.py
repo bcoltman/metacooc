@@ -169,9 +169,10 @@ def bh_qvalues_from_logp(log_p, m_total: Optional[int] = None) -> Tuple[np.ndarr
     log_q_finite = np.minimum.accumulate(log_q_finite[::-1])[::-1]
 
     log_q_final = np.full(m, np.nan, dtype=float)
-    log_q_final[finite_mask][order] = log_q_finite
+    idx = np.where(finite_mask)[0]
+    log_q_final[idx[order]] = log_q_finite
     q_final = np.exp(log_q_final)
-    q_final[q_final > 1.0] = 1.0
+    # q_final[q_final > 1.0] = 1.0
     
     return q_final, log_q_final
 
@@ -378,21 +379,21 @@ def association(
     
     # Write node table if available
     if association_df is not None:
-        output_path = os.path.join(output_dir, f"{tag}_association.tsv")
+        output_path = os.path.join(output_dir, f"{tag}association.tsv")
         association_df.to_csv(output_path, sep="\t", index=False)
         print(f"Association analysis saved to {output_path}")
 
 
 def presence_submatrix_by_taxa(ingredients: Ingredients, taxa_subset: List[str]) -> sp.csr_matrix:
-    col_map = {t: i for i, t in enumerate(ingredients.taxa)}
-    cols = [col_map[t] for t in taxa_subset]
-    return ingredients.presence_matrix[:, cols].tocsr()
+    row_map = {t: i for i, t in enumerate(ingredients.taxa)}
+    rows = [row_map[t] for t in taxa_subset]
+    return ingredients.presence_matrix[rows,:].tocsr()
 
 def symmetric_counts_from_matrix(ingredients: Ingredients,
                                  taxa_universe: List[str]) -> Tuple[np.ndarray, sp.csr_matrix]:
     X = presence_submatrix_by_taxa(ingredients, taxa_universe)
-    totals = np.asarray(X.sum(axis=0)).ravel()
-    co_mat = (X.T @ X).tocsr()
+    totals = np.asarray(X.sum(axis=1)).ravel()
+    co_mat = (X @ X.T).tocsr()
     return totals, co_mat
 
 def conditional_probabilities(co_mat: sp.csr_matrix,
@@ -521,15 +522,15 @@ def _cooccur_core(
     -------
     edges_df : DataFrame or None
     nodes_df : DataFrame
-    X_sub    : csr_matrix (samples × len(taxa_universe))
+    X_sub    : csr_matrix (len(taxa_universe) x samples)
     totals   : 1D array of taxon totals
     iA_all   : 1D array of A indices (into taxa_universe) for each edge
     iB_all   : 1D array of B indices (into taxa_universe) for each edge
     """
     # Build the restricted presence matrix once
     X_sub = presence_submatrix_by_taxa(ing, taxa_universe)  # sparse, binary
-    totals = np.asarray(X_sub.sum(axis=0)).ravel()
-    co_mat = (X_sub.T @ X_sub).tocsr()
+    totals = np.asarray(X_sub.sum(axis=1)).ravel()
+    co_mat = (X_sub @ X_sub.T).tocsr()
     P_BA, P_AB = conditional_probabilities(co_mat, totals)
     
     N_total = len(ing.samples)
@@ -856,8 +857,9 @@ def _association_core(
 
     suffix = str(null_model).upper()
     
-    # EF: analytic-only per your design (skip null generation entirely)
-    if suffix == "EF":
+    # FE: association determined analyticlaly - no need for prbababilisticanalytic-only
+    if suffix == "FE":
+        print("FE: association determined analytically - no need for shuffling null and probabilistic approach")
         return out
 
     # Prepare full matrix once
@@ -866,24 +868,24 @@ def _association_core(
     X_full.sum_duplicates()
     X_full.sort_indices()
 
-    n_cols = X_full.shape[1]
+    n_rows, n_cols = X_full.shape
 
     sample_index = {s: i for i, s in enumerate(null_ingredients.samples)}
-    term_rows = np.array([sample_index[s] for s in filtered_ingredients.samples], dtype=np.int64)
+    term_cols = np.array([sample_index[s] for s in filtered_ingredients.samples], dtype=np.int64)
 
-    mask_rows = np.zeros(X_full.shape[0], dtype=bool)
-    mask_rows[term_rows] = True
-    nonterm_rows = np.where(~mask_rows)[0].astype(np.int64, copy=False)
+    mask_cols = np.zeros(n_cols, dtype=bool)
+    mask_cols[term_cols] = True
+    nonterm_cols = np.where(~mask_cols)[0].astype(np.int64, copy=False)
 
-    subset_idx = np.asarray(null_idx_valid, dtype=np.int32)
-    subset_idx.sort()
+    subset_idx = np.asarray(null_idx_valid, dtype=np.int64)
+    # subset_idx.sort()
 
     obs_jacc = out["jaccard"].to_numpy(dtype=float, copy=False)
 
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
 
     j_res = parallel_null_reduce_vector(
-        X_prepared=X_full,
+        X=X_full,
         model=suffix,
         n_reps=n_reps,
         obs=obs_jacc,
@@ -891,10 +893,10 @@ def _association_core(
         random_state=nm_random_state,
         n_workers=nm_n_workers,
         mp_start=mp_start,
-        term_rows=term_rows,
-        nonterm_rows=nonterm_rows,
+        term_cols=term_cols,
+        nonterm_cols=nonterm_cols,
         subset_idx=subset_idx,
-        n_cols=n_cols,
+        n_rows=n_rows,
         N_T=N_T,
     )
 
@@ -929,10 +931,10 @@ def cooccurrence_obj(
 ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
     """
     Pairwise co-occurrence of taxa.
-
+    
     Observed:
       - computed via _cooccur_core (χ², Fisher, φ, RRs, observed Jaccard, etc.)
-
+      
     Null (Jaccard only):
       - parallel reduction over null replicates from null_matrices on FULL presence matrix
       - per-edge Jaccard under null
@@ -944,7 +946,7 @@ def cooccurrence_obj(
         large=large,
         max_pairs=max_pairs,
     )
-
+    
     if not run_co:
         if not large and est_pairs > max_pairs:
             print(
@@ -961,44 +963,44 @@ def cooccurrence_obj(
                 "    - Raising the --min_sample_count."
             )
         return None, None
-
+        
     edges_df, nodes_df, X_sub, totals, iA_all, iB_all = _cooccur_core(
         null_ingredients,
         taxa_universe,
         threshold=threshold,
         m_total=est_pairs,
     )
-
+    
     if edges_df is None or len(edges_df) == 0:
         return edges_df, nodes_df
-
+        
     n_reps = int(nm_n_reps) if nm_n_reps is not None else 0
     if n_reps <= 0:
         return edges_df, nodes_df
-
+        
     suffix = str(null_model).upper()
     
-    # EF: analytic-only per your design (skip null generation entirely)
-    if suffix == "EF":
+    # FE: association determined analyticlaly - no need for prbababilisticanalytic-only
+    if suffix == "FE":
+        print("FE: association determined analytically - no need for shuffling null and probabilistic approach")
         return edges_df, nodes_df
-
+        
     # FULL matrix (CSR normalised once)
     X_full = null_ingredients.presence_matrix.tocsr()
     X_full.eliminate_zeros()
     X_full.sum_duplicates()
     X_full.sort_indices()
-
-    # map taxa_universe -> columns in X_full
-    col_map = {t: i for i, t in enumerate(null_ingredients.taxa)}
-    subset_idx = np.array([col_map[t] for t in taxa_universe], dtype=np.int32)
-    subset_idx.sort()
-
+    
+    # map taxa_universe -> rows in X_full
+    tax_map = {t: i for i, t in enumerate(null_ingredients.taxa)}
+    subset_idx = np.array([tax_map[t] for t in taxa_universe], dtype=np.int64)
+    
     obs_jacc = edges_df["jaccard"].to_numpy(dtype=float, copy=False)
-
+    
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
-
+    
     j_res = parallel_null_reduce_vector(
-        X_prepared=X_full,
+        X=X_full,
         model=suffix,
         n_reps=n_reps,
         obs=obs_jacc,
@@ -1010,12 +1012,12 @@ def cooccurrence_obj(
         iA=iA_all,
         iB=iB_all,
     )
-
+    
     edges_df[f"jaccard_null_mean_{suffix}"] = j_res["mean"]
     edges_df[f"jaccard_null_sd_{suffix}"] = j_res["sd"]
     edges_df[f"jaccard_ses_{suffix}"] = j_res["ses"]
     edges_df[f"jaccard_p_{suffix}"] = j_res["p_emp"]
-
+    
     log_p = np.log(edges_df[f"jaccard_p_{suffix}"].to_numpy(dtype=float, copy=False))
     q, log_q = bh_qvalues_from_logp(log_p, m_total=est_pairs)
     edges_df[f"jaccard_q_{suffix}"] = q
@@ -1025,5 +1027,5 @@ def cooccurrence_obj(
     edges_df[f"n_err_{suffix}"]     = int(j_res["n_err"])
     edges_df[f"n_done_{suffix}"]    = int(j_res["n_done"])
     edges_df[f"n_requested_{suffix}"]    = int(j_res["n_target"])
-
+    
     return edges_df, nodes_df

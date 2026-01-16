@@ -44,16 +44,16 @@ from metacooc.utils import (
 from metacooc._data_config import *
 
 
-def _search_taxon_columns(
+def _search_taxon_rows(
     ingredients,
     search_string: str,
     ranks_for_search_inclusion: Optional[str] = None,
 ) -> Set[int]:
     """
-    Core column-resolution logic used by search_by_taxon and other utilities.
+    Core row-resolution logic used by search_by_taxon and other utilities.
     
     Returns:
-        Set[int]: column indices in ingredients.taxa matching the search_string.
+        Set[int]: rows indices in ingredients.taxa matching the search_string.
     """
     if not search_string or not search_string.strip():
         return set()
@@ -66,8 +66,8 @@ def _search_taxon_columns(
     
     # If searching by 'Root', that means “everything”
     if rank == "root":
-        num_cols = ingredients.presence_matrix.shape[1]
-        candidates: Set[int] = set(range(num_cols))
+        num_taxa = ingredients.presence_matrix.shape[0]
+        candidates: Set[int] = set(range(num_taxa))
     else:
         candidates = set(ingredients._rank_lookups[rank].get(token, ()))
     
@@ -106,7 +106,7 @@ def search_by_taxon(
     
     Returns a set of sample IDs that contain any of the matching taxa.
     """
-    candidates = _search_taxon_columns(
+    candidates = _search_taxon_rows(
         ingredients,
         search_string,
         ranks_for_search_inclusion=ranks_for_search_inclusion,
@@ -114,9 +114,9 @@ def search_by_taxon(
     if not candidates:
         return set()
     
-    sub = ingredients.presence_matrix[:, sorted(candidates)]
-    rows, _ = sub.nonzero()
-    return {ingredients.samples[r] for r in rows}
+    sub = ingredients.presence_matrix[sorted(candidates), :]
+    _, cols = sub.nonzero()
+    return {ingredients.samples[c] for c in cols}
 
 def get_column_indices(metadata_file, column_names, delimiter="\t"):
     """
