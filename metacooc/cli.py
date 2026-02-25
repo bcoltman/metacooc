@@ -49,7 +49,7 @@ def check_required_args(args, required_args, subparser):
         subparser.error(f"The following arguments are required: {', '.join(missing)}")
 
 # Argument group helpers (with group support)
-def add_data_dir_and_version(parser, group=None):
+def add_data_dir(parser, group=None):
     kwargs = {
         "default": DEFAULT_DATA_DIR,
         "help": "Directory containing data files (default: %(default)s)",
@@ -58,15 +58,39 @@ def add_data_dir_and_version(parser, group=None):
         group.add_argument("--data_dir", **kwargs)
     else:
         parser.add_argument("--data_dir", **kwargs)
+
+def add_version(parser, group=None, mode: str = "load"):
+    """
+    Add --version CLI option.
+    
+    mode:
+        "load"   → select which version to load (default: latest)
+        "format" → label/version to stamp into generated files (default: none)
+    """
+    
+    if mode == "load":
+        help_text = (
+            "Specify which data version to load (default: latest). "
+            "Versions available for download can be listed with "
+            "'metacooc download --list_versions'."
+        )
+        
+    elif mode == "format":
+        help_text = (
+            "Optional version label to embed in the generated Ingredients files. "
+            "No default is applied."
+        )
+        
+    else:
+        raise ValueError("mode must be 'load' or 'format'")
         
     kwargs = {
         "default": None,
-        "help": "Specify which data version to load (default: latest). Versions available for download can be listed with 'metacooc download --list_versions'",
+        "help": help_text,
     }
-    if group:
-        group.add_argument("--sandpiper_version", **kwargs)
-    else:
-        parser.add_argument("--sandpiper_version", **kwargs)
+    
+    target = group if group else parser
+    target.add_argument("--version", **kwargs)
 
 def add_tag_and_aggregated(parser, group=None):
     kwargs = {
@@ -486,7 +510,7 @@ def add_return_all_taxa(parser, group=None):
 # Subcommand functions
 def download_command(args):
     from metacooc.download import download_data
-    download_data(data_dir=args.data_dir, force=args.force, list_versions=args.list_versions, sandpiper_version=args.sandpiper_version)
+    download_data(data_dir=args.data_dir, force=args.force, list_versions=args.list_versions, version=args.version)
 
 def format_command(args):
     from metacooc.format import format_data
@@ -495,7 +519,8 @@ def format_command(args):
         output_dir=args.output_dir,
         sample_to_biome_file=args.sample_to_biome_file,
         aggregated=args.aggregated,
-        tag=args.tag
+        tag=args.tag,
+        
     )
 
 def search_command(args, subparser):
@@ -522,7 +547,7 @@ def search_command(args, subparser):
         inverse=args.inverse,
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
-        sandpiper_version=args.sandpiper_version,
+        version=args.version,
         list_column_names=args.list_column_names,
     )
 
@@ -542,7 +567,7 @@ def filter_command(args, subparser):
         taxa_count_rank=args.taxa_count_rank,
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
-        sandpiper_version=args.sandpiper_version,
+        version=args.version,
         min_shared_samples_between_taxa=args.min_shared_samples_between_taxa
     )
 
@@ -616,7 +641,8 @@ def parse_cli():
         download_command,
     )
     opt = download_sub.add_argument_group("optional arguments")
-    add_data_dir_and_version(download_sub, group=opt)
+    add_data_dir(download_sub, group=opt)
+    add_version(download_sub, group=opt)
     add_list_versions(download_sub, group=opt)
     add_force(download_sub, group=opt)
     
@@ -633,6 +659,7 @@ def parse_cli():
     add_tax_profile(format_sub, group=req)
     add_tag_and_aggregated(format_sub, group=opt)
     add_sample_to_biome_file(format_sub, group=opt)
+    add_version(download_sub, group=opt, mode="format")
     
     # Search subcommand
     search_sub = add_subcommand(
@@ -645,7 +672,8 @@ def parse_cli():
     opt = search_sub.add_argument_group("optional arguments")
     add_search_mode_and_string(search_sub, group=req)
     add_output_dir(search_sub, required=False, group=req)
-    add_data_dir_and_version(search_sub, group=opt)
+    add_data_dir(search_sub, group=opt)
+    add_version(search_sub, group=opt)
     add_tag_and_aggregated(search_sub, group=opt)
     add_custom_ingredients(search_sub, group=opt)
     add_search_args(search_sub, group=opt)
@@ -661,7 +689,8 @@ def parse_cli():
     req = filter_sub.add_argument_group("required arguments")
     opt = filter_sub.add_argument_group("optional arguments")
     add_output_dir(filter_sub, group=req)
-    add_data_dir_and_version(filter_sub, group=opt)
+    add_data_dir(filter_sub, group=opt)
+    add_version(filter_sub, group=opt)
     add_tag_and_aggregated(filter_sub, group=opt)
     add_custom_ingredients(filter_sub, group=opt)
     add_filter_args(filter_sub, group=opt)
@@ -715,7 +744,8 @@ def parse_cli():
     opt = cooc_sub.add_argument_group("optional arguments")
     add_search_mode_and_string(cooc_sub, required=True, group=req)
     add_output_dir(cooc_sub, group=req)
-    add_data_dir_and_version(cooc_sub, group=opt)
+    add_data_dir(cooc_sub, group=opt)
+    add_version(cooc_sub, group=opt)
     add_tag_and_aggregated(cooc_sub, group=opt)
     add_custom_ingredients(cooc_sub, group=opt)
     add_search_args(cooc_sub, group=opt)
@@ -737,7 +767,8 @@ def parse_cli():
     opt = assoc_sub.add_argument_group("optional arguments")
     add_search_mode_and_string(assoc_sub, required=True, group=req)
     add_output_dir(assoc_sub, group=req)
-    add_data_dir_and_version(assoc_sub, group=opt)
+    add_data_dir(assoc_sub, group=opt)
+    add_version(assoc_sub, group=opt)
     add_tag_and_aggregated(assoc_sub, group=opt)
     add_custom_ingredients(assoc_sub, group=opt)
     add_search_args(assoc_sub, group=opt)
@@ -758,7 +789,8 @@ def parse_cli():
     opt = structure_sub.add_argument_group("optional arguments")
     add_search_mode_and_string(structure_sub, required=True, group=req)
     add_output_dir(structure_sub, group=req)
-    add_data_dir_and_version(structure_sub, group=opt)
+    add_data_dir(structure_sub, group=opt)
+    add_version(structure_sub, group=opt)
     add_tag_and_aggregated(structure_sub, group=opt)
     add_custom_ingredients(structure_sub, group=opt)
     add_search_args(structure_sub, group=opt)
@@ -776,7 +808,8 @@ def parse_cli():
     req = biome_sub.add_argument_group("required arguments")
     opt = biome_sub.add_argument_group("optional arguments")
     add_output_dir(biome_sub, group=req)
-    add_data_dir_and_version(biome_sub, group=opt)
+    add_data_dir(biome_sub, group=opt)
+    add_version(biome_sub, group=opt)
     add_tag_and_aggregated(biome_sub, group=opt)
     add_custom_ingredients(biome_sub, group=opt)
     add_return_all_taxa(biome_sub, group=opt)

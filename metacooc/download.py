@@ -27,21 +27,21 @@ import shutil
 from metacooc._data_config import *
 
 
-def download_data(data_dir, list_versions=False, sandpiper_version=None, force=False):
+def download_data(data_dir, list_versions=False, version=None, force=False):
     """
     Download data files for a specific Sandpiper version into data_dir.
     
     Parameters:
         data_dir (str): Directory where data files will be saved.
         force (bool): If True, force re-download even if the file exists.
-        sandpiper_version (str): Version to download (default: latest available).
+        version (str): Version to download (default: latest available).
     """
     if list_versions:
         avail = ", ".join(available_versions())
         print(f"Available: {avail}")
         return
 
-    version = sandpiper_version or LATEST_VERSION  # defaults to latest *_gtdb
+    version = version or LATEST_VERSION  # defaults to latest *_gtdb
 
     filenames, download_urls = get_file_info(version)
         
@@ -65,7 +65,9 @@ def download_data(data_dir, list_versions=False, sandpiper_version=None, force=F
     if missing_files == 0:
         print("All files already exist; skipping download.")
         return
-        
+    
+    print(f"This script is looking for the download files of {version}. If you want an alternative version, "
+          "please specify it with --version. To see which versions are available, please use --list-versions")
     # Prompt user for confirmation
     user_input = input(f"Do you want to download {missing_files} missing files to {data_dir}? (y/n): ").strip().lower()
     if user_input != 'y':
@@ -107,12 +109,12 @@ def main():
     parser = argparse.ArgumentParser(description="Download metacooc data files")
     parser.add_argument("--data_dir", type=str, required=True, help="Target directory for data files")
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
-    parser.add_argument("--sandpiper_version", default=None, help="Specify which data version to load (default: latest)")
+    parser.add_argument("--version", default=None, help="Specify which data version to load (default: latest)")
     parser.add_argument("--list_versions", action="store_true", help="Specify which data version to load (default: latest)")
     args = parser.parse_args()
     args = parser.parse_args()
     
-    download_data(args.data_dir, list_versions=args.list_versions, sandpiper_version=args.sandpiper_version, force=args.force)
+    download_data(args.data_dir, list_versions=args.list_versions, version=args.version, force=args.force)
 
 if __name__ == "__main__":
     main()

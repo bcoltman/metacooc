@@ -13,7 +13,6 @@ from metacooc.pantry import *
 from metacooc.utils import _RANK_PREFIXES, stream_edges
 
 from metacooc.null_models import (
-    null_matrices,
     parallel_null_reduce_vector,
     stat_fn_association_jaccard,
     stat_fn_cooccurrence_jaccard,

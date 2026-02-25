@@ -43,7 +43,7 @@ def run_shared_pipeline_setup(args):
             - data_dir (str): Directory containing input data files.
             - aggregated (bool): If True, loads aggregated ingredients; otherwise, loads raw ingredients.
             - custom_ingredients (object, optional): Pre-loaded ingredients object.
-            - sandpiper_version (str, optional): Version of the Sandpiper tool used for data processing.
+            - version (str, optional): Version of the Sandpiper tool used for data processing.
             - mode (str): Analysis mode, either "taxon" or "metadata".
             - search_string (str): Search term for filtering accessions.
             - ranks_for_search_inclusion (list, optional): Taxonomic ranks to restrict search.
@@ -70,7 +70,7 @@ def run_shared_pipeline_setup(args):
             If any step fails, returns (None, None, None, None).
     """
     # Step 1. Load the Ingredients object.
-    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.sandpiper_version)
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.version)
     
     # Step 2. Perform search.
     matching_accessions = search_data_obj(
@@ -354,7 +354,7 @@ def run_biome_distribution(args):
     Determine and export the biome dsitribution of taxa across all annotated metagenomes
     """
     
-    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.sandpiper_version)
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.version)
     biomes, presence, coverage, n_dropped = ingredients.biome_distribution()
     biome_by_taxa_df = pd.DataFrame(data=presence.todense(), columns=ingredients.taxa, index=biomes)
     

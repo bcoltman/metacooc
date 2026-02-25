@@ -45,22 +45,25 @@ class Ingredients:
         presence_matrix: sp.csr_matrix,
         coverage_matrix: sp.csr_matrix,
         sample_to_biome: Dict[str, str] = None,
-    ):
+        version: Optional[str] = None,
+        ):
         self.taxa = taxa
         self.samples = samples
         
         object.__setattr__(self, "_presence_matrix", presence_matrix)
         object.__setattr__(self, "_coverage_matrix", coverage_matrix)
+        
         self.total_counts = self._compute_total_counts()
         
-        # Load and preallocate biome mapping if provided
+        # Load and preallocate biome mapping
         self.sample_to_biome = sample_to_biome or {}
         if self.sample_to_biome:
             self._allocate_biomes()
-        
+            
         self._rank_lookups = None
         self._terminal_rank_prefixes = None
-        
+        self.version = version
+    
     def __getstate__(self):
         state = {
             "samples": self.samples,
@@ -69,12 +72,13 @@ class Ingredients:
             "_coverage_matrix": self._coverage_matrix,
             "total_counts": self.total_counts,
             "sample_to_biome": self.sample_to_biome,
+            "version": self.version,
         }
-        # include precomputed if exists
+        
         if hasattr(self, "biomes_order"):
             state["biomes_order"] = self.biomes_order
             state["sample_biome_indices"] = self.sample_biome_indices
-        
+            
         if hasattr(self, "_rank_lookups") and self._rank_lookups is not None:
             state["_rank_lookups"] = self._rank_lookups
             state["_terminal_rank_prefixes"] = self._terminal_rank_prefixes
@@ -84,6 +88,7 @@ class Ingredients:
     def __setstate__(self, state):
         self.samples = state["samples"]
         self.taxa = state["taxa"]
+        
         object.__setattr__(self, "_presence_matrix", state.get("_presence_matrix"))
         object.__setattr__(self, "_coverage_matrix", state.get("_coverage_matrix"))
         
@@ -91,19 +96,21 @@ class Ingredients:
         self._terminal_rank_prefixes = state.get("_terminal_rank_prefixes", None)
         
         # restore or compute total_counts
-        if "total_counts" in state and state["total_counts"] is not None:
-            self.total_counts = state["total_counts"]
-        else:
-            self.total_counts = self._compute_total_counts()
+        # restore or compute total_counts
+        tc = state.get("total_counts", None)
+        self.total_counts = tc if tc is not None else self._compute_total_counts()
         
         # restore or default biome mapping
         self.sample_to_biome = state.get("sample_to_biome", {})
+        
         # restore allocation if present
         if "biomes_order" in state and "sample_biome_indices" in state:
             self.biomes_order = state["biomes_order"]
             self.sample_biome_indices = state["sample_biome_indices"]
         elif self.sample_to_biome:
             self._allocate_biomes()
+        
+        self.version = state.get("version", None)
     
     def _invalidate_taxa_caches(self):
         self._rank_lookups = None
@@ -335,13 +342,13 @@ def load_ingredients(
     data_dir: Optional[str] = None,
     aggregated: bool = False,
     custom_ingredients=None,
-    sandpiper_version: Optional[str] = None,
+    version: Optional[str] = None,
     sample_to_biome_file=None) -> Ingredients:
     """Load an Ingredients object and associated biome mapping."""
     
     # determine ingredients file path
     if not custom_ingredients:
-        version = sandpiper_version or LATEST_VERSION
+        version = version or LATEST_VERSION
         filenames, _ = get_file_info(version)
         if not data_dir:
             raise ValueError(
@@ -381,3 +388,24 @@ def load_ingredients(
         print(f"Using {filepath}")
     
     return ingredients
+
+def save_ingredients(ingredients: "Ingredients", 
+                     output_dir: str, 
+                     *, 
+                     aggregated: bool = False,
+                     tag: Optional[str] = None, 
+                     version: Optional[str] = None) -> str:
+    os.makedirs(output_dir, exist_ok=True)
+    
+    if version is not None:
+        ingredients.version = version
+        
+    kind = "ingredients_aggregated" if aggregated else "ingredients_raw"
+    suffix = f"_{tag}" if tag else ""
+    filepath = os.path.join(output_dir, f"{kind}{suffix}.pkl")
+    
+    with open(filepath, "wb") as f:
+        pickle.dump(ingredients, f, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    print(f"Saved Ingredients → {filepath}")
+    return filepath

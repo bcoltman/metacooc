@@ -7,9 +7,7 @@ DEFAULT_VARIANT = "gtdb"
 
 # Map *base* release -> Zenodo record id
 RELEASES = {
-    "1.1.0": "****",
-    # "1.0.1": "16030719",
-    # ...
+    "1.1.0": "18245268",
 }
 
 NO_LONGER_COMPATIBLE = ["1.0.1", "1.0.0", "0.3.0"]
@@ -76,7 +74,7 @@ def get_file_info(version: str):
         "ingredients_aggregated": f"ingredients_aggregated_{full_version}.pkl",
         # common (base only)
         "sra_metadata": f"sra_metadata_{base_version}.tsv",
-        "sample_to_biome": f"sample_to_biome_{base_version}.csv",
+        "sample_to_biome": f"sample_to_biome_{base_version}.tsv",
     }
     
     download_urls = {

@@ -126,23 +126,25 @@ def format_data(
     sample_to_biome_file: Optional[str] = None,
     aggregated: bool = False,
     tag: str = "",
+    version: Optional[str] = None,
 ):
     """
-    Process the sandpiper TSV file and return a raw Ingredients instance.
+    Process the sandpiper TSV file and save Ingredients objects.
     
     Args:
-        tax_profile (str): Path to the tax profile TSV file.
-        output_dir (str): Directory to save the output.
-        sample_to_biome_file (str, optional): Path to the biome mapping file.
-        aggregated (bool, optional): Whether to generate aggregated ingredients.
-        tag (str, optional): Tag for output filenames.
+        tax_profile: Path to the tax profile TSV file.
+        output_dir: Directory to save outputs.
+        sample_to_biome_file: Optional biome mapping TSV.
+        aggregated: Whether to also generate aggregated ingredients.
+        tag: Optional filename suffix.
+        version: Dataset/schema version to embed in Ingredients.
     """
-    # Load the biome mapping file if specified
+    
+    # load biome mapping
     sample_to_biome = {}
     if sample_to_biome_file:
         if os.path.exists(sample_to_biome_file):
             df = pd.read_csv(sample_to_biome_file, dtype=str, sep="\t")
-            # CSV has columns: accession, level_1, level_2
             sample_to_biome = {
                 row["accession"]: (row["level_1"], row["level_2"])
                 for _, row in df.iterrows()
@@ -153,25 +155,33 @@ def format_data(
                 UserWarning,
             )
     
-    # Generate the raw Ingredients object
-    raw_ingredients = format_ingredients(tax_profile, sample_to_biome)
+    # build raw Ingredients
+    raw_ingredients = format_ingredients(
+        tax_profile,
+        sample_to_biome,
+    )
     
-    os.makedirs(output_dir, exist_ok=True)
+    raw_ingredients.version = version
     
-    # Save the raw Ingredients object
-    output_raw = os.path.join(output_dir, f"ingredients_raw{f'_{tag}' if tag else ""}.pkl")
-    with open(output_raw, "wb") as f:
-        pickle.dump(raw_ingredients, f)
-    print(f"Raw ingredients saved to {output_raw}")
+    # save raw
+    save_ingredients(
+        raw_ingredients,
+        output_dir,
+        aggregated=False,
+        tag=tag,
+    )
     
+    # aggregated
     if aggregated:
-        # Generate the aggregated Ingredients object
-        aggregated_ingredients = raw_ingredients.copy()
-        aggregated_ingredients = add_taxa_levels_to_ingredients(aggregated_ingredients)
-        output_agg = os.path.join(output_dir, f"ingredients_aggregated{f'_{tag}' if tag else ""}.pkl")
-        with open(output_agg, "wb") as f:
-            pickle.dump(aggregated_ingredients, f)
-        print(f"Aggregated ingredients saved to {output_agg}")
+        agg = add_taxa_levels_to_ingredients(raw_ingredients.copy())
+        agg.version = version
+        
+        save_ingredients(
+            agg,
+            output_dir,
+            aggregated=True,
+            tag=tag,
+        )
 
 
 def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
