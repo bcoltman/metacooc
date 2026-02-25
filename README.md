@@ -14,7 +14,7 @@
 ## Table of Contents
 
 - [Installation](#installation)
-- [Data and variants](#data-and-variants)
+- [Data and variants](#data-and-download)
 - [Quick start](#quick-start)
 - [Core pipelines](#core-pipelines)
   - [Co-occurrence](#co-occurrence)
