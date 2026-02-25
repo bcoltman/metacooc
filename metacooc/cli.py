@@ -9,7 +9,7 @@ DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 RANK_CHOICES = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 NULL_SCOPE_CHOICES = ["biome", "taxa", "metadata", "biome_taxa", "metadata_taxa"]
 NULL_MODEL_CHOICES = ["FF","FE","EF","EE","EP"]
-ANALYSIS_TYPE_CHOICES = ["cooccurence", "association", "structure"]
+ANALYSIS_TYPE_CHOICES = ["cooccurrence", "association", "structure"]
 SEARCH_MODE_CHOICES = ["taxon", "metadata", "biome"]
 
 # Helper functions
@@ -370,7 +370,7 @@ def add_large_and_max_pairs_args(parser, group=None):
     kwargs = {
         "type": positive_int,
         "default": 100000,
-        "help": "If the number of taxon pairs exceeds this value, then cooccurence will not be determined unless --large is used.",
+        "help": "If the number of taxon pairs exceeds this value, then cooccurrence will not be determined unless --large is used.",
     }
     if group:
         group.add_argument("--max_pairs", **kwargs)
@@ -490,7 +490,7 @@ def add_analysis_type(parser, group=None):
     kwargs = {
         "choices": ANALYSIS_TYPE_CHOICES,
         "required": True,
-        "help": "Analysis mode: 'cooccurence', 'association' or 'structure'.",
+        "help": "Analysis mode: 'cooccurrence', 'association' or 'structure'.",
     }
     if group:
         group.add_argument("--analysis_type", **kwargs)
@@ -574,7 +574,7 @@ def filter_command(args, subparser):
 def analysis_command(args):
     from metacooc.analysis import association, cooccurrence
     args.tag = format_tag(args.tag, False)
-    if args.analysis_type == "cooccurence":
+    if args.analysis_type == "cooccurrence":
         cooccurrence(
             null_ingredients=args.null_file,
             filtered_ingredients=args.filtered_file,
