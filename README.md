@@ -52,7 +52,7 @@ conda install -c conda-forge metacooc
 
 ---
 
-# Data and download
+## Data and download
 
 MetaCoOc uses prebuilt datasets hosted on **Zenodo**. Currently, the data release is available as **two Sandpiper database variants**:
 
@@ -75,9 +75,9 @@ If no version is specified, MetaCoOc defaults to the latest available base relea
 
 ---
 
-## Downloading data
+### Downloading data
 
-### Default behaviour
+#### Default behaviour
 
 If you run:
 
@@ -103,7 +103,7 @@ After the files are downloaded, all subsequent analyses reuse the local copies.
 
 ---
 
-## What gets downloaded
+#### What gets downloaded
 
 For a version such as:
 
@@ -113,14 +113,14 @@ For a version such as:
 
 The following files are retrieved from Zenodo and decompressed locally:
 
-### Variant-specific
+##### Variant-specific
 
 * `ingredients_raw_1.1.0_gtdb.pkl`
 * `ingredients_aggregated_1.1.0_gtdb.pkl`
 
 These are prebuilt **Ingredients** objects containing presence/absence matrices and cached taxonomic lookups.
 
-#### Ingredients: raw vs aggregated
+##### Ingredients: raw vs aggregated
 
 * **`ingredients_raw`** — uses *unfilled coverage* (as reported by [SingleM](https://wwood.github.io/singlem/tools/summarise)).  
   Coverage assigned to a taxon does **not** include coverage from its descendant taxa.
@@ -132,7 +132,7 @@ In short:
 `raw` = coverage at that exact rank only.
 `aggregated` = total coverage across the full subtree.
 
-### Base-version shared files
+##### Base-version shared files
 
 * `sra_metadata_1.1.0.tsv`
 * `sample_to_biome_1.1.0.tsv`
