@@ -1,3 +1,4 @@
+#structure.py
 import numpy as np
 import scipy.sparse as sp
 import pandas as pd
