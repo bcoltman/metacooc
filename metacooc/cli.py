@@ -659,7 +659,7 @@ def parse_cli():
     add_tax_profile(format_sub, group=req)
     add_tag_and_aggregated(format_sub, group=opt)
     add_sample_to_biome_file(format_sub, group=opt)
-    add_data_version(download_sub, group=opt, mode="format")
+    add_data_version(format_sub, group=opt, mode="format")
     
     # Search subcommand
     search_sub = add_subcommand(
@@ -706,7 +706,7 @@ def parse_cli():
     )
     req = analysis_sub.add_argument_group("required arguments")
     opt = analysis_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(analysis_sub, required=True, group=req)
+    # add_search_mode_and_string(analysis_sub, required=True, group=req)
     add_analysis_type(analysis_sub, group=req)
     add_output_dir(analysis_sub, group=req)
     add_filtered_file(analysis_sub, group=req)
@@ -718,6 +718,8 @@ def parse_cli():
         choices=RANK_CHOICES,
         help="Taxa identified at a rank higher than this rank are filtered out of results.",
     )
+    add_null_model_args(analysis_sub, group=opt)
+    add_fisher_args(analysis_sub, group=opt)
     
     # Plot subcommand
     plot_sub = add_subcommand(
