@@ -5,9 +5,9 @@ download.py
 Download initial data files for metacooc.
 
 This script downloads the following default files into the specified data directory:
-    - ingredients_raw_<version>.pkl
-    - ingredients_aggregated_genus_<version>.pkl
-    - sra_metadata_<version>.tsv
+    - ingredients_raw_<data_version>.pkl
+    - ingredients_aggregated_genus_<data_version>.pkl
+    - sra_metadata_<data_version>.tsv
 
 All download URLs point to gzip-compressed files. This script downloads each file
 to a temporary .gz file, unzips it, and then removes the temporary file.
@@ -27,23 +27,23 @@ import shutil
 from metacooc._data_config import *
 
 
-def download_data(data_dir, list_versions=False, version=None, force=False):
+def download_data(data_dir, list_data_versions=False, data_version=None, force=False):
     """
-    Download data files for a specific Sandpiper version into data_dir.
+    Download data files for a specific Sandpiper data_version into data_dir.
     
     Parameters:
         data_dir (str): Directory where data files will be saved.
         force (bool): If True, force re-download even if the file exists.
-        version (str): Version to download (default: latest available).
+        data_version (str): data_version to download (default: latest available).
     """
-    if list_versions:
+    if list_data_versions:
         avail = ", ".join(available_versions())
         print(f"Available: {avail}")
         return
 
-    version = version or LATEST_VERSION  # defaults to latest *_gtdb
+    data_version = data_version or LATEST_VERSION  # defaults to latest *_gtdb
 
-    filenames, download_urls = get_file_info(version)
+    filenames, download_urls = get_file_info(data_version)
         
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
@@ -66,8 +66,8 @@ def download_data(data_dir, list_versions=False, version=None, force=False):
         print("All files already exist; skipping download.")
         return
     
-    print(f"This script is looking for the download files of {version}. If you want an alternative version, "
-          "please specify it with --version. To see which versions are available, please use --list-versions")
+    print(f"This script is looking for the download files of {data_version}. If you want an alternative version, "
+          "please specify it with --data_version. To see which versions are available, please use --list_data_versions")
     # Prompt user for confirmation
     user_input = input(f"Do you want to download {missing_files} missing files to {data_dir}? (y/n): ").strip().lower()
     if user_input != 'y':
@@ -109,12 +109,12 @@ def main():
     parser = argparse.ArgumentParser(description="Download metacooc data files")
     parser.add_argument("--data_dir", type=str, required=True, help="Target directory for data files")
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
-    parser.add_argument("--version", default=None, help="Specify which data version to load (default: latest)")
-    parser.add_argument("--list_versions", action="store_true", help="Specify which data version to load (default: latest)")
+    parser.add_argument("--data_version", default=None, help="Specify which data version to load (default: latest)")
+    parser.add_argument("--list_data_versions", action="store_true", help="Specify which data version to load (default: latest)")
     args = parser.parse_args()
     args = parser.parse_args()
     
-    download_data(args.data_dir, list_versions=args.list_versions, version=args.version, force=args.force)
+    download_data(args.data_dir, list_data_versions=args.list_data_versions, data_version=args.data_version, force=args.force)
 
 if __name__ == "__main__":
     main()

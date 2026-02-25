@@ -259,14 +259,14 @@ def search_data_obj(
     column_names=None,
     inverse=False,
     custom_ingredients=None,
-    version=None
+    data_version=None
 ) -> Set:
     search_mode = search_mode.lower()
     
     # 1) metadata: raw regex search
     if search_mode == "metadata":
-        version = version or LATEST_VERSION
-        filenames, _ = get_file_info(version)
+        data_version = data_version or LATEST_VERSION
+        filenames, _ = get_file_info(data_version)
         if not data_dir:
             raise ValueError(
                 "data_dir must be provided if searching metadata"
@@ -289,7 +289,7 @@ def search_data_obj(
     ingredients = loader(
         data_dir,
         custom_ingredients=custom_ingredients,
-        version=version
+        data_version=data_version
     )
     
     # parse into OR‑groups of AND‑terms
@@ -325,7 +325,7 @@ def search_data_obj(
     return total_hits
 
 def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
-                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, version=None, list_column_names=False):
+                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, data_version=None, list_column_names=False):
     """
     File‑based search wrapper for metacooc.
     
@@ -367,7 +367,7 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
         If True, return the complement of the matching set.
     custom_ingredients : Ingredients or str
         Path to a custom pickled Ingredients object, or an Ingredients instance.
-    version : Optional[str]
+    data_version : Optional[str]
         Version string to select alternate data files via your data_config.
     
     Returns
@@ -377,8 +377,8 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
     """
     if list_column_names:
             
-        version = version or LATEST_VERSION
-        filenames, _ = get_file_info(version)
+        data_version = data_version or LATEST_VERSION
+        filenames, _ = get_file_info(data_version)
         if not data_dir:
             raise ValueError(
                 "data_dir must be provided if searching metadata"
@@ -399,7 +399,7 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
                                           column_names, 
                                           inverse, 
                                           custom_ingredients, 
-                                          version)
+                                          data_version)
     
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)

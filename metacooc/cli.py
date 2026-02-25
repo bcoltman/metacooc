@@ -59,9 +59,9 @@ def add_data_dir(parser, group=None):
     else:
         parser.add_argument("--data_dir", **kwargs)
 
-def add_version(parser, group=None, mode: str = "load"):
+def add_data_version(parser, group=None, mode: str = "load"):
     """
-    Add --version CLI option.
+    Add --data_version CLI option.
     
     mode:
         "load"   → select which version to load (default: latest)
@@ -72,7 +72,7 @@ def add_version(parser, group=None, mode: str = "load"):
         help_text = (
             "Specify which data version to load (default: latest). "
             "Versions available for download can be listed with "
-            "'metacooc download --list_versions'."
+            "'metacooc download --list_data_versions'."
         )
         
     elif mode == "format":
@@ -90,7 +90,7 @@ def add_version(parser, group=None, mode: str = "load"):
     }
     
     target = group if group else parser
-    target.add_argument("--version", **kwargs)
+    target.add_argument("--data_version", **kwargs)
 
 def add_tag_and_aggregated(parser, group=None):
     kwargs = {
@@ -427,15 +427,15 @@ def add_force(parser, group=None):
     else:
         parser.add_argument("--force", **kwargs)
 
-def add_list_versions(parser, group=None):
+def add_list_data_versions(parser, group=None):
     kwargs = {
         "action": "store_true",
         "help": "List available versions",
     }
     if group:
-        group.add_argument("--list-versions", **kwargs)
+        group.add_argument("--list_data_versions", **kwargs)
     else:
-        parser.add_argument("--list-versions", **kwargs)
+        parser.add_argument("--list_data_versions", **kwargs)
 
 def add_tax_profile(parser, group=None):
     kwargs = {
@@ -510,7 +510,7 @@ def add_return_all_taxa(parser, group=None):
 # Subcommand functions
 def download_command(args):
     from metacooc.download import download_data
-    download_data(data_dir=args.data_dir, force=args.force, list_versions=args.list_versions, version=args.version)
+    download_data(data_dir=args.data_dir, force=args.force, list_data_versions=args.list_data_versions, data_version=args.data_version)
 
 def format_command(args):
     from metacooc.format import format_data
@@ -547,7 +547,7 @@ def search_command(args, subparser):
         inverse=args.inverse,
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
-        version=args.version,
+        data_version=args.data_version,
         list_column_names=args.list_column_names,
     )
 
@@ -567,7 +567,7 @@ def filter_command(args, subparser):
         taxa_count_rank=args.taxa_count_rank,
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
-        version=args.version,
+        data_version=args.data_version,
         min_shared_samples_between_taxa=args.min_shared_samples_between_taxa
     )
 
@@ -642,8 +642,8 @@ def parse_cli():
     )
     opt = download_sub.add_argument_group("optional arguments")
     add_data_dir(download_sub, group=opt)
-    add_version(download_sub, group=opt)
-    add_list_versions(download_sub, group=opt)
+    add_data_version(download_sub, group=opt)
+    add_list_data_versions(download_sub, group=opt)
     add_force(download_sub, group=opt)
     
     # Format subcommand
@@ -659,7 +659,7 @@ def parse_cli():
     add_tax_profile(format_sub, group=req)
     add_tag_and_aggregated(format_sub, group=opt)
     add_sample_to_biome_file(format_sub, group=opt)
-    add_version(download_sub, group=opt, mode="format")
+    add_data_version(download_sub, group=opt, mode="format")
     
     # Search subcommand
     search_sub = add_subcommand(
@@ -673,7 +673,7 @@ def parse_cli():
     add_search_mode_and_string(search_sub, group=req)
     add_output_dir(search_sub, required=False, group=req)
     add_data_dir(search_sub, group=opt)
-    add_version(search_sub, group=opt)
+    add_data_version(search_sub, group=opt)
     add_tag_and_aggregated(search_sub, group=opt)
     add_custom_ingredients(search_sub, group=opt)
     add_search_args(search_sub, group=opt)
@@ -690,7 +690,7 @@ def parse_cli():
     opt = filter_sub.add_argument_group("optional arguments")
     add_output_dir(filter_sub, group=req)
     add_data_dir(filter_sub, group=opt)
-    add_version(filter_sub, group=opt)
+    add_data_version(filter_sub, group=opt)
     add_tag_and_aggregated(filter_sub, group=opt)
     add_custom_ingredients(filter_sub, group=opt)
     add_filter_args(filter_sub, group=opt)
@@ -745,7 +745,7 @@ def parse_cli():
     add_search_mode_and_string(cooc_sub, required=True, group=req)
     add_output_dir(cooc_sub, group=req)
     add_data_dir(cooc_sub, group=opt)
-    add_version(cooc_sub, group=opt)
+    add_data_version(cooc_sub, group=opt)
     add_tag_and_aggregated(cooc_sub, group=opt)
     add_custom_ingredients(cooc_sub, group=opt)
     add_search_args(cooc_sub, group=opt)
@@ -768,7 +768,7 @@ def parse_cli():
     add_search_mode_and_string(assoc_sub, required=True, group=req)
     add_output_dir(assoc_sub, group=req)
     add_data_dir(assoc_sub, group=opt)
-    add_version(assoc_sub, group=opt)
+    add_data_version(assoc_sub, group=opt)
     add_tag_and_aggregated(assoc_sub, group=opt)
     add_custom_ingredients(assoc_sub, group=opt)
     add_search_args(assoc_sub, group=opt)
@@ -790,7 +790,7 @@ def parse_cli():
     add_search_mode_and_string(structure_sub, required=True, group=req)
     add_output_dir(structure_sub, group=req)
     add_data_dir(structure_sub, group=opt)
-    add_version(structure_sub, group=opt)
+    add_data_version(structure_sub, group=opt)
     add_tag_and_aggregated(structure_sub, group=opt)
     add_custom_ingredients(structure_sub, group=opt)
     add_search_args(structure_sub, group=opt)
@@ -809,7 +809,7 @@ def parse_cli():
     opt = biome_sub.add_argument_group("optional arguments")
     add_output_dir(biome_sub, group=req)
     add_data_dir(biome_sub, group=opt)
-    add_version(biome_sub, group=opt)
+    add_data_version(biome_sub, group=opt)
     add_tag_and_aggregated(biome_sub, group=opt)
     add_custom_ingredients(biome_sub, group=opt)
     add_return_all_taxa(biome_sub, group=opt)

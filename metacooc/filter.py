@@ -163,7 +163,7 @@ def filter_data(accessions_file,
                 local_degree=1,
                 min_shared_samples_between_taxa=1,
                 custom_ingredients=None,
-                version=None):
+                data_version=None):
                 
     
     os.makedirs(output_dir, exist_ok=True)
@@ -172,7 +172,7 @@ def filter_data(accessions_file,
     ingredients = load_ingredients(data_dir, 
                                    aggregated, 
                                    custom_ingredients, 
-                                   version)
+                                   data_version)
     
     if null_scope is None:
         

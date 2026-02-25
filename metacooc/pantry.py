@@ -45,7 +45,7 @@ class Ingredients:
         presence_matrix: sp.csr_matrix,
         coverage_matrix: sp.csr_matrix,
         sample_to_biome: Dict[str, str] = None,
-        version: Optional[str] = None,
+        data_version: Optional[str] = None,
         ):
         self.taxa = taxa
         self.samples = samples
@@ -62,7 +62,7 @@ class Ingredients:
             
         self._rank_lookups = None
         self._terminal_rank_prefixes = None
-        self.version = version
+        self.data_version = data_version
     
     def __getstate__(self):
         state = {
@@ -72,7 +72,7 @@ class Ingredients:
             "_coverage_matrix": self._coverage_matrix,
             "total_counts": self.total_counts,
             "sample_to_biome": self.sample_to_biome,
-            "version": self.version,
+            "data_version": self.data_version,
         }
         
         if hasattr(self, "biomes_order"):
@@ -110,7 +110,7 @@ class Ingredients:
         elif self.sample_to_biome:
             self._allocate_biomes()
         
-        self.version = state.get("version", None)
+        self.data_version = state.get("data_version", None)
     
     def _invalidate_taxa_caches(self):
         self._rank_lookups = None
@@ -342,14 +342,14 @@ def load_ingredients(
     data_dir: Optional[str] = None,
     aggregated: bool = False,
     custom_ingredients=None,
-    version: Optional[str] = None,
+    data_version: Optional[str] = None,
     sample_to_biome_file=None) -> Ingredients:
     """Load an Ingredients object and associated biome mapping."""
     
     # determine ingredients file path
     if not custom_ingredients:
-        version = version or LATEST_VERSION
-        filenames, _ = get_file_info(version)
+        data_version = data_version or LATEST_VERSION
+        filenames, _ = get_file_info(data_version)
         if not data_dir:
             raise ValueError(
                 "data_dir must be provided when not using custom_ingredients"
@@ -371,7 +371,7 @@ def load_ingredients(
         avail = ", ".join(sorted(RELEASES.keys()))
         raise FileNotFoundError(
             f"Ingredients file '{filepath}' not found.\n"
-            f"Missing version {version}. Available: {avail}"
+            f"Missing version {data_version}. Available: {avail}"
         )
     
     # load ingredients object
@@ -380,10 +380,10 @@ def load_ingredients(
     
     # version mismatch warning
     if not custom_ingredients:
-        ev = getattr(ingredients, "version", None)
-        if ev and ev != version:
+        ev = getattr(ingredients, "data_version", None)
+        if ev and ev != data_version:
             warnings.warn(
-                f"Loaded version {ev}, expected {version}.", UserWarning
+                f"Loaded version {ev}, expected {data_version}.", UserWarning
             )
         print(f"Using {filepath}")
     
@@ -394,11 +394,11 @@ def save_ingredients(ingredients: "Ingredients",
                      *, 
                      aggregated: bool = False,
                      tag: Optional[str] = None, 
-                     version: Optional[str] = None) -> str:
+                     data_version: Optional[str] = None) -> str:
     os.makedirs(output_dir, exist_ok=True)
     
-    if version is not None:
-        ingredients.version = version
+    if data_version is not None:
+        ingredients.data_version = data_version
         
     kind = "ingredients_aggregated" if aggregated else "ingredients_raw"
     suffix = f"_{tag}" if tag else ""
