@@ -267,7 +267,7 @@ def association_obj(
     null_ingredients: "Ingredients",
     filtered_ingredients: "Ingredients",
     threshold: float = 0.0,
-    null_model: str = "FE",               # "FE" or "FF" 
+    null_model: str = "FE",               
     nm_n_reps: int = 1000,
     nm_random_state: int | None = None,
     compute_fisher: bool = False,
@@ -284,12 +284,9 @@ def association_obj(
         Must have samples ⊆ null_ingredients.samples.
     threshold : float
         Optional filter on p_T_given_X (taxon-centric specificity).
-    null_model : {"FE", "FF"}
+    null_model : {"FF","FE","EF","EE"}
         "FE" -> analytic tests based on 2×2 tables (χ², Fisher, etc.) only.
-        "FF" -> same per-taxon stats + (optionally) SIM9-based community metrics.
-    community_structure : bool
-        If True and null_model == "FF", run SIM9 on the null presence matrix
-        and attach C-score, NODF, mean Jaccard (global + subset) in attrs.
+        "FF", "EE", "EF" -> same per-taxon stats + metrics derived from null shuffling 
     nm_n_reps : int
         Number of SIM9 null matrices if community_structure is True.
     nm_random_state : int or None
@@ -340,9 +337,9 @@ def association(
         Must have samples ⊆ null_ingredients.samples.
     threshold : float
         Optional filter on p_T_given_X (taxon-centric specificity).
-    null_model : {"FE", "FF"}
+    null_model : {"FF","FE","EF","EE"}
         "FE" -> analytic tests based on 2×2 tables (χ², Fisher, etc.) only.
-        "FF" -> same per-taxon stats + (optionally) SIM9-based community metrics.
+        "FF", "EE", "EF" -> same per-taxon stats + metrics derived from null shuffling 
     community_structure : bool
         If True and null_model == "FF", run SIM9 on the null presence matrix
         and attach C-score, NODF, mean Jaccard (global + subset) in attrs.
@@ -659,7 +656,7 @@ def cooccurrence(
     threshold : float, default 0.1
         Minimum conditional probability (``P(B|A)``) required for an edge to be
         included in the edge table.
-    null_model : {"FE", "FF"}, default "FE"
+    null_model : {"FF","FE","EF","EE"}, default "FE"
         Co-occurrence null model; passed through to :func:`taxon_cooccurrence_obj`.
     nm_n_reps : int, default 10
         Number of SIM9 null matrices for the "FF" null model.

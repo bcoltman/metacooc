@@ -11,7 +11,6 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
-from scipy.sparse.csgraph import connected_components
 
 from metacooc._data_config import *
 from metacooc.utils import (

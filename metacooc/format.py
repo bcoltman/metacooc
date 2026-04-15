@@ -126,7 +126,7 @@ def format_data(
     sample_to_biome_file: Optional[str] = None,
     aggregated: bool = False,
     tag: str = "",
-    version: Optional[str] = None,
+    data_version: Optional[str] = None,
 ):
     """
     Process the sandpiper TSV file and save Ingredients objects.
@@ -137,7 +137,7 @@ def format_data(
         sample_to_biome_file: Optional biome mapping TSV.
         aggregated: Whether to also generate aggregated ingredients.
         tag: Optional filename suffix.
-        version: Dataset/schema version to embed in Ingredients.
+        data_version: Dataset/schema version to embed in Ingredients.
     """
     
     # load biome mapping
@@ -161,7 +161,7 @@ def format_data(
         sample_to_biome,
     )
     
-    raw_ingredients.version = version
+    raw_ingredients.data_version = data_version
     
     # save raw
     save_ingredients(
@@ -174,7 +174,7 @@ def format_data(
     # aggregated
     if aggregated:
         agg = add_taxa_levels_to_ingredients(raw_ingredients.copy())
-        agg.version = version
+        agg.data_version = data_version
         
         save_ingredients(
             agg,

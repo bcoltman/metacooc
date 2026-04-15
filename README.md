@@ -422,7 +422,7 @@ MetaCoOc ships a parsed SRA metadata table (`sra_metadata_<base>.tsv`) and a `sa
 
 ## License
 
-GNU GPL v3 or later (GPLv3+). See `LICENCE.txt`.
+GNU GPL v3 or later (GPLv3+). See `LICENSE`.
 
 ---
 

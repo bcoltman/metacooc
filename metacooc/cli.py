@@ -8,7 +8,7 @@ DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 RANK_CHOICES = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 NULL_SCOPE_CHOICES = ["biome", "taxa", "metadata", "biome_taxa", "metadata_taxa"]
-NULL_MODEL_CHOICES = ["FF","FE","EF","EE","EP"]
+NULL_MODEL_CHOICES = ["FF","FE","EF","EE"]#,"EP"]
 ANALYSIS_TYPE_CHOICES = ["cooccurrence", "association", "structure"]
 SEARCH_MODE_CHOICES = ["taxon", "metadata", "biome"]
 
@@ -248,9 +248,6 @@ def validate_null_scope_args(args, subparser):
         subparser.error("--null_metadata_query is required when null_scope is 'metadata' or 'metadata_taxa'")
 
 
-
-
-
 def add_filter_args(parser, group=None):
     kwargs = {
         "type": positive_int,
@@ -346,7 +343,7 @@ def add_null_model_args(parser, group=None):
         group.add_argument("--nm_random_state", **kwargs)
     else:
         parser.add_argument("--nm_random_state", **kwargs)
-    
+
 def add_fisher_args(parser, group=None):
     kwargs = {
         "action": "store_true",
@@ -466,25 +463,25 @@ def add_filtered_file(parser, group=None):
     else:
         parser.add_argument("--filtered_file", **kwargs)
 
-def add_null_file(parser, group=None):
+def add_null_file(parser, group=None, required=True):
     kwargs = {
-        "required": True,
-        "help": "Path to the null Ingredients pickle file.",
+        "required": required,
+        "help": "Path to the null Ingredients pickle file. Not required for --analysis_type structure",
     }
     if group:
         group.add_argument("--null_file", **kwargs)
     else:
         parser.add_argument("--null_file", **kwargs)
 
-def add_ratios_file(parser, group=None):
+def add_analysis_file(parser, group=None):
     kwargs = {
         "required": True,
-        "help": "Path to the ratios file to plot.",
+        "help": "Path to the analysis file to plot.",
     }
     if group:
-        group.add_argument("--ratios_file", **kwargs)
+        group.add_argument("--analysis_file", **kwargs)
     else:
-        parser.add_argument("--ratios_file", **kwargs)
+        parser.add_argument("--analysis_file", **kwargs)
 
 def add_analysis_type(parser, group=None):
     kwargs = {
@@ -500,7 +497,7 @@ def add_analysis_type(parser, group=None):
 def add_return_all_taxa(parser, group=None):
     kwargs = {
         "action": "store_true",
-        "help": "Specify whether to return distributions of all taxa (Not aggregated - original values) (default: True)",
+        "help": "Specify whether to return distributions of all taxa (Not aggregated - original values)",
     }
     if group:
         group.add_argument("--return_all_taxa", **kwargs)
@@ -520,6 +517,7 @@ def format_command(args):
         sample_to_biome_file=args.sample_to_biome_file,
         aggregated=args.aggregated,
         tag=args.tag,
+        data_version=args.data_version,
         
     )
 
@@ -553,8 +551,19 @@ def search_command(args, subparser):
 
 def filter_command(args, subparser):
     from metacooc.filter import filter_data
-    if not any([args.min_taxa_count, args.min_sample_count, args.accessions_file, args.filter_rank]):
-        subparser.error("At least one of the following arguments is required: --min_taxa_count, --min_sample_count, --accessions_file, or --filter_rank")
+    
+    if (
+        args.min_taxa_count == 1
+        and args.min_sample_count == 1
+        and args.accessions_file is None
+        and args.filter_rank is None
+    ):
+        subparser.error(
+            "At least one of the following must be provided: "
+            "--min_taxa_count (not 1), --min_sample_count (not 1), "
+            "--accessions_file, or --filter_rank"
+        )
+    
     args.tag = format_tag(args.tag, args.aggregated)
     filter_data(
         accessions_file=args.accessions_file,
@@ -566,15 +575,28 @@ def filter_command(args, subparser):
         filter_rank=args.filter_rank,
         taxa_count_rank=args.taxa_count_rank,
         tag=args.tag,
+        null_scope=args.null_scope,
+        null_taxa_query=args.null_taxa_query,
+        null_biome_query=args.null_biome_query,
+        null_metadata_query=args.null_metadata_query,
+        remove_null_threshold=args.remove_null_threshold,
+        taxa_degree=args.taxa_degree,
+        min_shared_samples_between_taxa=args.min_shared_samples_between_taxa,
         custom_ingredients=args.custom_ingredients,
-        data_version=args.data_version,
-        min_shared_samples_between_taxa=args.min_shared_samples_between_taxa
-    )
+        data_version=args.data_version)
+
 
 def analysis_command(args):
-    from metacooc.analysis import association, cooccurrence
+    
     args.tag = format_tag(args.tag, False)
+    subparser = analysis_command.__subparser__
+    
+    if args.analysis_type in {"cooccurrence", "association"} and not args.null_file:
+        subparser.error("--null_file is required for --analysis_type cooccurrence and association")
+    
     if args.analysis_type == "cooccurrence":
+        from metacooc.analysis import cooccurrence
+        
         cooccurrence(
             null_ingredients=args.null_file,
             filtered_ingredients=args.filtered_file,
@@ -583,9 +605,26 @@ def analysis_command(args):
             filter_rank=args.filter_rank,
             large=args.large,
             max_pairs=args.max_pairs,
-            threshold=args.threshold
-        )
-    else:
+            threshold=args.threshold,
+            null_model=args.null_model,
+            nm_n_reps=args.nm_n_reps,
+            nm_random_state=args.nm_random_state)
+    
+    elif args.analysis_type == "structure":
+        from metacooc.structure import structure
+        
+        structure(
+            ingredients=args.filtered_file,
+            output_dir=args.output_dir,
+            tag=args.tag,
+            null_model=args.null_model,
+            nm_n_reps=args.nm_n_reps,
+            compute_null=True, # need to look at adding args.compute_null,
+            nm_random_state=args.nm_random_state)
+            
+    elif args.analysis_type == "association":
+        from metacooc.analysis import association
+        
         association(
             null_ingredients=args.null_file,
             filtered_ingredients=args.filtered_file,
@@ -598,13 +637,13 @@ def analysis_command(args):
             compute_fisher=args.compute_fisher)
 
 def plot_command(args):
-    from metacooc.plot import plot_ratios
+    from metacooc.plot import plot_analysis
     args.tag = format_tag(args.tag, False)
-    plot_ratios(
-        ratios_file=args.ratios_file,
+    plot_analysis(
+        df_file=args.analysis_file,
         output_dir=args.output_dir,
-        ratio_threshold=args.threshold,
         tag=args.tag,
+        q_thresh=args.threshold,
     )
 
 def cooccurrence_command(args):
@@ -612,22 +651,26 @@ def cooccurrence_command(args):
     args.tag = format_tag(args.tag, args.aggregated)
     run_cooccurrence(args)
 
+
 def association_command(args):
     from metacooc.pipelines import run_association
     args.tag = format_tag(args.tag, args.aggregated)
     run_association(args)
+
 
 def structure_command(args):
     from metacooc.pipelines import run_structure
     args.tag = format_tag(args.tag, args.aggregated)
     run_structure(args)
 
+
 def biome_distribution_command(args):
     from metacooc.pipelines import run_biome_distribution
     args.tag = format_tag(args.tag, args.aggregated)
     run_biome_distribution(args)
 
-def parse_cli():
+
+def build_parser():
     parser = argparse.ArgumentParser(
         description="Co-occurrence data of microorganisms based on metagenome detection"
     )
@@ -701,7 +744,7 @@ def parse_cli():
     analysis_sub = add_subcommand(
         subparsers,
         "analysis",
-        "Perform co-occurrence analysis.",
+        "Perform co-occurrence, association or structure analysis.",
         analysis_command,
     )
     req = analysis_sub.add_argument_group("required arguments")
@@ -710,7 +753,7 @@ def parse_cli():
     add_analysis_type(analysis_sub, group=req)
     add_output_dir(analysis_sub, group=req)
     add_filtered_file(analysis_sub, group=req)
-    add_null_file(analysis_sub, group=req)
+    add_null_file(analysis_sub, group=req, required=False)
     add_threshold_arg(analysis_sub, group=opt)
     add_large_and_max_pairs_args(analysis_sub, group=opt)
     analysis_sub.add_argument(
@@ -725,13 +768,13 @@ def parse_cli():
     plot_sub = add_subcommand(
         subparsers,
         "plot",
-        "Plot co-occurrence ratios.",
+        "Plot analysis.",
         plot_command,
     )
     req = plot_sub.add_argument_group("required arguments")
     opt = plot_sub.add_argument_group("optional arguments")
     add_output_dir(plot_sub, group=req)
-    add_ratios_file(plot_sub, group=req)
+    add_analysis_file(plot_sub, group=req)
     add_threshold_arg(plot_sub, group=opt)
     add_tag_and_aggregated(plot_sub, group=opt)
     
@@ -816,11 +859,16 @@ def parse_cli():
     add_custom_ingredients(biome_sub, group=opt)
     add_return_all_taxa(biome_sub, group=opt)
     
-    args = parser.parse_args()
-    if hasattr(args, 'null_scope'):
-        validate_null_scope_args(args, args.func.__subparser__)
-    args.func(args)
+    return parser
 
+def parse_cli():
+    parser = build_parser()
+    args = parser.parse_args()
+    
+    if hasattr(args, "null_scope"):
+        validate_null_scope_args(args, args.func.__subparser__)
+        
+    args.func(args)
 
 if __name__ == "__main__":
     parse_cli()

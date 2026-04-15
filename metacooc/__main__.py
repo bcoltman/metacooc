@@ -17,7 +17,6 @@
 ###############################################################################
 
 import sys
-import traceback
 
 from metacooc import __author__, __copyright__, __version__
 from metacooc.cli import parse_cli

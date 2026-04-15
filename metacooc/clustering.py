@@ -2,6 +2,8 @@ import numpy as np
 from typing import Optional, Iterable, Tuple, List, Set
 from metacooc.search import _search_taxon_rows
 
+from scipy.sparse.csgraph import connected_components
+
 def cluster_taxa(
     ingredients,
     min_cooccurrence_count: int = 2,

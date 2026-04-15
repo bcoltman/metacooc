@@ -360,15 +360,18 @@ def run_biome_distribution(args):
     
     if args.return_all_taxa:
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        biome_by_taxa_df.T.to_csv(output_path, sep="\t")
+        # biome_by_taxa_df.T.to_csv(output_path, sep="\t")
+        biome_by_taxa_df.to_csv(output_path, sep="\t")
     
     elif args.aggregated:
         if not [i for i in biome_by_taxa_df.columns if "AGGREGATED" in i]:
             print("WARNING: Ingredients did not contain aggregated taxa. Only species will be output")
         indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v or "AGGREGATED" in v]
         biome_by_agg_df = biome_by_taxa_df.iloc[:, indices].T
-        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution{"_aggregated" if args.aggregated else ""}.tsv")
-        biome_by_agg_df.T.to_csv(output_path, sep="\t")
+        # output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution{"_aggregated" if args.aggregated else ""}.tsv")
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
+        # biome_by_agg_df.T.to_csv(output_path, sep="\t")
+        biome_by_agg_df.to_csv(output_path, sep="\t")
     
     else:
         indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v]

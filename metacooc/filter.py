@@ -19,6 +19,9 @@ import numpy as np
 from metacooc.pantry import *
 from metacooc.utils import _RANK_PREFIXES
 from metacooc.clustering import determine_taxa_context
+from metacooc.search import search_data_obj
+
+import warnings
 
 def filter_by_accessions(ingredients, accession_set):
     # build a boolean mask of samples to keep
@@ -159,8 +162,8 @@ def filter_data(accessions_file,
                 null_taxa_query=None,
                 null_biome_query=None,
                 null_metadata_query=None,
-                threshold_null=False,
-                local_degree=1,
+                remove_null_threshold=False,
+                taxa_degree=1,
                 min_shared_samples_between_taxa=1,
                 custom_ingredients=None,
                 data_version=None):
@@ -178,19 +181,19 @@ def filter_data(accessions_file,
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=None, 
-                                              min_taxa_count=min_taxa_count if threshold_null else 0, 
-                                              min_sample_count=min_sample_count if threshold_null else 0, 
+                                              min_taxa_count=0 if remove_null_threshold else min_taxa_count, 
+                                              min_sample_count=0 if remove_null_threshold else min_sample_count, 
                                               filter_rank=filter_rank,
                                               taxa_count_rank=taxa_count_rank)
                                               
         if not is_successful:
             return
         
-    elif null_scope == "local":
+    elif null_scope == "taxa":
         null_ingredients, is_successful = filter_data_obj(ingredients, 
-                                              accession_set=None, 
-                                              min_taxa_count=min_taxa_count if threshold_null else 0, 
-                                              min_sample_count=min_sample_count if threshold_null else 0, 
+                                              accession_set=None,
+                                              min_taxa_count=0 if remove_null_threshold else min_taxa_count, 
+                                              min_sample_count=0 if remove_null_threshold else min_sample_count,
                                               filter_rank=filter_rank,
                                               taxa_count_rank=taxa_count_rank)
         
@@ -199,7 +202,7 @@ def filter_data(accessions_file,
                                               
         null_ingredients = determine_taxa_context(null_ingredients,
                                       focal_taxa=null_taxa_query,
-                                      degree=local_degree,
+                                      degree=taxa_degree,
                                       min_shared_samples_between_taxa=min_shared_samples_between_taxa)
     
     elif null_scope == "biome" or null_scope == "metadata":
@@ -211,8 +214,8 @@ def filter_data(accessions_file,
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=null_matching_accessions, 
-                                              min_taxa_count=min_taxa_count if threshold_null else 0, 
-                                              min_sample_count=min_sample_count if threshold_null else 0, 
+                                              min_taxa_count=0 if remove_null_threshold else min_taxa_count, 
+                                              min_sample_count=0 if remove_null_threshold else min_sample_count,
                                               filter_rank=filter_rank,
                                               taxa_count_rank=taxa_count_rank)
         
@@ -230,8 +233,8 @@ def filter_data(accessions_file,
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=null_matching_accessions, 
-                                              min_taxa_count=min_taxa_count if threshold_null else 0, 
-                                              min_sample_count=min_sample_count if threshold_null else 0, 
+                                              min_taxa_count=0 if remove_null_threshold else min_taxa_count, 
+                                              min_sample_count=0 if remove_null_threshold else min_sample_count, 
                                               filter_rank=filter_rank,
                                               taxa_count_rank=taxa_count_rank)
         
@@ -262,3 +265,10 @@ def filter_data(accessions_file,
             with open(final_path, "wb") as f:
                 pickle.dump(filtered, f)
             print(f"Final filtered Ingredients saved to {final_path}")
+    else:
+        print(
+            "No accession file provided. Count/rank filters were applied only when constructing "
+            "the null Ingredients object, which was saved as "
+            f"{intermediate_path}. No separate filtered Ingredients file was written."
+        )
+        

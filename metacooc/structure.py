@@ -11,6 +11,11 @@ from metacooc.null_models import (
     _best_mp_start
 )
 
+from metacooc.pantry import load_ingredients
+
+import os 
+
+
 def _nodf_sum_from_overlap(
     O: sp.csr_matrix,
     deg: np.ndarray,
@@ -331,5 +336,61 @@ def _structure_core(
         payload[f"n_done_{suffix}"]    = int(j_res["n_done"])
         payload[f"n_requested_{suffix}"]    = int(j_res["n_target"])
         out_rows.append(payload)
-
+        
     return pd.DataFrame(out_rows)
+
+
+def structure(
+    ingredients,
+    output_dir: str,
+    tag: str | None = None,
+    null_model: str = "FE",
+    nm_n_reps: int = 1000,
+    compute_null: bool = True,
+    nm_random_state: int | None = 42,
+) -> pd.DataFrame:
+    """
+    
+    This is the file-writing wrapper around :func:`structure_obj` that runs community-structure analysis and write results to disk.
+    
+    Parameters
+    ----------
+    ingredients :
+        Input Ingredients object, or any value accepted by
+        :func:`metacooc.pantry.load_ingredients` via ``custom_ingredients``.
+    output_dir : str
+        Directory where the output TSV file will be written.
+    tag : str, optional
+        Optional prefix for the output filename.
+    null_model : str, default "FE"
+        Null model passed through to :func:`structure_obj`.
+    nm_n_reps : int, default 1000
+        Number of null replicates.
+    compute_null : bool, default True
+        Whether to compute null distributions.
+    nm_random_state : int or None, default 42
+        Random seed for null generation.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Structure metrics table.
+    """
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
+    ing = load_ingredients(data_dir=None, custom_ingredients=ingredients)
+    
+    structure_df = structure_obj(
+        ingredients=ing,
+        null_model=null_model,
+        nm_n_reps=nm_n_reps,
+        compute_null=compute_null,
+        nm_random_state=nm_random_state,
+    )
+    
+    output_path = os.path.join(output_dir, f"{tag}structure.tsv")
+    structure_df.to_csv(output_path, sep="\t", index=False)
+    print(f"Structure analysis saved to {output_path}")
+    
+    return structure_df
