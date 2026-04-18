@@ -36,19 +36,14 @@
 
 ## Installation
 
-MetaCoOc can be installed via **pip** or **conda-forge**.
-
-### pip
+You will soon be able to install **MetaCoOc** via **pip** or **conda-forge**. For now, the repository can be cloned and installed like so:
 
 ```bash
-pip install metacooc
-````
-
-### conda-forge
-
-```bash
-conda install -c conda-forge metacooc
+git clone https://github.com/bcoltman/metacooc.git
+cd metacooc
+pip install -e .
 ```
+
 
 ---
 
