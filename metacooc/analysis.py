@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 from metacooc.pantry import *
 # from metacooc.utils import _RANK_PREFIXES, stream_edges
-from metacooc.utils import _RANK_PREFIXES, stream_edge_values
+from metacooc.utils import _RANK_PREFIXES, stream_edge_values, _stream_csr_entries
 
 from metacooc.null_models import (
     parallel_null_reduce_vector,
@@ -680,21 +680,277 @@ def _cooccur_core(
     
     return edge_arrays, nodes_df
 
+
+def _cooccur_core_focal(
+    ing: Ingredients,
+    taxa_universe: List[str],
+    focal_local_idx: np.ndarray,
+    threshold: float = 0.1,
+    m_total: Optional[int] = None,
+    compute_fisher: bool = False,
+) -> Tuple[Optional[CooccurrenceArrays], pd.DataFrame]:
+    """
+    Focal-only co-occurrence core.
+    
+    Computes only focal x all intersections and emits edges where A_taxon is focal.
+    Focal-focal pairs are emitted once with orientation normalised to iA < iB.
+    """
+    X_sub = presence_submatrix_by_taxa(ing, taxa_universe).tocsr()
+    totals = np.asarray(X_sub.sum(axis=1)).ravel().astype(np.int32, copy=False)
+    N_total = int(len(ing.samples))
+    
+    focal_local_idx = np.asarray(focal_local_idx, dtype=np.int64)
+    focal_set = set(focal_local_idx.tolist())
+    
+    nodes_df = pd.DataFrame({
+        "taxon": taxa_universe,
+        "total_count": totals.astype(int, copy=False),
+        f"degree_PBA_gt_{threshold}": np.zeros(len(taxa_universe), dtype=int),
+    })
+    
+    if focal_local_idx.size == 0:
+        return None, nodes_df
+    
+    X_focal = X_sub[focal_local_idx, :]
+    co_focal = (X_focal @ X_sub.T).tocsr()
+    
+    n_taxa = len(taxa_universe)
+    deg_fwd = np.zeros(n_taxa, dtype=np.int64)
+    
+    # ---------- pass 1 ----------
+    n_keep = 0
+    for f_rows, j_cols, inter in _stream_csr_entries(co_focal, min_value=0):
+        iA = focal_local_idx[f_rows]
+        A_totals = totals[iA]
+        
+        nonself = iA != j_cols
+        if not np.any(nonself):
+            continue
+        iA = iA[nonself]
+        j_cols = j_cols[nonself]
+        inter = inter[nonself]
+        A_totals = A_totals[nonself]
+        
+        if threshold > 0:
+            keep = inter > (threshold * A_totals)
+            if not np.any(keep):
+                continue
+            iA = iA[keep]
+            j_cols = j_cols[keep]
+            inter = inter[keep]
+            A_totals = A_totals[keep]
+            
+        B_totals = totals[j_cols]
+        valid = _valid_edge_mask_from_counts(inter, A_totals, B_totals, N_total)
+        if not np.any(valid):
+            continue
+            
+        iA = iA[valid]
+        j_cols = j_cols[valid]
+        
+        both_focal = np.fromiter((j in focal_set for j in j_cols), dtype=bool, count=j_cols.size)
+        if np.any(both_focal):
+            keep2 = ~both_focal | (iA < j_cols)
+            if not np.any(keep2):
+                continue
+            iA = iA[keep2]
+            j_cols = j_cols[keep2]
+            
+        n_keep += int(iA.size)
+        deg_fwd += np.bincount(iA, minlength=n_taxa)
+        
+    nodes_df[f"degree_PBA_gt_{threshold}"] = deg_fwd.astype(int, copy=False)
+    
+    if n_keep == 0:
+        return None, nodes_df
+        
+    # ---------- pass 2 ----------
+    iA_all = np.empty(n_keep, dtype=np.int32)
+    iB_all = np.empty(n_keep, dtype=np.int32)
+    inter_all = np.empty(n_keep, dtype=np.int32)
+    log_p_all = np.empty(n_keep, dtype=np.float64)
+    jaccard_all = np.empty(n_keep, dtype=np.float32)
+    
+    pos = 0
+    for f_rows, j_cols, inter in _stream_csr_entries(co_focal, min_value=0):
+        iA = focal_local_idx[f_rows]
+        A_totals = totals[iA]
+        
+        nonself = iA != j_cols
+        if not np.any(nonself):
+            continue
+        iA = iA[nonself]
+        j_cols = j_cols[nonself]
+        inter = inter[nonself]
+        A_totals = A_totals[nonself]
+        
+        if threshold > 0:
+            keep = inter > (threshold * A_totals)
+            if not np.any(keep):
+                continue
+            iA = iA[keep]
+            j_cols = j_cols[keep]
+            inter = inter[keep]
+            A_totals = A_totals[keep]
+            
+        B_totals = totals[j_cols]
+        valid = _valid_edge_mask_from_counts(inter, A_totals, B_totals, N_total)
+        if not np.any(valid):
+            continue
+            
+        iA = iA[valid]
+        iB = j_cols[valid]
+        inter = inter[valid].astype(np.int32, copy=False)
+        A_totals = A_totals[valid]
+        B_totals = B_totals[valid]
+        
+        both_focal = np.fromiter((j in focal_set for j in iB), dtype=bool, count=iB.size)
+        if np.any(both_focal):
+            keep2 = ~both_focal | (iA < iB)
+            if not np.any(keep2):
+                continue
+            iA = iA[keep2]
+            iB = iB[keep2]
+            inter = inter[keep2]
+            A_totals = A_totals[keep2]
+            B_totals = B_totals[keep2]
+            
+        log_p_chunk, jaccard_chunk = _compute_core_edge_metrics(
+            inter=inter,
+            A_totals=A_totals,
+            B_totals=B_totals,
+            N_total=N_total,
+        )
+        
+        k = int(inter.size)
+        sl = slice(pos, pos + k)
+        
+        iA_all[sl] = iA.astype(np.int32, copy=False)
+        iB_all[sl] = iB.astype(np.int32, copy=False)
+        inter_all[sl] = inter
+        log_p_all[sl] = log_p_chunk
+        jaccard_all[sl] = jaccard_chunk
+        pos += k
+        
+    edge_arrays = CooccurrenceArrays(
+        cols={
+            "iA": iA_all,
+            "iB": iB_all,
+            "inter": inter_all,
+            "jaccard": jaccard_all,
+            "log_p": log_p_all,
+        },
+        meta={
+            "totals": totals,
+            "N_total": N_total,
+            "compute_fisher": bool(compute_fisher),
+        },
+    )
+    
+    edge_arrays.cols["log_q_bh"] = bh_logq_from_logp(log_p_all, m_total=m_total)
+    return edge_arrays, nodes_df
+
+def estimate_focal_pairs(n_taxa: int, n_focal: int) -> int:
+    """
+    Maximum number of focal-anchored output pairs.
+    
+    Each focal taxon can pair with every other taxon.
+    This matches the user-facing focal-edge interpretation where A_taxon is focal.
+    """
+    n_taxa = int(n_taxa)
+    n_focal = int(n_focal)
+    
+    if n_focal <= 0 or n_taxa <= 1:
+        return 0
+    if n_focal > n_taxa:
+        raise ValueError(f"n_focal ({n_focal}) cannot exceed n_taxa ({n_taxa})")
+        
+    return n_focal * (n_taxa - 1)
+
 def should_run_cooccurrence(
     n_taxa: int,
     large: bool,
     max_pairs: int = 100_000,
+    n_focal: int | None = None,
 ) -> Tuple[bool, int]:
     """
-    Decide whether to run co-occurrence given user intent + scale.
-    Returns (run, estimated_pairs).
-      - Else compute nC2; require (large==True) OR estimated_pairs <= max_pairs.
+    Decide whether to run co-occurrence.
+    
+    If n_focal is None:
+        use broad all-vs-all estimate = n_taxa choose 2
+        
+    If n_focal is given:
+        use focal-only estimate.
     """
-    pairs = (n_taxa * (n_taxa - 1)) // 2
+    if n_focal is None:
+        pairs = (n_taxa * (n_taxa - 1)) // 2
+    else:
+        pairs = estimate_focal_pairs(n_taxa=n_taxa, n_focal=n_focal)
+        
     if large:
         return True, pairs
     return (pairs <= max_pairs), pairs
 
+
+def _subset_focal_edge_arrays(
+    edge_arrays: CooccurrenceArrays,
+    taxa_universe: List[str],
+    focal_query_to_taxa: dict[str, List[str]],
+) -> CooccurrenceArrays:
+    """
+    Restrict compact edge arrays to focal-anchored edges and orient them so the
+    focal taxon is always iA / A_taxon.
+    
+    Focal–focal edges are duplicated once per focal taxon, so a single output
+    file can carry a focal_query column while preserving focal anchoring.
+    """
+    tax_to_idx = {t: i for i, t in enumerate(taxa_universe)}
+    
+    src_iA = np.asarray(edge_arrays.cols["iA"], dtype=np.int64)
+    src_iB = np.asarray(edge_arrays.cols["iB"], dtype=np.int64)
+    
+    collected = {k: [] for k in edge_arrays.cols}
+    focal_query_parts = []
+    focal_taxon_parts = []
+    
+    for focal_query, focal_taxa in focal_query_to_taxa.items():
+        for focal_taxon in focal_taxa:
+            focal_idx = tax_to_idx.get(focal_taxon)
+            if focal_idx is None:
+                continue
+                
+            left_idx = np.flatnonzero(src_iA == focal_idx)
+            if left_idx.size:
+                for key, arr in edge_arrays.cols.items():
+                    collected[key].append(np.asarray(arr)[left_idx])
+                focal_query_parts.append(np.full(left_idx.size, focal_query, dtype=object))
+                focal_taxon_parts.append(np.full(left_idx.size, focal_taxon, dtype=object))
+                
+            right_idx = np.flatnonzero(src_iB == focal_idx)
+            if right_idx.size:
+                for key, arr in edge_arrays.cols.items():
+                    arr_np = np.asarray(arr)
+                    if key == "iA":
+                        collected[key].append(src_iB[right_idx].astype(arr_np.dtype, copy=False))
+                    elif key == "iB":
+                        collected[key].append(src_iA[right_idx].astype(arr_np.dtype, copy=False))
+                    else:
+                        collected[key].append(arr_np[right_idx])
+                focal_query_parts.append(np.full(right_idx.size, focal_query, dtype=object))
+                focal_taxon_parts.append(np.full(right_idx.size, focal_taxon, dtype=object))
+                
+    out_cols = {}
+    for key, parts in collected.items():
+        if parts:
+            out_cols[key] = np.concatenate(parts)
+        else:
+            out_cols[key] = np.asarray(edge_arrays.cols[key])[:0].copy()
+            
+    out_cols["focal_query"] = (
+        np.concatenate(focal_query_parts) if focal_query_parts else np.array([], dtype=object)
+    )
+    
+    return CooccurrenceArrays(cols=out_cols, meta=dict(edge_arrays.meta))
 
 def export_cooccurrence_outputs(
     *,
@@ -894,10 +1150,10 @@ def cooccurrence(
     )
 
 
-
 def cooccurrence_obj(
     null_ingredients: "Ingredients",
     taxa_universe: List[str],
+    focal_query_to_taxa: dict[str, List[str]] | None = None,
     large: bool = False,
     max_pairs: int = 100_000,
     threshold: float = 0.1,
@@ -914,19 +1170,28 @@ def cooccurrence_obj(
     """
     Pairwise co-occurrence of taxa.
     
-    Observed:
-      - computed via _cooccur_core (χ², Fisher, φ, RRs, observed Jaccard, etc.)
-      
-    Null (Jaccard only):
-      - parallel reduction over null replicates from null_matrices on FULL presence matrix
-      - per-edge Jaccard under null
-      - attaches mean/sd/SES/p with null_model: *_FF, *_FE, etc.
-      - BH q-values from empirical p (with m_total=est_pairs)
+    If focal_query_to_taxa is provided, computation is restricted to focal-anchored
+    pairs only, using the union of resolved focal taxa across queries.
     """
+    focal_local_idx = None
+    if focal_query_to_taxa:
+        tax_to_idx = {t: i for i, t in enumerate(taxa_universe)}
+        focal_idx_set = {
+            tax_to_idx[t]
+            for taxa in focal_query_to_taxa.values()
+            for t in taxa
+            if t in tax_to_idx
+        }
+        focal_local_idx = np.asarray(sorted(focal_idx_set), dtype=np.int64)
+        n_focal = int(focal_local_idx.size)
+    else:
+        n_focal = None
+        
     run_co, est_pairs = should_run_cooccurrence(
         n_taxa=len(taxa_universe),
         large=large,
         max_pairs=max_pairs,
+        n_focal=n_focal,
     )
     
     if not run_co:
@@ -946,25 +1211,50 @@ def cooccurrence_obj(
             )
         return None, None
         
-    edge_arrays, nodes_df = _cooccur_core(
-        null_ingredients,
-        taxa_universe,
-        threshold=threshold,
-        m_total=est_pairs,
-        compute_fisher=False,
-    )
+    if focal_local_idx is None:
+        edge_arrays, nodes_df = _cooccur_core(
+            null_ingredients,
+            taxa_universe,
+            threshold=threshold,
+            m_total=est_pairs,
+            compute_fisher=False,
+        )
+    else:
+        edge_arrays, nodes_df = _cooccur_core_focal(
+            null_ingredients,
+            taxa_universe,
+            focal_local_idx=focal_local_idx,
+            threshold=threshold,
+            m_total=est_pairs,
+            compute_fisher=False,
+        )
     
     if edge_arrays is None or edge_arrays.n_rows == 0:
         return edge_arrays, nodes_df
-    
+        
+    if focal_query_to_taxa:
+        edge_arrays = _subset_focal_edge_arrays(
+            edge_arrays=edge_arrays,
+            taxa_universe=taxa_universe,
+            focal_query_to_taxa=focal_query_to_taxa,
+        )
+        
+        if edge_arrays is None or edge_arrays.n_rows == 0:
+            return edge_arrays, nodes_df
+            
+        edge_arrays.cols["log_q_bh"] = bh_logq_from_logp(
+            edge_arrays.cols["log_p"],
+            m_total=edge_arrays.n_rows,
+        )
+        
     n_reps = int(nm_n_reps) if nm_n_reps is not None else 0
     if n_reps <= 0:
         return edge_arrays, nodes_df
-    
+        
     if null_model == "FE":
-        print("FE: cooccurence determined analytically - no need for shuffling null and probabilistic approach")
+        print("FE: cooccurrence determined analytically - no need for shuffling null and probabilistic approach")
         return edge_arrays, nodes_df
-    
+        
     X_full = null_ingredients.presence_matrix.tocsr()
     X_full.eliminate_zeros()
     X_full.sum_duplicates()
@@ -1000,14 +1290,14 @@ def cooccurrence_obj(
     
     edge_arrays.cols[f"log_jaccard_q_{null_model}"] = bh_logq_from_logp(
         np.log(edge_arrays.cols[f"jaccard_p_{null_model}"]),
-        m_total=est_pairs,
+        m_total=edge_arrays.n_rows if focal_query_to_taxa else est_pairs,
     )
     
     edge_arrays.meta[f"n_ok_{null_model}"] = int(j_res["n_ok"])
     edge_arrays.meta[f"n_err_{null_model}"] = int(j_res["n_err"])
     edge_arrays.meta[f"n_done_{null_model}"] = int(j_res["n_done"])
     edge_arrays.meta[f"n_requested_{null_model}"] = int(j_res["n_target"])
-    
+
     return edge_arrays, nodes_df
 
 

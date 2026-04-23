@@ -112,42 +112,99 @@ def _parse_focal_query(q: str) -> List[str]:
         raise ValueError("No focal taxa queries were provided.")
     return queries
 
-def _is_endpoint_focal_query(search_string: str) -> bool:
-    rank, token = _deepest_rank_token(search_string)
+
+def _terminal_component(taxon: str) -> str:
+    return taxon.split("; ")[-1]
+
+
+def _exact_terminal_taxon_rows(ingredients, query: str) -> Set[int]:
+    """
+    Exact row matching against either the full taxon string or its terminal token.
+    
+    This is essential for endpoint focal queries such as:
+      - s__Ignicoccus hospitalis
+      - g__VFJL01 AGGREGATED
+    """
+    query = query.strip()
+    return {
+        i
+        for i, taxon in enumerate(ingredients.taxa)
+        if taxon == query or _terminal_component(taxon) == query
+    }
+
+
+def _is_endpoint_focal_query(query: str) -> bool:
+    rank, token = _deepest_rank_token(query)
     if rank is None or token is None:
         return False
-    return (rank == "species") or token.endswith(" AGGREGATED")
+        
+    token = token.strip()
+    return rank == "species" or token.endswith(" AGGREGATED")
+
+
+def _resolve_single_focal_taxa_query(ingredients, query: str) -> Set[int]:
+    """
+    Resolve one focal query.
+    
+    Endpoint queries:
+      - exact terminal row(s) only
+      
+    Non-terminal ranked queries:
+      - descendant rows from _search_taxon_rows()
+      - exact non-aggregated row itself, if present
+      - exact aggregated endpoint row, if present
+    """
+    query = query.strip()
+    if not query:
+        return set()
+        
+    ingredients._ensure_taxa_lookups()
+    
+    # Endpoint focal queries must be exact-only.
+    if _is_endpoint_focal_query(query):
+        rows = _exact_terminal_taxon_rows(ingredients, query)
+        if not rows:
+            raise ValueError(f"No exact endpoint taxon matched focal query: {query!r}")
+        return rows
+        
+    rank, token = _deepest_rank_token(query)
+    if rank is None or token is None:
+        raise ValueError(f"Could not parse ranked focal query: {query!r}")
+        
+    rows: Set[int] = set()
+    
+    # Descendants/current taxon-search expansion.
+    rows |= _search_taxon_rows(ingredients, token)
+    
+    # The explicit non-aggregated row itself, if present.
+    rows |= _exact_terminal_taxon_rows(ingredients, token)
+    
+    # The aggregated endpoint row, if present.
+    rows |= _exact_terminal_taxon_rows(ingredients, f"{token} AGGREGATED")
+    
+    if not rows:
+        raise ValueError(f"No taxa matched focal query after expansion: {query!r}")
+        
+    return rows
+
 
 def resolve_focal_taxa_queries(
     ingredients,
     search_string: str,
 ) -> Dict[str, Set[int]]:
     """
-    Resolve focal taxa queries into explicit taxon-row sets.
-    
-    Endpoint queries (species or '* AGGREGATED') resolve to themselves only.
-    Non-terminal ranked queries resolve to the row itself, descendants, and
-    the aggregated counterpart if present.
+    Resolve comma-separated focal taxa queries independently.
     """
-    ingredients._ensure_taxa_lookups()
-    
     out: Dict[str, Set[int]] = {}
+    
     for query in _parse_focal_query(search_string):
-        rows = _search_taxon_rows(ingredients, query)
+        rows = _resolve_single_focal_taxa_query(ingredients, query)
         if not rows:
             raise ValueError(f"No taxa matched focal query: {query!r}")
-            
-        if not _is_endpoint_focal_query(query):
-            _, token = _deepest_rank_token(query)
-            if token is not None:
-                rows |= _search_taxon_rows(ingredients, f"{token} AGGREGATED")
-                
-        if not rows:
-            raise ValueError(f"No taxa matched focal query after expansion: {query!r}")
-            
         out[query] = rows
         
     return out
+
 
 def search_by_focal_taxa(
     ingredients,
@@ -162,7 +219,7 @@ def search_by_focal_taxa(
     all_rows: Set[int] = set()
     for rows in focal_rows.values():
         all_rows |= rows
-        
+    
     if not all_rows:
         return set()
         

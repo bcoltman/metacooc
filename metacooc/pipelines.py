@@ -38,6 +38,52 @@ from metacooc.plot import plot_analysis_obj
 from metacooc.clustering import determine_taxa_context
 from metacooc.structure import structure_obj
 
+def _samples_from_taxon_rows(ingredients, row_idx: np.ndarray) -> set[str]:
+    """
+    Resolve a set of taxon row indices to the set of samples containing >=1 of them.
+    """
+    row_idx = np.asarray(row_idx, dtype=np.int64)
+    if row_idx.size == 0:
+        return set()
+        
+    hit = np.asarray(
+        ingredients.presence_matrix[row_idx, :].getnnz(axis=0)
+    ).ravel() > 0
+    
+    sample_arr = np.asarray(ingredients.samples, dtype=object)
+    return set(sample_arr[hit].tolist())
+
+def _resolve_focal_mode_initial_accessions(args, ingredients):
+    """
+    Resolve the initial accession cohort for focal_taxa mode directly from focal
+    taxon row resolution, rather than via search_data_obj().
+    
+    Returns
+    -------
+    matching_accessions : set[str]
+    focal_query_to_taxa_raw : dict[str, list[str]]
+        Raw focal resolution against the unfiltered loaded Ingredients object.
+        This will be re-resolved again after filtering to build the final
+        focal_query_to_taxa used by cooccurrence.
+    """
+    focal_rows = resolve_focal_taxa_queries(ingredients, args.search_string)
+    
+    taxa_arr = np.asarray(ingredients.taxa, dtype=object)
+    focal_query_to_taxa_raw = {}
+    matching_accessions = set()
+    
+    for focal_query, row_idx in focal_rows.items():
+        row_idx_arr = np.asarray(sorted(row_idx), dtype=np.int64)
+        if row_idx_arr.size == 0:
+            continue
+            
+        resolved_taxa = taxa_arr[row_idx_arr].tolist()
+        focal_query_to_taxa_raw[focal_query] = resolved_taxa
+        matching_accessions.update(_samples_from_taxon_rows(ingredients, row_idx_arr))
+        
+    return matching_accessions, focal_query_to_taxa_raw
+
+
 def run_shared_pipeline_setup(args):
     """
     Shared setup for cooccurrence, association, and structure pipelines.
@@ -54,19 +100,24 @@ def run_shared_pipeline_setup(args):
         args.data_version,
     )
     
-    matching_accessions = search_data_obj(
-        search_mode=args.search_mode,
-        data_dir=args.data_dir,
-        search_string=args.search_string,
-        ranks_for_search_inclusion=args.ranks_for_search_inclusion,
-        strict=args.strict,
-        column_names=args.column_names,
-        inverse=args.inverse,
-        custom_ingredients=ingredients,
-        data_version=args.data_version,
-        aggregated=args.aggregated,
-    )
+    focal_query_to_taxa = None
     
+    if args.search_mode == "focal_taxa":
+        matching_accessions, _ = _resolve_focal_mode_initial_accessions(args, ingredients)
+    else:
+        matching_accessions = search_data_obj(
+            search_mode=args.search_mode,
+            data_dir=args.data_dir,
+            search_string=args.search_string,
+            ranks_for_search_inclusion=args.ranks_for_search_inclusion,
+            strict=args.strict,
+            column_names=args.column_names,
+            inverse=args.inverse,
+            custom_ingredients=ingredients,
+            data_version=args.data_version,
+            aggregated=args.aggregated,
+        )
+        
     if not matching_accessions:
         print("Pipeline: No matching accessions found. Exiting pipeline.")
         return None, None, None, None, None
@@ -87,7 +138,6 @@ def run_shared_pipeline_setup(args):
     sub_samples = int_ingredients.samples
     taxa_universe = select_taxa_universe(int_ingredients, rank=args.filter_rank)
     
-    focal_query_to_taxa = None
     if args.search_mode == "focal_taxa":
         focal_rows = resolve_focal_taxa_queries(int_ingredients, args.search_string)
         taxa_arr = np.asarray(int_ingredients.taxa, dtype=object)
@@ -95,9 +145,13 @@ def run_shared_pipeline_setup(args):
         
         focal_query_to_taxa = {}
         for focal_query, row_idx in focal_rows.items():
+            row_idx_arr = np.asarray(sorted(row_idx), dtype=np.int64)
+            if row_idx_arr.size == 0:
+                continue
+                
             resolved_taxa = [
                 taxon
-                for taxon in taxa_arr[sorted(row_idx)].tolist()
+                for taxon in taxa_arr[row_idx_arr].tolist()
                 if taxon in taxa_universe_set
             ]
             if resolved_taxa:
@@ -212,6 +266,8 @@ def run_shared_pipeline_setup(args):
     os.makedirs(args.output_dir, exist_ok=True)
     return null_ingredients, filtered_ingredients, taxa_universe, args.output_dir, focal_query_to_taxa
 
+
+
 def run_structure(args):
     """
     Executes the association analysis pipeline using pre-processed ingredients data.
@@ -239,7 +295,7 @@ def run_structure(args):
     """
     
     
-        null_ing, filt_ing, taxa_universe, out_dir, _ = run_shared_pipeline_setup(args)
+    null_ing, filt_ing, taxa_universe, out_dir, _ = run_shared_pipeline_setup(args)
     
     if null_ing is None:  # Early exit if setup failed
         return
@@ -263,30 +319,9 @@ def run_structure(args):
 def run_association(args):
     """
     Executes the association analysis pipeline using pre-processed ingredients data.
-    
-    The pipeline calculates either taxon or metadata enrichment metrics, depending on the specified mode.
-    Results are saved as tab-separated files, and visualisations are generated.
-    
-    Args:
-        args (argparse.Namespace): Command-line arguments or equivalent object containing:
-            - tag (str): Prefix for output file names.
-            - mode (str): Analysis mode, either "taxon" or "metadata".
-            - filter_rank (str, optional): Taxonomic rank at which to apply filters.
-            - large (bool): If True, optimises for large datasets.
-            - max_pairs (int, optional): Maximum number of taxon pairs to consider.
-            - threshold (float, optional): Threshold for filtering association metrics.
-            
-    Outputs:
-        Saves the following files to the specified output directory:
-            - If mode is "taxon":
-                - {tag}taxon_enrichment.tsv: Tab-separated file of taxon enrichment results.
-                - {tag}taxon_plot.png: Visualisation of the taxon enrichment analysis.
-            - If mode is "metadata":
-                - {tag}{mode}_enrichment.tsv: Tab-separated file of metadata enrichment results.
-                - {tag}{mode}_plot.png: Visualisation of the metadata enrichment analysis.
     """
     
-        null_ing, filt_ing, taxa_universe, out_dir, _ = run_shared_pipeline_setup(args)
+    null_ing, filt_ing, taxa_universe, out_dir, _ = run_shared_pipeline_setup(args)
     
     if null_ing is None:  # Early exit if setup failed
         return

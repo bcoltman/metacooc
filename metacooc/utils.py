@@ -171,3 +171,54 @@ def stream_edge_values(
         chunk_rows=chunk_rows,
     ):
         yield rows, cols, vals
+
+def _stream_csr_entries(
+    M: sp.csr_matrix,
+    min_value: int = 0,
+    chunk_rows: int = 10_000,
+):
+    """
+    Stream all non-zero entries from any CSR matrix, including rectangular ones.
+    Yields row indices, column indices, and values.
+    """
+    if not sp.isspmatrix_csr(M):
+        M = M.tocsr(copy=False)
+        
+    indptr = M.indptr
+    indices = M.indices
+    data = M.data
+    n_rows = M.shape[0]
+    use_value_threshold = min_value > 0
+    
+    for r0 in range(0, n_rows, chunk_rows):
+        r1 = min(r0 + chunk_rows, n_rows)
+        
+        rows_parts = []
+        cols_parts = []
+        vals_parts = []
+        
+        for i in range(r0, r1):
+            s, e = indptr[i], indptr[i + 1]
+            if s == e:
+                continue
+                
+            cols = indices[s:e]
+            vals = data[s:e]
+            
+            if use_value_threshold:
+                keep = vals > min_value
+                if not np.any(keep):
+                    continue
+                cols = cols[keep]
+                vals = vals[keep]
+                
+            rows_parts.append(np.full(cols.size, i, dtype=np.int64))
+            cols_parts.append(cols.astype(np.int64, copy=False))
+            vals_parts.append(vals)
+            
+        if rows_parts:
+            yield (
+                np.concatenate(rows_parts),
+                np.concatenate(cols_parts),
+                np.concatenate(vals_parts),
+            )
