@@ -161,7 +161,15 @@ class Ingredients:
         self._coverage_matrix = mat
     
     def _compute_total_counts(self) -> np.ndarray:
-        return np.array((self._presence_matrix > 0).sum(axis=1)).flatten()
+        """
+        Per-taxon presence counts across samples.
+        
+        Because presence_matrix is already binary / sparse-presence, use getnnz(axis=1)
+        instead of (matrix > 0).sum(axis=1), which allocates a large temporary sparse matrix.
+        """
+        return np.asarray(self._presence_matrix.getnnz(axis=1), dtype=np.int32).ravel()
+
+        # return np.array((self._presence_matrix > 0).sum(axis=1)).flatten()
     
     def __repr__(self):
         return (
@@ -171,13 +179,69 @@ class Ingredients:
             f"coverage: {self.coverage_matrix.shape}>"
         )
     
-    def copy(self):
+    @staticmethod
+    def _normalise_indexer(mask, size: int) -> np.ndarray:
+        """
+        Normalise a boolean mask or integer indexer into a 1D integer index array.
+        """
+        arr = np.asarray(mask)
+        if arr.ndim != 1:
+            arr = arr.ravel()
+            
+        if arr.dtype == bool:
+            if arr.size != size:
+                raise ValueError(
+                    f"Boolean mask length {arr.size} does not match expected size {size}"
+                )
+            return np.flatnonzero(arr).astype(np.int64, copy=False)
+            
+        return arr.astype(np.int64, copy=False)
+
+
+    def copy_shallow(self) -> "Ingredients":
+        """
+        Cheap structural copy for pipeline/filtering use.
+        
+        Shares sparse matrices and read-mostly metadata until the new object is sliced.
+        This avoids duplicating GB-scale matrices during chained filtering.
+        """
+        new = Ingredients.__new__(Ingredients)
+        
+        new.samples = self.samples
+        new.taxa = self.taxa
+        
+        object.__setattr__(new, "_presence_matrix", self._presence_matrix)
+        object.__setattr__(new, "_coverage_matrix", self._coverage_matrix)
+        
+        new.total_counts = self.total_counts
+        new.sample_to_biome = self.sample_to_biome
+        new.data_version = self.data_version
+        
+        new._rank_lookups = self._rank_lookups
+        new._terminal_rank_prefixes = self._terminal_rank_prefixes
+        
+        if hasattr(self, "biomes_order"):
+            new.biomes_order = self.biomes_order
+        if hasattr(self, "sample_biome_indices"):
+            new.sample_biome_indices = self.sample_biome_indices
+            
+        return new
+    
+    def copy(self, deep: bool = True):
+        """
+        deep=True preserves the old behaviour.
+        deep=False is the fast path used internally by filtering helpers.
+        """
+        if not deep:
+            return self.copy_shallow()
+            
         return Ingredients(
             samples=self.samples.copy(),
             taxa=self.taxa.copy(),
-            presence_matrix=self.presence_matrix.copy(),
-            coverage_matrix=self.coverage_matrix.copy(),
-            sample_to_biome=self.sample_to_biome.copy(),
+            presence_matrix=self._presence_matrix.copy(),
+            coverage_matrix=self._coverage_matrix.copy(),
+            sample_to_biome=self.sample_to_biome.copy() if self.sample_to_biome is not None else None,
+            data_version=self.data_version,
         )
     
     def filter_samples(self, mask) -> None:
@@ -187,28 +251,29 @@ class Ingredients:
         Args:
             mask (List[bool] | List[int] | np.ndarray): Boolean mask or list of indices of samples to keep.
         """
-        import numpy as _np
-        if isinstance(mask, (_np.ndarray, list)):
-            arr = _np.array(mask)
-            if arr.dtype == bool:
-                idxs = _np.nonzero(arr)[0].tolist()
-            else:
-                idxs = arr.astype(int).tolist()
-        else:
-            raise ValueError("mask must be a list or numpy array of bools or ints")
-        # apply
-        self.samples = [self.samples[i] for i in idxs]
-        self._presence_matrix = self._presence_matrix[:, idxs]
-        self._coverage_matrix = self._coverage_matrix[:, idxs]
+        idx = self._normalise_indexer(mask, len(self.samples))
+        
+        if idx.size == len(self.samples):
+            return
+            
+        samples_arr = np.asarray(self.samples, dtype=object)
+        self.samples = samples_arr[idx].tolist()
+        
+        self._presence_matrix = self._presence_matrix[:, idx]
+        self._coverage_matrix = self._coverage_matrix[:, idx]
+        
+        # sample filtering changes row totals
         self.total_counts = self._compute_total_counts()
-        if getattr(self, 'sample_to_biome', None):
+        
+        if getattr(self, "sample_to_biome", None):
             self._allocate_biomes()
     
     def filtered_samples(self, mask) -> 'Ingredients':
         """
-        Return a new Ingredients instance filtered by samples.
+        Return a new Ingredients instance filtered by samples, without deep-copying
+        the backing sparse matrices first.
         """
-        new = self.copy()
+        new = self.copy_shallow()
         new.filter_samples(mask)
         return new
     
@@ -219,28 +284,28 @@ class Ingredients:
         Args:
             mask (List[bool] | List[int] | np.ndarray): Boolean mask or list of indices of taxa to keep.
         """
-        import numpy as _np
-        if isinstance(mask, (_np.ndarray, list)):
-            arr = _np.array(mask)
-            if arr.dtype == bool:
-                idxs = _np.nonzero(arr)[0].tolist()
-            else:
-                idxs = arr.astype(int).tolist()
-        else:
-            raise ValueError("mask must be a list or numpy array of bools or ints")
-        # apply
-        self.taxa = [self.taxa[i] for i in idxs]
-        self._presence_matrix = self._presence_matrix[idxs, :]
-        self._coverage_matrix = self._coverage_matrix[idxs, :]
-        # update counts and caches
-        self.total_counts = self._compute_total_counts()
+        idx = self._normalise_indexer(mask, len(self.taxa))
+        
+        if idx.size == len(self.taxa):
+            return
+        
+        taxa_arr = np.asarray(self.taxa, dtype=object)
+        self.taxa = taxa_arr[idx].tolist()
+        
+        self._presence_matrix = self._presence_matrix[idx, :]
+        self._coverage_matrix = self._coverage_matrix[idx, :]
+        
+        # taxa filtering does not change per-row counts except subsetting them
+        self.total_counts = self.total_counts[idx].astype(np.int32, copy=False)
+        
         self._invalidate_taxa_caches()
         
     def filtered_taxa(self, mask) -> 'Ingredients':
         """
-        Return a new Ingredients instance filtered by taxa.
+        Return a new Ingredients instance filtered by taxa, without deep-copying
+        the backing sparse matrices first.
         """
-        new = self.copy()
+        new = self.copy_shallow()
         new.filter_taxa(mask)
         return new
     

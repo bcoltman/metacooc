@@ -1026,7 +1026,7 @@ def parallel_null_reduce_vector(
                 with _tqdm(total=total, desc=f"Burn-in (FF) - {n_procs} chains", dynamic_ncols=True) as pbar_burn:
                     while done_workers < n_procs:
                         try:
-                            msg = burn_q.get(timeout=0.2)
+                            msg = burn_q.get(timeout=2)
                         except _queue.Empty:
                             continue
 

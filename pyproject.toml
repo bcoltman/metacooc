@@ -18,7 +18,8 @@ dependencies = [
     "pandas",
 	"scipy",
     "matplotlib",
-	"requests"
+	"requests",
+	"pyarrow"
 ]
 keywords = ["metagenomics","co-occurrence","bioinformatics"]
 

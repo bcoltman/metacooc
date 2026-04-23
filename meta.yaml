@@ -27,6 +27,7 @@ requirements:
     - scipy
     - matplotlib
     - requests
+    - pyarrow
 
 test:
   imports:

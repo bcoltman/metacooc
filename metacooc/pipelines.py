@@ -26,7 +26,13 @@ import pandas as pd
 from metacooc.search import search_data_obj
 from metacooc.filter import filter_data_obj
 from metacooc.pantry import load_ingredients
-from metacooc.analysis import association_obj, cooccurrence_obj, select_taxa_universe
+from metacooc.analysis import (
+    association_obj,
+    cooccurrence_obj,
+    select_taxa_universe,
+    export_cooccurrence_outputs,
+)
+# from metacooc.analysis import association_obj, cooccurrence_obj, select_taxa_universe
 from metacooc.plot import plot_analysis_obj
 from metacooc.clustering import determine_taxa_context
 from metacooc.structure import structure_obj
@@ -317,8 +323,6 @@ def run_cooccurrence(args):
             - {tag}{mode}_plot.png: Visualisation of the co-occurrence analysis.
     """
     
-    # null_ing, taxa_universe, matching_accs, out_dir = run_shared_pipeline_setup(args)
-    # null_ing, filt_ing, matching_accs, out_dir = run_shared_pipeline_setup(args)
     null_ing, filt_ing, taxa_universe, out_dir = run_shared_pipeline_setup(args)
     
     if null_ing is None:  # Early exit if setup failed
@@ -327,7 +331,8 @@ def run_cooccurrence(args):
     print(f"Pipeline: Cooccurrence analysis being performed with Null Ingredients Presence Matrix with "
           f"{null_ing.presence_matrix.shape[0]} taxa & {null_ing.presence_matrix.shape[1]} samples")
       
-    edges_df, nodes_df = cooccurrence_obj(
+    # edges_df, nodes_df = cooccurrence_obj(
+    edge_arrays, nodes_df = cooccurrence_obj(
         null_ing,
         taxa_universe,
         large=args.large,
@@ -337,16 +342,19 @@ def run_cooccurrence(args):
         nm_n_reps=args.nm_n_reps,
         nm_random_state=args.nm_random_state
     )
-    # filter_rank=args.filter_rank,
-    if edges_df is not None:
-        null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
-        output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_edges.tsv")
-        edges_df.to_csv(output_path, sep="\t", index=False)
-        print(f"Pipeline: Taxon edges analysis saved to {output_path}")
-        
-        output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_nodes.tsv")
-        nodes_df.to_csv(output_path, sep="\t", index=False)
-        print(f"Pipeline: Taxon nodes analysis saved to {output_path}")
+    
+    null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
+    
+    export_cooccurrence_outputs(
+        edge_arrays=edge_arrays,
+        nodes_df=nodes_df,
+        taxa_universe=taxa_universe,
+        output_dir=out_dir,
+        edges_base=f"{args.tag}{null_scope_prefix}_edges",
+        nodes_base=f"{args.tag}{null_scope_prefix}_nodes",
+        null_model=args.null_model, 
+        summary_n=100_000,
+    )
 
 
 def run_biome_distribution(args):
@@ -368,9 +376,7 @@ def run_biome_distribution(args):
             print("WARNING: Ingredients did not contain aggregated taxa. Only species will be output")
         indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v or "AGGREGATED" in v]
         biome_by_agg_df = biome_by_taxa_df.iloc[:, indices].T
-        # output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution{"_aggregated" if args.aggregated else ""}.tsv")
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        # biome_by_agg_df.T.to_csv(output_path, sep="\t")
         biome_by_agg_df.to_csv(output_path, sep="\t")
     
     else:

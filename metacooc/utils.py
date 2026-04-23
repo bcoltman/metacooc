@@ -55,63 +55,119 @@ def _deepest_rank_token(search_string: str) -> tuple[str | None, str | None]:
             return r, tok
     return None, None
 
+
 def stream_csr_upper_threshold(
     M: sp.csr_matrix,
     threshold: float = 0.0,
-    chunk_rows: int = 50_000,
+    chunk_rows: int = 10_000,
 ) -> Iterable[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
-    Stream strict upper-triangle entries (i < j) from CSR matrix M with val > threshold.
-    Avoids COO conversion (no coo.row allocation).
+    Stream strict upper-triangle entries (i < j) from a square CSR matrix
+    with val > threshold, without converting to COO.
     
-    Yields arrays: (i, j, val)
+    Parameters
+    ----------
+    M : sp.csr_matrix
+        Input square sparse matrix.
+    threshold : float, default 0.0
+        Only yield entries with value > threshold.
+    chunk_rows : int, default 10_000
+        Number of rows to process per block.
+        
+    Yields
+    ------
+    rows, cols, vals : np.ndarray
+        Parallel arrays for one block of retained entries.
     """
     if not sp.isspmatrix_csr(M):
         M = M.tocsr(copy=False)
-    
+        
     if M.shape[0] != M.shape[1]:
         raise ValueError("stream_csr_upper_threshold expects a square matrix")
+        
+    if chunk_rows <= 0:
+        raise ValueError("chunk_rows must be a positive integer")
         
     indptr = M.indptr
     indices = M.indices
     data = M.data
     n = M.shape[0]
     
-    rows_out, cols_out, vals_out = [], [], []
+    use_value_threshold = threshold > 0
     
     for r0 in range(0, n, chunk_rows):
         r1 = min(r0 + chunk_rows, n)
         
-        rows_out.clear(); cols_out.clear(); vals_out.clear()
+        total_keep = 0
         
+        # pass 1: count surviving entries in this block
         for i in range(r0, r1):
-            s, e = indptr[i], indptr[i + 1]
+            s = indptr[i]
+            e = indptr[i + 1]
+            if s == e:
+                continue
+                
+            cols = indices[s:e]
+            
+            if use_value_threshold:
+                vals = data[s:e]
+                keep = (cols > i) & (vals > threshold)
+            else:
+                keep = (cols > i)
+                
+            total_keep += int(np.count_nonzero(keep))
+            
+        if total_keep == 0:
+            continue
+            
+        rows_out = np.empty(total_keep, dtype=indices.dtype)
+        cols_out = np.empty(total_keep, dtype=indices.dtype)
+        vals_out = np.empty(total_keep, dtype=data.dtype)
+        
+        # pass 2: fill arrays
+        pos = 0
+        for i in range(r0, r1):
+            s = indptr[i]
+            e = indptr[i + 1]
             if s == e:
                 continue
                 
             cols = indices[s:e]
             vals = data[s:e]
             
-            m = (cols > i) & (vals > threshold)
-            if np.any(m):
-                c = cols[m]
-                v = vals[m]
-                rows_out.append(np.full(c.size, i, dtype=cols.dtype))
-                cols_out.append(c)
-                vals_out.append(v)
+            if use_value_threshold:
+                keep = (cols > i) & (vals > threshold)
+            else:
+                keep = (cols > i)
                 
-        if rows_out:
-            yield (np.concatenate(rows_out),
-                   np.concatenate(cols_out),
-                   np.concatenate(vals_out))
+            k = int(np.count_nonzero(keep))
+            if k == 0:
+                continue
+                
+            rows_out[pos:pos + k] = i
+            cols_out[pos:pos + k] = cols[keep]
+            vals_out[pos:pos + k] = vals[keep]
+            pos += k
+            
+        yield rows_out, cols_out, vals_out
 
-def stream_edges(
+
+def stream_edge_values(
     M_csr: sp.csr_matrix,
-    threshold: float,
-) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
+    min_value: int,
+    chunk_rows: int = 10_000,
+) -> Iterable[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
-    Stream unique edges (iA < iB) from matrix.
+    Stream strict upper-triangle entries (i < j) and their values from a sparse matrix.
+    
+    Returns
+    -------
+    rows, cols, vals
+        Parallel arrays where vals[k] = M_csr[rows[k], cols[k]].
     """
-    for rows, cols, _ in stream_csr_upper_threshold(M_csr, threshold=threshold):
-        # Here rows are iA, cols are iB already satisfying cols > rows
-        yield rows, cols
+    for rows, cols, vals in stream_csr_upper_threshold(
+        M_csr,
+        threshold=min_value,
+        chunk_rows=chunk_rows,
+    ):
+        yield rows, cols, vals

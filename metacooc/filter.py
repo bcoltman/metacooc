@@ -12,7 +12,6 @@ This module provides two interfaces for filtering:
 Usage (file-based):
     metacooc filter --accessions_file path/to/accessions.txt --data_dir /path/to/data --output_dir /path/to/out --min_taxa_count 5 --min_sample_count 10
 """
-
 import os
 import pickle
 import numpy as np
@@ -20,30 +19,45 @@ from metacooc.pantry import *
 from metacooc.utils import _RANK_PREFIXES
 from metacooc.clustering import determine_taxa_context
 from metacooc.search import search_data_obj
-
 import warnings
 
-def filter_by_accessions(ingredients, accession_set):
-    # build a boolean mask of samples to keep
-    mask = [s in accession_set for s in ingredients.samples]
-    not_present = set(accession_set).difference(set(ingredients.samples))
+def _sample_mask_from_accessions(ingredients, accession_set):
+    if accession_set is None:
+        return None
+    
+    accession_set = accession_set if isinstance(accession_set, set) else set(accession_set)
+    sample_arr = np.asarray(ingredients.samples, dtype=object)
+    
+    mask = np.fromiter((s in accession_set for s in sample_arr),
+                       dtype=bool,
+                       count=sample_arr.size)
+    
+    sample_set = set(sample_arr.tolist())
+    not_present = accession_set.difference(sample_set)
+    
     if not_present:
-        print(f"{len(not_present)} accessions were not present in ingredients.samples. This may be due "
-              f"to accessions being removed by other parameters (e.g. --min_taxa_count, --min_sample_count)")
-    if not any(mask):
+        print(
+            f"{len(not_present)} accessions were not present in ingredients.samples. "
+            "This may be due to accessions being removed by other parameters "
+            "(e.g. --min_taxa_count, --min_sample_count)"
+        )
+        
+    return mask if mask.any() else None
+
+def filter_by_accessions(ingredients, accession_set):
+    mask = _sample_mask_from_accessions(ingredients, accession_set)
+    if mask is None:
         return None
     return ingredients.filtered_samples(mask)
 
-def filter_samples_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank):
+
+def _sample_mask_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank):
     """
-    Keep samples that have at least `min_taxa_count` taxa whose *terminal* token
-    is at the requested rank.
-    
-    By default, this means: keep samples with at least `min_taxa_count` species.
+    Boolean sample mask: keep samples with at least `min_taxa_count` taxa whose
+    terminal rank is `taxa_count_rank`.
     """
     if min_taxa_count is None or min_taxa_count <= 0:
-        # Nothing to filter on: return as-is
-        return ingredients
+        return np.ones(len(ingredients.samples), dtype=bool)
     
     rp = taxa_count_rank.strip().lower()
     if rp not in _RANK_PREFIXES:
@@ -52,46 +66,65 @@ def filter_samples_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank):
         )
     req_pref = _RANK_PREFIXES[rp]
     
-    # Ensure taxa lookup caches are built
     ingredients._ensure_taxa_lookups()
-    term = ingredients._terminal_rank_prefixes 
+    term = ingredients._terminal_rank_prefixes
     
-    # taxa at the requested terminal rank (e.g. species)
-    taxa_mask = np.array([p == req_pref for p in term], dtype=bool)
+    taxa_mask = np.fromiter((p == req_pref for p in term), dtype=bool, count=len(term))
     if not taxa_mask.any():
         warnings.warn(
             f"No taxa with terminal rank '{taxa_count_rank}' found; cannot "
             "filter samples by taxa count at this rank."
         )
         return None
-        
-    # Count presence of those taxa per sample
-    sample_counts = np.array(
-        ingredients.presence_matrix[taxa_mask, :].sum(axis=0)
-    ).ravel()
     
-    # Keep samples with at least min_taxa_count taxa at this rank
+    P = ingredients.presence_matrix
+    if taxa_mask.all():
+        sample_counts = np.asarray(P.getnnz(axis=0)).ravel()
+    else:
+        row_idx = np.flatnonzero(taxa_mask)
+        sample_counts = np.asarray(P[row_idx, :].getnnz(axis=0)).ravel()
+        
     sample_mask = sample_counts >= min_taxa_count
     if not sample_mask.any():
         return None
-        
-    return ingredients.filtered_samples(sample_mask)
+    return sample_mask
+
+
+def filter_samples_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank):
+    mask = _sample_mask_by_taxa_count(ingredients, min_taxa_count, taxa_count_rank)
+    if mask is None:
+        return None
+    return ingredients.filtered_samples(mask)
+
+
+def _taxa_mask_by_sample_count(ingredients, min_sample_count):
+    """
+    Boolean taxa mask: keep taxa present in at least `min_sample_count` samples.
+    
+    Uses cached total_counts instead of recomputing from sparse comparisons.
+    """
+    if min_sample_count is None or min_sample_count <= 0:
+        return np.ones(len(ingredients.taxa), dtype=bool)
+    
+    mask = ingredients.total_counts >= int(min_sample_count)
+    if not mask.any():
+        return None
+    return mask
+
 
 def filter_taxa_by_sample_count(ingredients, min_sample_count):
-    # keep taxa present in at least min_sample_count samples
-    taxa_counts = np.array((ingredients.presence_matrix > 0).sum(axis=1)).flatten()
-    mask = taxa_counts >= min_sample_count
-    if not mask.any():
+    mask = _taxa_mask_by_sample_count(ingredients, min_sample_count)
+    if mask is None:
         return None
     return ingredients.filtered_taxa(mask)
 
-def filter_taxa_by_rank(ingredients, filter_rank):
+
+def _taxa_mask_by_rank(ingredients, filter_rank):
     """
-    Keep taxa whose *terminal* token is at the requested rank.
-    e.g., filter_rank='species' keeps only s__... features.
+    Boolean taxa mask: keep taxa whose terminal token is at the requested rank.
     """
     if not filter_rank:
-        return ingredients  # no-op
+        return np.ones(len(ingredients.taxa), dtype=bool)
     
     rp = filter_rank.strip().lower()
     if rp not in _RANK_PREFIXES:
@@ -100,12 +133,18 @@ def filter_taxa_by_rank(ingredients, filter_rank):
         )
     req_pref = _RANK_PREFIXES[rp]
     
-    # ensure the cache (built lazily, not pickled)
     ingredients._ensure_taxa_lookups()
-    term = ingredients._terminal_rank_prefixes  # list parallel to ingredients.taxa
+    term = ingredients._terminal_rank_prefixes
     
-    mask = [p == req_pref for p in term]
-    if not any(mask):
+    mask = np.fromiter((p == req_pref for p in term), dtype=bool, count=len(term))
+    if not mask.any():
+        return None
+    return mask
+
+
+def filter_taxa_by_rank(ingredients, filter_rank):
+    mask = _taxa_mask_by_rank(ingredients, filter_rank)
+    if mask is None:
         return None
     return ingredients.filtered_taxa(mask)
 
@@ -113,42 +152,59 @@ def filter_taxa_by_rank(ingredients, filter_rank):
 class FilteringError(Exception):
     pass
 
-def filter_data_obj(ingredients, 
-                    accession_set=None, 
-                    min_taxa_count=None, 
-                    min_sample_count=None, 
-                    filter_rank=None, 
-                    taxa_count_rank=None):
+
+def filter_data_obj(
+    ingredients,
+    accession_set=None,
+    min_taxa_count=None,
+    min_sample_count=None,
+    filter_rank=None,
+    taxa_count_rank=None,
+):
+    """
+    Apply filters to a single shallow working copy, in place.
     
-    filtered = ingredients.copy()
+    This avoids the previous pattern of:
+      copy -> filtered_samples() -> copy -> filtered_taxa() -> copy -> ...
+    """
+    filtered = ingredients.copy_shallow()
     
-    try:        
-        if min_taxa_count is not None:
-            filtered = filter_samples_by_taxa_count(filtered, min_taxa_count, taxa_count_rank)
-            if filtered is None:
-                raise FilteringError(f"Warning: Filtering by minimum taxa count of {min_taxa_count} resulted in no samples. {'Could be affected by rank filtering' if filter_rank is not None else ''}")
+    try:
+        if min_taxa_count is not None and min_taxa_count > 0:
+            sample_mask = _sample_mask_by_taxa_count(filtered, min_taxa_count, taxa_count_rank)
+            if sample_mask is None:
+                raise FilteringError(
+                    f"Warning: Filtering by minimum taxa count of {min_taxa_count} resulted in no samples. "
+                    f"{'Could be affected by rank filtering' if filter_rank is not None else ''}"
+                )
+            filtered.filter_samples(sample_mask)
         
-        if min_sample_count is not None:
-            filtered = filter_taxa_by_sample_count(filtered, min_sample_count)
-            if filtered is None:
-                raise FilteringError(f"Warning: Filtering by minimum sample count of {min_sample_count} resulted in no taxa.")
+        if min_sample_count is not None and min_sample_count > 0:
+            taxa_mask = _taxa_mask_by_sample_count(filtered, min_sample_count)
+            if taxa_mask is None:
+                raise FilteringError(
+                    f"Warning: Filtering by minimum sample count of {min_sample_count} resulted in no taxa."
+                )
+            filtered.filter_taxa(taxa_mask)
         
         if filter_rank is not None:
-            filtered = filter_taxa_by_rank(filtered, filter_rank)
-            if filtered is None:
+            taxa_mask = _taxa_mask_by_rank(filtered, filter_rank)
+            if taxa_mask is None:
                 raise FilteringError(f"Warning: Filtering on {filter_rank} resulted in no taxa.")
+            filtered.filter_taxa(taxa_mask)
         
         if accession_set is not None:
-            filtered = filter_by_accessions(filtered, accession_set)
-            if filtered is None:
+            sample_mask = _sample_mask_from_accessions(filtered, accession_set)
+            if sample_mask is None:
                 raise FilteringError("Warning: Filtering by accessions resulted in no samples.")
-                
+            filtered.filter_samples(sample_mask)
+        
         return filtered, True
         
     except FilteringError as e:
         print(e)
         return None, False
-
+    
 def filter_data(accessions_file, 
                 data_dir, 
                 output_dir, 
