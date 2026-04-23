@@ -95,12 +95,6 @@ def _search_taxon_rows(
     
     return candidates
 
-def _normalise_search_mode(search_mode: str) -> str:
-    search_mode = search_mode.lower().strip()
-    if search_mode == "taxon":
-        return "taxa_context"
-    return search_mode
-
 def _parse_focal_query(q: str) -> List[str]:
     if "|" in q or "+" in q:
         raise ValueError(
@@ -393,7 +387,6 @@ def search_data_obj(
     data_version=None,
     aggregated: bool = False,
 ) -> Set:
-    search_mode = _normalise_search_mode(search_mode)
     
     if search_mode == "metadata":
         data_version = data_version or LATEST_VERSION
