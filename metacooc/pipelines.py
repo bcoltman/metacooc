@@ -21,9 +21,10 @@ If file paths for ingredients or metadata indices are not explicitly provided, d
 """
 
 import os
+import numpy as np
 import pandas as pd
 
-from metacooc.search import search_data_obj
+from metacooc.search import search_data_obj, resolve_focal_taxa_queries
 from metacooc.filter import filter_data_obj
 from metacooc.pantry import load_ingredients
 from metacooc.analysis import (
@@ -39,46 +40,20 @@ from metacooc.structure import structure_obj
 
 def run_shared_pipeline_setup(args):
     """
-    Performs the shared setup steps for both co-occurrence and association pipelines.
+    Shared setup for cooccurrence, association, and structure pipelines.
     
-    This function handles the loading of data, accession searching, and count-based filtering.
-    It is designed to be called by both `run_cooccurrence` and `run_association` to avoid code duplication.
-    
-    Args:
-        args (argparse.Namespace): Command-line arguments or equivalent object containing:
-            - data_dir (str): Directory containing input data files.
-            - aggregated (bool): If True, loads aggregated ingredients; otherwise, loads raw ingredients.
-            - custom_ingredients (object, optional): Pre-loaded ingredients object.
-            - data_version (str, optional): Version of the Sandpiper data used for data processing.
-            - mode (str): Analysis mode, either "taxon" or "metadata".
-            - search_string (str): Search term for filtering accessions.
-            - ranks_for_search_inclusion (list, optional): Taxonomic ranks to restrict search.
-            - strict (bool): If True, applies strict matching criteria.
-            - column_names (list, optional): Column names for metadata mode.
-            - inverse (bool): If True, inverts the search logic.
-            - min_taxa_count (int): Minimum number of taxa required for inclusion.
-            - min_sample_count (int): Minimum number of samples required for inclusion.
-            - filter_rank (str, optional): Taxonomic rank at which to apply filters.
-            - output_dir (str): Directory for saving output files.
-            - remove_null_threshold (bool): If true, then remove min_taxa_count and min_sample_count threshold on null model
-            - null_scope (str): Which scope to define null model from
-            - null_biome_query (str): Biomes to include in the null. Default None is all
-            - null_taxa_query (str): Taxa to include in local search. Default None includes all.
-            - taxa_degree (int): Neighbourhood radius measured in taxa→sample expansions. Default 1 includes only those specified in null_taxa_query.
-            - min_shared_samples_between_taxa (int):  Minimum number of samples in which two taxa must co-occur for a new taxon to be included during null scope expansion.
-            
-    Returns:
-        tuple: A tuple containing the following elements:
-            - null_ingredients (object): Ingredients object filtered by count thresholds.
-            - filtered_ingredients (object): Ingredients object further filtered by matching accessions.
-            - matching_accessions (set): Set of accessions matching the search criteria.
-            - output_dir (str): Path to the directory for saving output files.
-            If any step fails, returns (None, None, None, None).
+    Returns
+    -------
+    tuple
+        (null_ingredients, filtered_ingredients, taxa_universe, output_dir, focal_query_to_taxa)
     """
-    # Step 1. Load the Ingredients object.
-    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
+    ingredients = load_ingredients(
+        args.data_dir,
+        args.aggregated,
+        args.custom_ingredients,
+        args.data_version,
+    )
     
-    # Step 2. Perform search.
     matching_accessions = search_data_obj(
         search_mode=args.search_mode,
         data_dir=args.data_dir,
@@ -87,12 +62,14 @@ def run_shared_pipeline_setup(args):
         strict=args.strict,
         column_names=args.column_names,
         inverse=args.inverse,
-        custom_ingredients=ingredients
+        custom_ingredients=ingredients,
+        data_version=args.data_version,
+        aggregated=args.aggregated,
     )
     
     if not matching_accessions:
         print("Pipeline: No matching accessions found. Exiting pipeline.")
-        return None, None, None, None
+        return None, None, None, None, None
         
     print(f"Pipeline: Found {len(matching_accessions)} matching accessions after initial filtering.")
     
@@ -102,100 +79,138 @@ def run_shared_pipeline_setup(args):
         min_taxa_count=args.min_taxa_count,
         min_sample_count=args.min_sample_count,
         filter_rank=args.filter_rank,
-        taxa_count_rank=args.taxa_count_rank
+        taxa_count_rank=args.taxa_count_rank,
     )
     if not is_successful:
-        return None, None, None, None
-    
+        return None, None, None, None, None
+        
     sub_samples = int_ingredients.samples
-    
     taxa_universe = select_taxa_universe(int_ingredients, rank=args.filter_rank)
     
-    
+    focal_query_to_taxa = None
+    if args.search_mode == "focal_taxa":
+        focal_rows = resolve_focal_taxa_queries(int_ingredients, args.search_string)
+        taxa_arr = np.asarray(int_ingredients.taxa, dtype=object)
+        taxa_universe_set = set(taxa_universe)
+        
+        focal_query_to_taxa = {}
+        for focal_query, row_idx in focal_rows.items():
+            resolved_taxa = [
+                taxon
+                for taxon in taxa_arr[sorted(row_idx)].tolist()
+                if taxon in taxa_universe_set
+            ]
+            if resolved_taxa:
+                focal_query_to_taxa[focal_query] = resolved_taxa
+                
+        if not focal_query_to_taxa:
+            raise ValueError("No focal taxa remain after sample/count/rank filtering.")
+            
     if args.null_scope is None:
-        
-        null_ingredients, is_successful = filter_data_obj(ingredients, 
-                                              accession_set=None, 
-                                              min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count, 
-                                              min_sample_count=0 if args.remove_null_threshold else args.min_sample_count, 
-                                              filter_rank=args.filter_rank,
-                                              taxa_count_rank=args.taxa_count_rank)
-                                              
+        null_ingredients, is_successful = filter_data_obj(
+            ingredients,
+            accession_set=None,
+            min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count,
+            min_sample_count=0 if args.remove_null_threshold else args.min_sample_count,
+            filter_rank=args.filter_rank,
+            taxa_count_rank=args.taxa_count_rank,
+        )
         if not is_successful:
-            return None, None, None, None
-        
+            return None, None, None, None, None
+            
     elif args.null_scope == "taxa":
-        null_ingredients, is_successful = filter_data_obj(ingredients, 
-                                              accession_set=None, 
-                                              min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count, 
-                                              min_sample_count=0 if args.remove_null_threshold else args.min_sample_count, 
-                                              filter_rank=args.filter_rank,
-                                              taxa_count_rank=args.taxa_count_rank)
-        
+        null_ingredients, is_successful = filter_data_obj(
+            ingredients,
+            accession_set=None,
+            min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count,
+            min_sample_count=0 if args.remove_null_threshold else args.min_sample_count,
+            filter_rank=args.filter_rank,
+            taxa_count_rank=args.taxa_count_rank,
+        )
         if not is_successful:
-            return None, None, None, None
-                                              
-        null_ingredients = determine_taxa_context(null_ingredients,
-                                       focal_taxa=args.null_taxa_query,
-                                       degree=args.taxa_degree,
-                                       min_shared_samples_between_taxa=args.min_shared_samples_between_taxa)
+            return None, None, None, None, None
+            
+        null_ingredients = determine_taxa_context(
+            null_ingredients,
+            focal_taxa=args.null_taxa_query,
+            degree=args.taxa_degree,
+            min_shared_samples_between_taxa=args.min_shared_samples_between_taxa,
+        )
         
-    elif args.null_scope == "biome" or args.null_scope == "metadata":
+    elif args.null_scope in {"biome", "metadata"}:
         search_string = args.null_biome_query if args.null_scope == "biome" else args.null_metadata_query
         
-        null_matching_accessions = search_data_obj(search_mode=args.null_scope,
-                                              search_string=search_string,
-                                              custom_ingredients=ingredients)
+        null_matching_accessions = search_data_obj(
+            search_mode=args.null_scope,
+            search_string=search_string,
+            data_dir=args.data_dir,
+            custom_ingredients=ingredients,
+            data_version=args.data_version,
+            aggregated=args.aggregated,
+        )
         
-        null_ingredients, is_successful = filter_data_obj(ingredients, 
-                                              accession_set=null_matching_accessions, 
-                                              min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count, 
-                                              min_sample_count=0 if args.remove_null_threshold else args.min_sample_count, 
-                                              filter_rank=args.filter_rank,
-                                              taxa_count_rank=args.taxa_count_rank)
-        
+        null_ingredients, is_successful = filter_data_obj(
+            ingredients,
+            accession_set=null_matching_accessions,
+            min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count,
+            min_sample_count=0 if args.remove_null_threshold else args.min_sample_count,
+            filter_rank=args.filter_rank,
+            taxa_count_rank=args.taxa_count_rank,
+        )
         if not is_successful:
-            return None, None, None, None
-    
-    elif args.null_scope == "biome_taxa" or args.null_scope == "metadata_taxa" :
-        
+            return None, None, None, None, None
+            
+    elif args.null_scope in {"biome_taxa", "metadata_taxa"}:
         search_mode = "biome" if args.null_scope == "biome_taxa" else "metadata"
         search_string = args.null_biome_query if search_mode == "biome" else args.null_metadata_query
         
-        null_matching_accessions = search_data_obj(search_mode=search_mode,
-                                              search_string=search_string,
-                                              custom_ingredients=ingredients)
+        null_matching_accessions = search_data_obj(
+            search_mode=search_mode,
+            search_string=search_string,
+            data_dir=args.data_dir,
+            custom_ingredients=ingredients,
+            data_version=args.data_version,
+            aggregated=args.aggregated,
+        )
         
-        null_ingredients, is_successful = filter_data_obj(ingredients, 
-                                              accession_set=null_matching_accessions, 
-                                              min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count, 
-                                              min_sample_count=0 if args.remove_null_threshold else args.min_sample_count, 
-                                              filter_rank=args.filter_rank,
-                                              taxa_count_rank=args.taxa_count_rank)
-        
+        null_ingredients, is_successful = filter_data_obj(
+            ingredients,
+            accession_set=null_matching_accessions,
+            min_taxa_count=0 if args.remove_null_threshold else args.min_taxa_count,
+            min_sample_count=0 if args.remove_null_threshold else args.min_sample_count,
+            filter_rank=args.filter_rank,
+            taxa_count_rank=args.taxa_count_rank,
+        )
         if not is_successful:
-            return None, None, None, None
+            return None, None, None, None, None
             
-        null_ingredients = determine_taxa_context(null_ingredients,
-                                       focal_taxa=args.null_taxa_query,
-                                       degree=args.taxa_degree,
-                                       min_shared_samples_between_taxa=args.min_shared_samples_between_taxa)
-                                       
-    
-    filtered_ingredients, is_successful = filter_data_obj(null_ingredients, 
-                                                          accession_set=sub_samples)
-    
-    if set(filtered_ingredients.samples) == set(null_ingredients.samples):
+        null_ingredients = determine_taxa_context(
+            null_ingredients,
+            focal_taxa=args.null_taxa_query,
+            degree=args.taxa_degree,
+            min_shared_samples_between_taxa=args.min_shared_samples_between_taxa,
+        )
+    else:
+        raise ValueError(f"Unknown null_scope: {args.null_scope!r}")
+        
+    filtered_ingredients, is_successful = filter_data_obj(
+        null_ingredients,
+        accession_set=sub_samples,
+    )
+    if not is_successful:
+        return None, None, None, None, None
+        
+    if (
+        getattr(args, "command", None) == "association"
+        and set(filtered_ingredients.samples) == set(null_ingredients.samples)
+    ):
         raise ValueError(
             "Term and null cohorts are identical — association requires a broader null.\n"
             "Fix by widening null_biome/null_scope or narrowing search_string."
         )
-    
+        
     os.makedirs(args.output_dir, exist_ok=True)
-    
-    return null_ingredients, filtered_ingredients, taxa_universe, args.output_dir
-
-
+    return null_ingredients, filtered_ingredients, taxa_universe, args.output_dir, focal_query_to_taxa
 
 def run_structure(args):
     """
@@ -224,7 +239,7 @@ def run_structure(args):
     """
     
     
-    null_ing, filt_ing, taxa_universe, out_dir = run_shared_pipeline_setup(args)
+        null_ing, filt_ing, taxa_universe, out_dir, _ = run_shared_pipeline_setup(args)
     
     if null_ing is None:  # Early exit if setup failed
         return
@@ -271,7 +286,7 @@ def run_association(args):
                 - {tag}{mode}_plot.png: Visualisation of the metadata enrichment analysis.
     """
     
-    null_ing, filt_ing, taxa_universe, out_dir = run_shared_pipeline_setup(args)
+        null_ing, filt_ing, taxa_universe, out_dir, _ = run_shared_pipeline_setup(args)
     
     if null_ing is None:  # Early exit if setup failed
         return
@@ -298,40 +313,20 @@ def run_association(args):
     plot_analysis_obj(single_df, out_file=output_plot_file)
     print(f"Pipeline: Plotting {output_plot_file} complete.")
 
-
 def run_cooccurrence(args):
     """
-    Executes the co-occurrence analysis pipeline using pre-processed ingredients data.
-    
-    The pipeline calculates taxon co-occurrence metrics and saves the results as tab-separated files.
-    Visualisations of the analysis are generated and saved as image files.
-    
-    Args:
-        args (argparse.Namespace): Command-line arguments or equivalent object containing:
-            - tag (str): Prefix for output file names.
-            - mode (str): Analysis mode, either "taxon" or "metadata".
-            - filter_rank (str, optional): Taxonomic rank at which to apply filters.
-            - large (bool): If True, optimises for large datasets.
-            - max_pairs (int, optional): Maximum number of taxon pairs to consider.
-            - threshold (float, optional): Threshold for filtering co-occurrence ratios.
-            - SIM9 (bool): If True, shuffles Null using SIM9 to determine Null distribution of J
-            
-    Outputs:
-        Saves the following files to the specified output directory:
-            - {tag}{mode}_edges.tsv: Tab-separated file of taxon co-occurrence edges.
-            - {tag}{mode}_nodes.tsv: Tab-separated file of taxon co-occurrence nodes.
-            - {tag}{mode}_plot.png: Visualisation of the co-occurrence analysis.
+    Execute the co-occurrence analysis pipeline.
     """
+    null_ing, filt_ing, taxa_universe, out_dir, focal_query_to_taxa = run_shared_pipeline_setup(args)
     
-    null_ing, filt_ing, taxa_universe, out_dir = run_shared_pipeline_setup(args)
-    
-    if null_ing is None:  # Early exit if setup failed
+    if null_ing is None:
         return
+        
+    print(
+        "Pipeline: Cooccurrence analysis being performed with Null Ingredients Presence Matrix with "
+        f"{null_ing.presence_matrix.shape[0]} taxa & {null_ing.presence_matrix.shape[1]} samples"
+    )
     
-    print(f"Pipeline: Cooccurrence analysis being performed with Null Ingredients Presence Matrix with "
-          f"{null_ing.presence_matrix.shape[0]} taxa & {null_ing.presence_matrix.shape[1]} samples")
-      
-    # edges_df, nodes_df = cooccurrence_obj(
     edge_arrays, nodes_df = cooccurrence_obj(
         null_ing,
         taxa_universe,
@@ -340,7 +335,8 @@ def run_cooccurrence(args):
         threshold=args.threshold,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
-        nm_random_state=args.nm_random_state
+        nm_random_state=args.nm_random_state,
+        focal_query_to_taxa=focal_query_to_taxa,
     )
     
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
@@ -352,7 +348,7 @@ def run_cooccurrence(args):
         output_dir=out_dir,
         edges_base=f"{args.tag}{null_scope_prefix}_edges",
         nodes_base=f"{args.tag}{null_scope_prefix}_nodes",
-        null_model=args.null_model, 
+        null_model=args.null_model,
         summary_n=100_000,
     )
 
