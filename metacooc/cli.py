@@ -10,7 +10,8 @@ RANK_CHOICES = ["domain", "phylum", "class", "order", "family", "genus", "specie
 NULL_SCOPE_CHOICES = ["biome", "taxa", "metadata", "biome_taxa", "metadata_taxa"]
 NULL_MODEL_CHOICES = ["FF","FE","EF","EE"]#,"EP"]
 ANALYSIS_TYPE_CHOICES = ["cooccurrence", "association", "structure"]
-SEARCH_MODE_CHOICES = ["taxon", "metadata", "biome"]
+COOCCURRENCE_SEARCH_MODE_CHOICES = ["focal_taxa", "taxa_context", "metadata", "biome"]
+COHORT_SEARCH_MODE_CHOICES = ["taxa_context", "metadata", "biome"]
 
 # Helper functions
 def positive_int(value):
@@ -120,11 +121,13 @@ def add_custom_ingredients(parser, group=None):
     else:
         parser.add_argument("--custom_ingredients", **kwargs)
 
-def add_search_mode_and_string(parser, required=False, group=None):
+def add_search_mode_and_string(parser, required=False, group=None, choices=None):
+    choices = choices or COHORT_SEARCH_MODE_CHOICES
+    
     kwargs = {
-        "choices": SEARCH_MODE_CHOICES,
+        "choices": choices,
         "required": required,
-        "help": "Search mode: 'taxon', 'metadata' or 'biome'.",
+        "help": f"Search mode. Allowed values: {', '.join(choices)}.",
     }
     if group:
         group.add_argument("--search_mode", **kwargs)
@@ -135,11 +138,12 @@ def add_search_mode_and_string(parser, required=False, group=None):
         "type": str,
         "required": required,
         "help": (
-            "Search string to query as a single token. "
-            "Use '|' to separate OR-terms and '+' to separate AND-terms. "
-            "Examples: 'foo|bar', 'foo+baz', 'foo|bar+baz|qux'. "
-            "Search string must be wrapped in single or double quotes if it "
-            "contains a special character or space e.g. 's__Escherichia coli'."
+            "Search string. "
+            "In taxa_context mode, use '|' to separate OR-terms and '+' to separate AND-terms. "
+            "In focal_taxa mode, use commas to separate independent focal taxa queries; "
+            "focal_taxa does not accept '|' or '+'. "
+            "Quote search strings containing spaces or special characters, e.g. "
+            "'s__Escherichia coli' or 'g__VFJL01 AGGREGATED'."
         ),
     }
     if group:
@@ -547,6 +551,7 @@ def search_command(args, subparser):
         custom_ingredients=args.custom_ingredients,
         data_version=args.data_version,
         list_column_names=args.list_column_names,
+        aggregated=args.aggregated,
     )
 
 def filter_command(args, subparser):
@@ -713,7 +718,7 @@ def build_parser():
     )
     req = search_sub.add_argument_group("required arguments (unless --list_column_names is used)")
     opt = search_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(search_sub, group=req)
+    add_search_mode_and_string(search_sub, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(search_sub, required=False, group=req)
     add_data_dir(search_sub, group=opt)
     add_data_version(search_sub, group=opt)
@@ -787,7 +792,7 @@ def build_parser():
     )
     req = cooc_sub.add_argument_group("required arguments")
     opt = cooc_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(cooc_sub, required=True, group=req)
+    add_search_mode_and_string(cooc_sub, required=True, group=req, choices=COOCCURRENCE_SEARCH_MODE_CHOICES)
     add_output_dir(cooc_sub, group=req)
     add_data_dir(cooc_sub, group=opt)
     add_data_version(cooc_sub, group=opt)
@@ -810,7 +815,7 @@ def build_parser():
     )
     req = assoc_sub.add_argument_group("required arguments")
     opt = assoc_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(assoc_sub, required=True, group=req)
+    add_search_mode_and_string(assoc_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(assoc_sub, group=req)
     add_data_dir(assoc_sub, group=opt)
     add_data_version(assoc_sub, group=opt)
@@ -832,7 +837,7 @@ def build_parser():
     )
     req = structure_sub.add_argument_group("required arguments")
     opt = structure_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(structure_sub, required=True, group=req)
+    add_search_mode_and_string(structure_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(structure_sub, group=req)
     add_data_dir(structure_sub, group=opt)
     add_data_version(structure_sub, group=opt)

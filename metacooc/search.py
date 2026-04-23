@@ -29,7 +29,7 @@ Modes:
 """
 
 import os, subprocess, shlex
-from typing import List, Set, Optional
+from typing import Dict, List, Set, Optional
 
 from metacooc.pantry import load_ingredients
 from metacooc.utils import (
@@ -94,6 +94,81 @@ def _search_taxon_rows(
             return set()
     
     return candidates
+
+def _normalise_search_mode(search_mode: str) -> str:
+    search_mode = search_mode.lower().strip()
+    if search_mode == "taxon":
+        return "taxa_context"
+    return search_mode
+
+def _parse_focal_query(q: str) -> List[str]:
+    if "|" in q or "+" in q:
+        raise ValueError(
+            "focal_taxa mode does not support '|' or '+'. "
+            "Use commas to specify multiple focal taxa queries."
+        )
+    queries = [part.strip() for part in q.split(",") if part.strip()]
+    if not queries:
+        raise ValueError("No focal taxa queries were provided.")
+    return queries
+
+def _is_endpoint_focal_query(search_string: str) -> bool:
+    rank, token = _deepest_rank_token(search_string)
+    if rank is None or token is None:
+        return False
+    return (rank == "species") or token.endswith(" AGGREGATED")
+
+def resolve_focal_taxa_queries(
+    ingredients,
+    search_string: str,
+) -> Dict[str, Set[int]]:
+    """
+    Resolve focal taxa queries into explicit taxon-row sets.
+    
+    Endpoint queries (species or '* AGGREGATED') resolve to themselves only.
+    Non-terminal ranked queries resolve to the row itself, descendants, and
+    the aggregated counterpart if present.
+    """
+    ingredients._ensure_taxa_lookups()
+    
+    out: Dict[str, Set[int]] = {}
+    for query in _parse_focal_query(search_string):
+        rows = _search_taxon_rows(ingredients, query)
+        if not rows:
+            raise ValueError(f"No taxa matched focal query: {query!r}")
+            
+        if not _is_endpoint_focal_query(query):
+            _, token = _deepest_rank_token(query)
+            if token is not None:
+                rows |= _search_taxon_rows(ingredients, f"{token} AGGREGATED")
+                
+        if not rows:
+            raise ValueError(f"No taxa matched focal query after expansion: {query!r}")
+            
+        out[query] = rows
+        
+    return out
+
+def search_by_focal_taxa(
+    ingredients,
+    search_string: str,
+) -> set:
+    """
+    Resolve focal taxa queries and return the union of samples containing any
+    resolved focal taxon row.
+    """
+    focal_rows = resolve_focal_taxa_queries(ingredients, search_string)
+    
+    all_rows: Set[int] = set()
+    for rows in focal_rows.values():
+        all_rows |= rows
+        
+    if not all_rows:
+        return set()
+        
+    sub = ingredients.presence_matrix[sorted(all_rows), :]
+    _, cols = sub.nonzero()
+    return {ingredients.samples[c] for c in cols}
 
 def search_by_taxon(
     ingredients,
@@ -249,7 +324,6 @@ def _parse_query(q: str) -> List[List[str]]:
             
     # return queries
 
-
 def search_data_obj(
     search_mode: str,
     search_string: str,
@@ -259,18 +333,16 @@ def search_data_obj(
     column_names=None,
     inverse=False,
     custom_ingredients=None,
-    data_version=None
+    data_version=None,
+    aggregated: bool = False,
 ) -> Set:
-    search_mode = search_mode.lower()
+    search_mode = _normalise_search_mode(search_mode)
     
-    # 1) metadata: raw regex search
     if search_mode == "metadata":
         data_version = data_version or LATEST_VERSION
         filenames, _ = get_file_info(data_version)
         if not data_dir:
-            raise ValueError(
-                "data_dir must be provided if searching metadata"
-            )
+            raise ValueError("data_dir must be provided if searching metadata")
         metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
         if not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
@@ -278,24 +350,31 @@ def search_data_obj(
             metadata_file, search_string, strict, column_names, inverse
         )
     
-    # 2) taxon or biome: boolean logic
     loader, search_fn = {
-        "taxon": (load_ingredients, search_by_taxon),
-        "biome": (load_ingredients, search_by_biome)
+        "taxa_context": (load_ingredients, search_by_taxon),
+        "focal_taxa": (load_ingredients, search_by_focal_taxa),
+        "biome": (load_ingredients, search_by_biome),
     }.get(search_mode, (None, None))
     if loader is None:
-        raise ValueError("search_mode must be 'taxon', 'metadata' or 'biome'")
+        raise ValueError(
+            "search_mode must be one of: 'focal_taxa', 'taxa_context', 'metadata', 'biome'"
+        )
+    
+    if search_mode == "focal_taxa" and inverse:
+        raise ValueError("inverse searches are not supported in focal_taxa mode")
     
     ingredients = loader(
         data_dir,
+        aggregated=aggregated,
         custom_ingredients=custom_ingredients,
-        data_version=data_version
+        data_version=data_version,
     )
     
-    # parse into OR‑groups of AND‑terms
+    if search_mode == "focal_taxa":
+        return search_fn(ingredients, search_string)
+    
     groups = _parse_query(search_string)
     
-    # biome mode doesn’t support AND‑chains
     if search_mode == "biome":
         for terms in groups:
             if len(terms) > 1:
@@ -304,28 +383,25 @@ def search_data_obj(
                     f"cannot process group: {terms!r}"
                 )
     
-    # now build your hits: AND within each group, OR across groups
     total_hits: Set = set()
     for terms in groups:
-        # first term
-        if search_mode == "taxon":
+        if search_mode == "taxa_context":
             hits = search_fn(ingredients, terms[0], ranks_for_search_inclusion)
-        else:  # biome
+        else:
             hits = search_fn(ingredients, terms[0])
         
-        # AND‐chain further terms (only ever for taxon)
         for term in terms[1:]:
             hits &= search_fn(ingredients, term, ranks_for_search_inclusion)
         
         total_hits |= hits
     
-    # inversion if requested
     if inverse:
         return set(ingredients.samples) - total_hits
     return total_hits
 
 def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
-                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, data_version=None, list_column_names=False):
+                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None,
+                data_version=None, list_column_names=False, aggregated=False):
     """
     File‑based search wrapper for metacooc.
     
@@ -399,7 +475,9 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
                                           column_names, 
                                           inverse, 
                                           custom_ingredients, 
-                                          data_version)
+                                          data_version,
+                                          aggregated,
+                                          )
     
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
