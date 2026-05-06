@@ -6,6 +6,9 @@ import sys
 import pandas as pd
 import pytest
 
+SOIL_SAMPLE_LINES = [f"S{i:03d}" for i in range(1, 51)]
+RHIZO_SAMPLE_LINES = [f"S{i:03d}" for i in range(1, 61)]
+
 
 def run_cli(*args, cwd=None):
     return subprocess.run(
@@ -55,7 +58,7 @@ def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metada
         "--output_dir",
         taxon_out,
     )
-    assert (taxon_out / "search_results.txt").read_text().splitlines() == ["S1", "S2", "S3", "S4"]
+    assert (taxon_out / "search_results.txt").read_text().splitlines() == RHIZO_SAMPLE_LINES
 
     biome_out = tmp_path / "search_biome"
     run_cli(
@@ -69,7 +72,7 @@ def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metada
         "--output_dir",
         biome_out,
     )
-    assert (biome_out / "search_results.txt").read_text().splitlines() == ["S1", "S2", "S3"]
+    assert (biome_out / "search_results.txt").read_text().splitlines() == SOIL_SAMPLE_LINES
 
     metadata_out = tmp_path / "search_metadata"
     run_cli(
@@ -85,14 +88,14 @@ def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metada
         "--output_dir",
         metadata_out,
     )
-    assert (metadata_out / "search_results.txt").read_text().splitlines() == ["S1", "S2", "S3"]
+    assert (metadata_out / "search_results.txt").read_text().splitlines() == SOIL_SAMPLE_LINES
 
 
 @pytest.mark.cli
 def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
     raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
     accessions = tmp_path / "accessions.txt"
-    accessions.write_text("S1\nS2\nS3\n")
+    accessions.write_text("".join(f"{sample}\n" for sample in SOIL_SAMPLE_LINES))
 
     filter_out = tmp_path / "filter"
     run_cli(

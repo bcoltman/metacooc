@@ -7,7 +7,7 @@ from metacooc.structure import _structure_core, structure_obj
 
 
 def test_association_obj_fe_and_ee(raw_ingredients):
-    filtered = raw_ingredients.filtered_samples([True, True, True, False, False, False])
+    filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
 
     fe = association_obj(
         raw_ingredients,
@@ -91,6 +91,6 @@ def test_structure_core_all_null_models(raw_ingredients):
 def test_biome_distribution(raw_ingredients):
     biomes, presence, coverage, n_dropped = raw_ingredients.biome_distribution()
     assert biomes == ["terrestrial", "aquatic"]
-    assert presence.shape == (2, 6)
-    assert coverage.shape == (2, 6)
+    assert presence.shape == (2, 300)
+    assert coverage.shape == (2, 300)
     assert n_dropped == 0

@@ -6,20 +6,26 @@ from metacooc.filter import filter_data, filter_data_obj
 from metacooc.search import search_data_obj
 
 
+SOIL_SAMPLES = {f"S{i:03d}" for i in range(1, 51)}
+RHIZO_HITS = {f"S{i:03d}" for i in range(1, 61)}
+MICRO_HITS = {f"S{i:03d}" for i in range(25, 76)}
+RHIZO_MICRO_HITS = RHIZO_HITS & MICRO_HITS
+
+
 def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
     taxon_hits = search_data_obj(
         search_mode="taxon",
         search_string="g__Rhizo",
         custom_ingredients=raw_ingredients,
     )
-    assert taxon_hits == {"S1", "S2", "S3", "S4"}
+    assert taxon_hits == RHIZO_HITS
 
     and_hits = search_data_obj(
         search_mode="taxon",
         search_string="g__Rhizo+g__Micro",
         custom_ingredients=raw_ingredients,
     )
-    assert and_hits == {"S2", "S3"}
+    assert and_hits == RHIZO_MICRO_HITS
 
     inverse_hits = search_data_obj(
         search_mode="taxon",
@@ -27,14 +33,14 @@ def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
         custom_ingredients=raw_ingredients,
         inverse=True,
     )
-    assert inverse_hits == {"S5", "S6"}
+    assert inverse_hits == set(raw_ingredients.samples) - RHIZO_HITS
 
     biome_hits = search_data_obj(
         search_mode="biome",
         search_string="soil",
         custom_ingredients=raw_ingredients,
     )
-    assert biome_hits == {"S1", "S2", "S3"}
+    assert biome_hits == SOIL_SAMPLES
 
     metadata_hits = search_data_obj(
         search_mode="metadata",
@@ -42,28 +48,28 @@ def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
         metadata_file=str(metadata_file),
         column_names=["env_biome_sam"],
     )
-    assert metadata_hits == {"S1", "S2", "S3"}
+    assert metadata_hits == SOIL_SAMPLES
 
 
 def test_filter_data_obj_by_counts_rank_and_accessions(raw_ingredients):
     filtered, ok = filter_data_obj(
         raw_ingredients,
-        accession_set={"S1", "S2", "S3"},
+        accession_set=SOIL_SAMPLES,
         min_taxa_count=2,
         min_sample_count=2,
         filter_rank="species",
         taxa_count_rank="species",
     )
     assert ok
-    assert filtered.samples == ["S1", "S2", "S3"]
+    assert filtered.samples == [f"S{i:03d}" for i in range(1, 51)]
     assert all("s__" in t for t in filtered.taxa)
-    assert filtered.presence_matrix.shape[1] == 3
-    assert filtered.presence_matrix.shape[0] >= 3
+    assert filtered.presence_matrix.shape[1] == 50
+    assert filtered.presence_matrix.shape[0] >= 100
 
 
 def test_file_filter_writes_null_and_filtered(tmp_path, raw_ingredients_path):
     accessions = tmp_path / "accessions.txt"
-    accessions.write_text("S1\nS2\nS3\n")
+    accessions.write_text("".join(f"S{i:03d}\n" for i in range(1, 51)))
 
     out = tmp_path / "filter_out"
     filter_data(
@@ -85,4 +91,4 @@ def test_file_filter_writes_null_and_filtered(tmp_path, raw_ingredients_path):
 
     with filtered_path.open("rb") as f:
         filtered = pickle.load(f)
-    assert filtered.samples == ["S1", "S2", "S3"]
+    assert filtered.samples == [f"S{i:03d}" for i in range(1, 51)]
