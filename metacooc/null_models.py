@@ -352,6 +352,70 @@ def _fill_fixed_degree_random_indices(
             indices[offsets.ravel()] = vals.ravel()
 
 
+def _fill_ee_row_indices(
+    row_counts: np.ndarray,
+    n_cols: int,
+    indptr: np.ndarray,
+    indices: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    sort_within_row: bool = False,
+    small_degree_max: int = 16,
+) -> None:
+    """
+    Fill CSR column indices for EE after exact row-count sampling.
+
+    Small rows use the batched FE-style filler. Larger rows are sampled one row
+    at a time, choosing the smaller side for dense rows.
+    """
+    row_counts = np.asarray(row_counts, dtype=np.int64)
+    n_cols = int(n_cols)
+    if n_cols <= 0:
+        return
+
+    small_counts = np.where(row_counts <= int(small_degree_max), row_counts, 0)
+    _fill_fixed_degree_random_indices(
+        small_counts,
+        n_cols,
+        indptr,
+        indices,
+        rng,
+        sort_within_entity=sort_within_row,
+        small_degree_max=small_degree_max,
+    )
+
+    large_rows = np.flatnonzero(row_counts > int(small_degree_max))
+    dtype = indices.dtype
+    all_cols = None
+    keep_mask = None
+
+    for row in large_rows:
+        k = int(row_counts[row])
+        s = int(indptr[row])
+        e = int(indptr[row + 1])
+
+        if k == n_cols:
+            if all_cols is None:
+                all_cols = np.arange(n_cols, dtype=dtype)
+            indices[s:e] = all_cols
+            continue
+
+        if k > n_cols // 2:
+            n_missing = n_cols - k
+            missing = rng.choice(n_cols, size=n_missing, replace=False)
+            if keep_mask is None:
+                keep_mask = np.empty(n_cols, dtype=np.bool_)
+            keep_mask.fill(True)
+            keep_mask[missing] = False
+            indices[s:e] = np.flatnonzero(keep_mask).astype(dtype, copy=False)
+            continue
+
+        draw = rng.choice(n_cols, size=k, replace=False)
+        if sort_within_row:
+            draw.sort()
+        indices[s:e] = draw.astype(dtype, copy=False)
+
+
 def fe_fixed_rows_equiprob_cols(
     X_csr: sp.csr_matrix,
     n_reps: int,
@@ -446,36 +510,25 @@ def ee_equiprobable(
         
     if N > n_cells:
         raise ValueError("nnz exceeds total number of cells; invalid input matrix.")
-        
-    for _ in range(int(n_reps)):
-        if hasattr(rng, "multivariate_hypergeometric"):
-            row_counts = rng.multivariate_hypergeometric(
-                np.full(n_rows, n_cols, dtype=np.int64),
-                N,
-            ).astype(np.int64, copy=False)
-            indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
-            indptr[0] = 0
-            np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
-            cols = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
-            _fill_fixed_degree_random_indices(
-                row_counts,
-                n_cols,
-                indptr,
-                cols,
-                rng,
-                sort_within_entity=bool(sort_indices),
-            )
-        else:
-            lin = rng.choice(n_cells, size=N, replace=False)
-            lin.sort()
-            rows = (lin // n_cols).astype(np.int64, copy=False)
-            cols = (lin - rows * n_cols).astype(_sparse_indices_dtype(n_cols), copy=False)
-            row_counts = np.bincount(rows, minlength=n_rows).astype(np.int64, copy=False)
-            indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
-            indptr[0] = 0
-            np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
 
-        data = np.ones(N, dtype=_OUT_DTYPE)
+    row_population = np.full(n_rows, n_cols, dtype=np.int64)
+    data = np.ones(N, dtype=_OUT_DTYPE)
+
+    for _ in range(int(n_reps)):
+        row_counts = rng.multivariate_hypergeometric(row_population, N).astype(np.int64, copy=False)
+        indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
+        indptr[0] = 0
+        np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
+
+        cols = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
+        _fill_ee_row_indices(
+            row_counts,
+            n_cols,
+            indptr,
+            cols,
+            rng,
+            sort_within_row=bool(sort_indices),
+        )
         Y = sp.csr_matrix((data, cols, indptr), shape=(n_rows, n_cols))
         if sort_indices:
             Y.sort_indices()
