@@ -272,6 +272,66 @@ def _draw_unique_rows_by_rejection(
     return out
 
 
+def _fill_random_key_subset_blocks(
+    entities: np.ndarray,
+    n_items: int,
+    n_draw: int,
+    indptr: np.ndarray,
+    indices: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    sort_within_entity: bool,
+    target_key_entries: int,
+) -> None:
+    """
+    Fill equal-degree entities using random keys and argpartition.
+
+    IID random keys induce a uniform random ordering of items per entity; taking
+    the n_draw smallest keys gives a uniform subset without replacement.
+    """
+    n_items = int(n_items)
+    n_draw = int(n_draw)
+    if entities.size == 0:
+        return
+
+    dtype = indices.dtype
+    if n_draw == n_items:
+        all_items = np.arange(n_items, dtype=dtype)
+        for entity in entities:
+            s = int(indptr[entity])
+            e = int(indptr[entity + 1])
+            indices[s:e] = all_items
+        return
+
+    use_complement = n_draw > n_items // 2
+    keep_n = n_items - n_draw if use_complement else n_draw
+    block_size = max(1, int(target_key_entries) // n_items)
+    arange_keep = np.arange(keep_n, dtype=indptr.dtype)
+
+    keep_mask = None
+    for start in range(0, int(entities.size), block_size):
+        ent = entities[start:start + block_size]
+        keys = rng.random((int(ent.size), n_items))
+        chosen = np.argpartition(keys, kth=keep_n - 1, axis=1)[:, :keep_n]
+
+        if use_complement:
+            if keep_mask is None:
+                keep_mask = np.empty(n_items, dtype=np.bool_)
+            for row_pos, entity in enumerate(ent):
+                s = int(indptr[entity])
+                e = int(indptr[entity + 1])
+                keep_mask.fill(True)
+                keep_mask[chosen[row_pos]] = False
+                indices[s:e] = np.flatnonzero(keep_mask).astype(dtype, copy=False)
+            continue
+
+        if sort_within_entity:
+            chosen.sort(axis=1)
+
+        offsets = indptr[ent, None] + arange_keep
+        indices[offsets.ravel()] = chosen.ravel().astype(dtype, copy=False)
+
+
 def _fill_fixed_degree_random_indices(
     degrees: np.ndarray,
     n_items: int,
@@ -282,13 +342,15 @@ def _fill_fixed_degree_random_indices(
     sort_within_entity: bool = False,
     small_degree_max: int = 16,
     target_temp_entries: int = 5_000_000,
+    random_key_min_density: float = 0.01,
+    target_key_entries: int = 20_000_000,
 ) -> None:
     """
     Fill sparse indices for a fixed-degree null model.
 
     Entities with the same degree are sampled in blocks to collapse many tiny
-    rng.choice calls into a few vectorised draws. Large degrees fall back to
-    rng.choice to avoid excessive rejection work.
+    rng.choice calls into vectorised draws. Dense degree groups use random-key
+    argpartition to avoid one rng.choice call per entity.
     """
     n_items = int(n_items)
     if n_items <= 0:
@@ -338,6 +400,18 @@ def _fill_fixed_degree_random_indices(
                 vals = _draw_unique_rows_by_rejection(rng, n_items, k, m, dtype)
                 if sort_within_entity:
                     vals.sort(axis=1)
+            elif min(k, n_items - k) / n_items >= float(random_key_min_density):
+                _fill_random_key_subset_blocks(
+                    ent,
+                    n_items,
+                    k,
+                    indptr,
+                    indices,
+                    rng,
+                    sort_within_entity=sort_within_entity,
+                    target_key_entries=target_key_entries,
+                )
+                continue
             else:
                 for entity in ent:
                     s = int(indptr[entity])
@@ -365,55 +439,24 @@ def _fill_ee_row_indices(
     """
     Fill CSR column indices for EE after exact row-count sampling.
 
-    Small rows use the batched FE-style filler. Larger rows are sampled one row
-    at a time, choosing the smaller side for dense rows.
+    Small rows use the batched FE-style filler. Dense rows are filled by the
+    shared random-key block sampler instead of one rng.choice call per row.
     """
     row_counts = np.asarray(row_counts, dtype=np.int64)
     n_cols = int(n_cols)
     if n_cols <= 0:
         return
 
-    small_counts = np.where(row_counts <= int(small_degree_max), row_counts, 0)
     _fill_fixed_degree_random_indices(
-        small_counts,
+        row_counts,
         n_cols,
         indptr,
         indices,
         rng,
         sort_within_entity=sort_within_row,
         small_degree_max=small_degree_max,
+        random_key_min_density=0.01,
     )
-
-    large_rows = np.flatnonzero(row_counts > int(small_degree_max))
-    dtype = indices.dtype
-    all_cols = None
-    keep_mask = None
-
-    for row in large_rows:
-        k = int(row_counts[row])
-        s = int(indptr[row])
-        e = int(indptr[row + 1])
-
-        if k == n_cols:
-            if all_cols is None:
-                all_cols = np.arange(n_cols, dtype=dtype)
-            indices[s:e] = all_cols
-            continue
-
-        if k > n_cols // 2:
-            n_missing = n_cols - k
-            missing = rng.choice(n_cols, size=n_missing, replace=False)
-            if keep_mask is None:
-                keep_mask = np.empty(n_cols, dtype=np.bool_)
-            keep_mask.fill(True)
-            keep_mask[missing] = False
-            indices[s:e] = np.flatnonzero(keep_mask).astype(dtype, copy=False)
-            continue
-
-        draw = rng.choice(n_cols, size=k, replace=False)
-        if sort_within_row:
-            draw.sort()
-        indices[s:e] = draw.astype(dtype, copy=False)
 
 
 def fe_fixed_rows_equiprob_cols(
