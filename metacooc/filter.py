@@ -222,7 +222,8 @@ def filter_data(accessions_file,
                 taxa_degree=1,
                 min_shared_samples_between_taxa=1,
                 custom_ingredients=None,
-                data_version=None):
+                data_version=None,
+                metadata_file=None):
                 
     
     os.makedirs(output_dir, exist_ok=True)
@@ -266,7 +267,10 @@ def filter_data(accessions_file,
         
         null_matching_accessions = search_data_obj(search_mode=null_scope,
                                               search_string=search_string,
-                                              custom_ingredients=ingredients)
+                                              custom_ingredients=ingredients,
+                                              data_dir=data_dir,
+                                              data_version=data_version,
+                                              metadata_file=metadata_file)
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=null_matching_accessions, 
@@ -285,7 +289,10 @@ def filter_data(accessions_file,
         
         null_matching_accessions = search_data_obj(search_mode=search_mode,
                                               search_string=search_string,
-                                              custom_ingredients=ingredients)
+                                              custom_ingredients=ingredients,
+                                              data_dir=data_dir,
+                                              data_version=data_version,
+                                              metadata_file=metadata_file)
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=null_matching_accessions, 

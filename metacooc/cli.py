@@ -120,6 +120,15 @@ def add_custom_ingredients(parser, group=None):
     else:
         parser.add_argument("--custom_ingredients", **kwargs)
 
+def add_metadata_file(parser, group=None):
+    kwargs = {
+        "help": "Explicit metadata TSV file to use for metadata search instead of resolving one from --data_dir/--data_version.",
+    }
+    if group:
+        group.add_argument("--metadata_file", **kwargs)
+    else:
+        parser.add_argument("--metadata_file", **kwargs)
+
 def add_search_mode_and_string(parser, required=False, group=None):
     kwargs = {
         "choices": SEARCH_MODE_CHOICES,
@@ -546,6 +555,7 @@ def search_command(args, subparser):
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
         data_version=args.data_version,
+        metadata_file=args.metadata_file,
         list_column_names=args.list_column_names,
     )
 
@@ -583,7 +593,8 @@ def filter_command(args, subparser):
         taxa_degree=args.taxa_degree,
         min_shared_samples_between_taxa=args.min_shared_samples_between_taxa,
         custom_ingredients=args.custom_ingredients,
-        data_version=args.data_version)
+        data_version=args.data_version,
+        metadata_file=args.metadata_file)
 
 
 def analysis_command(args):
@@ -719,6 +730,7 @@ def build_parser():
     add_data_version(search_sub, group=opt)
     add_tag_and_aggregated(search_sub, group=opt)
     add_custom_ingredients(search_sub, group=opt)
+    add_metadata_file(search_sub, group=opt)
     add_search_args(search_sub, group=opt)
     add_list_column_names(search_sub, group=opt)
     
@@ -736,6 +748,7 @@ def build_parser():
     add_data_version(filter_sub, group=opt)
     add_tag_and_aggregated(filter_sub, group=opt)
     add_custom_ingredients(filter_sub, group=opt)
+    add_metadata_file(filter_sub, group=opt)
     add_filter_args(filter_sub, group=opt)
     add_null_scope_args(filter_sub, group=opt)
     add_accessions_file(filter_sub, group=opt)
@@ -793,6 +806,7 @@ def build_parser():
     add_data_version(cooc_sub, group=opt)
     add_tag_and_aggregated(cooc_sub, group=opt)
     add_custom_ingredients(cooc_sub, group=opt)
+    add_metadata_file(cooc_sub, group=opt)
     add_search_args(cooc_sub, group=opt)
     add_null_scope_args(cooc_sub, group=opt)
     add_filter_args(cooc_sub, group=opt)
@@ -816,6 +830,7 @@ def build_parser():
     add_data_version(assoc_sub, group=opt)
     add_tag_and_aggregated(assoc_sub, group=opt)
     add_custom_ingredients(assoc_sub, group=opt)
+    add_metadata_file(assoc_sub, group=opt)
     add_search_args(assoc_sub, group=opt)
     add_null_scope_args(assoc_sub, group=opt)
     add_filter_args(assoc_sub, group=opt)
@@ -838,6 +853,7 @@ def build_parser():
     add_data_version(structure_sub, group=opt)
     add_tag_and_aggregated(structure_sub, group=opt)
     add_custom_ingredients(structure_sub, group=opt)
+    add_metadata_file(structure_sub, group=opt)
     add_search_args(structure_sub, group=opt)
     add_null_scope_args(structure_sub, group=opt)
     add_filter_args(structure_sub, group=opt)
