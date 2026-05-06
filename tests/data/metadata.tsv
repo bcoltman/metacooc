@@ -1,0 +1,7 @@
+acc	organism	env_biome_sam	env_feature_sam	env_material_sam	biosamplemodel_sam
+S1	test organism	soil	forest	topsoil	metagenome
+S2	test organism	soil	grassland	topsoil	metagenome
+S3	test organism	soil	wetland	sediment	metagenome
+S4	test organism	marine	coast	seawater	metagenome
+S5	test organism	marine	reef	seawater	metagenome
+S6	test organism	marine	deep sea	seawater	metagenome

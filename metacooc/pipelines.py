@@ -369,6 +369,7 @@ def run_biome_distribution(args):
     """
     Determine and export the biome dsitribution of taxa across all annotated metagenomes
     """
+    os.makedirs(args.output_dir, exist_ok=True)
     
     ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
     biomes, presence, coverage, n_dropped = ingredients.biome_distribution()

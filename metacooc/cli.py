@@ -767,6 +767,7 @@ def build_parser():
     add_output_dir(analysis_sub, group=req)
     add_filtered_file(analysis_sub, group=req)
     add_null_file(analysis_sub, group=req, required=False)
+    add_tag_and_aggregated(analysis_sub, group=opt)
     add_threshold_arg(analysis_sub, group=opt)
     add_large_and_max_pairs_args(analysis_sub, group=opt)
     analysis_sub.add_argument(
