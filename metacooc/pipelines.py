@@ -87,7 +87,9 @@ def run_shared_pipeline_setup(args):
         strict=args.strict,
         column_names=args.column_names,
         inverse=args.inverse,
-        custom_ingredients=ingredients
+        custom_ingredients=ingredients,
+        data_version=args.data_version,
+        metadata_file=getattr(args, "metadata_file", None),
     )
     
     if not matching_accessions:
@@ -145,7 +147,10 @@ def run_shared_pipeline_setup(args):
         
         null_matching_accessions = search_data_obj(search_mode=args.null_scope,
                                               search_string=search_string,
-                                              custom_ingredients=ingredients)
+                                              custom_ingredients=ingredients,
+                                              data_dir=args.data_dir,
+                                              data_version=args.data_version,
+                                              metadata_file=getattr(args, "metadata_file", None))
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=null_matching_accessions, 
@@ -164,7 +169,10 @@ def run_shared_pipeline_setup(args):
         
         null_matching_accessions = search_data_obj(search_mode=search_mode,
                                               search_string=search_string,
-                                              custom_ingredients=ingredients)
+                                              custom_ingredients=ingredients,
+                                              data_dir=args.data_dir,
+                                              data_version=args.data_version,
+                                              metadata_file=getattr(args, "metadata_file", None))
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
                                               accession_set=null_matching_accessions, 

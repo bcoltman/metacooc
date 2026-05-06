@@ -259,19 +259,21 @@ def search_data_obj(
     column_names=None,
     inverse=False,
     custom_ingredients=None,
-    data_version=None
+    data_version=None,
+    metadata_file=None,
 ) -> Set:
     search_mode = search_mode.lower()
     
     # 1) metadata: raw regex search
     if search_mode == "metadata":
-        data_version = data_version or LATEST_VERSION
-        filenames, _ = get_file_info(data_version)
-        if not data_dir:
-            raise ValueError(
-                "data_dir must be provided if searching metadata"
-            )
-        metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
+        if metadata_file is None:
+            data_version = data_version or LATEST_VERSION
+            filenames, _ = get_file_info(data_version)
+            if not data_dir:
+                raise ValueError(
+                    "data_dir must be provided if searching metadata without metadata_file"
+                )
+            metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
         if not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
         return search_in_metadata(
@@ -325,7 +327,8 @@ def search_data_obj(
     return total_hits
 
 def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_inclusion=None,
-                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, data_version=None, list_column_names=False):
+                column_names=None, strict=False, tag="", inverse=False, custom_ingredients=None, data_version=None, list_column_names=False,
+                metadata_file=None):
     """
     File‑based search wrapper for metacooc.
     
@@ -369,6 +372,9 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
         Path to a custom pickled Ingredients object, or an Ingredients instance.
     data_version : Optional[str]
         Version string to select alternate data files via your data_config.
+    metadata_file : Optional[str]
+        Explicit metadata TSV path for metadata searches. If omitted, the
+        release metadata file is resolved from data_dir and data_version.
     
     Returns
     -------
@@ -376,14 +382,14 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
         The set of matching accession IDs (written to the output file).
     """
     if list_column_names:
-            
-        data_version = data_version or LATEST_VERSION
-        filenames, _ = get_file_info(data_version)
-        if not data_dir:
-            raise ValueError(
-                "data_dir must be provided if searching metadata"
-            )
-        metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
+        if metadata_file is None:
+            data_version = data_version or LATEST_VERSION
+            filenames, _ = get_file_info(data_version)
+            if not data_dir:
+                raise ValueError(
+                    "data_dir must be provided if listing metadata columns without metadata_file"
+                )
+            metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
         if not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
         with open(metadata_file, "r") as f:
@@ -399,7 +405,8 @@ def search_data(mode, data_dir, output_dir, search_string, ranks_for_search_incl
                                           column_names, 
                                           inverse, 
                                           custom_ingredients, 
-                                          data_version)
+                                          data_version,
+                                          metadata_file)
     
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
