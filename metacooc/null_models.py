@@ -207,6 +207,151 @@ def _curveball_steps(
 # FE / EF / EE direct generators
 # -----------------------------------------------------------------------------
 
+def _sparse_indices_dtype(n_items: int) -> np.dtype:
+    """
+    Smallest SciPy-compatible index dtype for item indices.
+    """
+    return np.int32 if int(n_items) <= np.iinfo(np.int32).max else np.int64
+
+
+def _sparse_indptr_dtype(nnz: int) -> np.dtype:
+    """
+    Smallest SciPy-compatible index-pointer dtype for cumulative nnz counts.
+    """
+    return np.int32 if int(nnz) <= np.iinfo(np.int32).max else np.int64
+
+
+def _rng_integers(
+    rng: np.random.Generator,
+    high: int,
+    *,
+    size,
+    dtype,
+) -> np.ndarray:
+    """
+    Generator.integers with dtype fallback for older NumPy versions.
+    """
+    try:
+        return rng.integers(high, size=size, dtype=dtype)
+    except TypeError:
+        return rng.integers(high, size=size).astype(dtype, copy=False)
+
+
+def _unique_rows_mask(values: np.ndarray) -> np.ndarray:
+    """
+    Return True for rows with no duplicate entries.
+    """
+    if values.shape[1] <= 1:
+        return np.ones(values.shape[0], dtype=np.bool_)
+    ordered = np.sort(values, axis=1)
+    return np.all(ordered[:, 1:] != ordered[:, :-1], axis=1)
+
+
+def _draw_unique_rows_by_rejection(
+    rng: np.random.Generator,
+    n_items: int,
+    n_draw: int,
+    n_rows: int,
+    dtype,
+) -> np.ndarray:
+    """
+    Draw n_rows ordered samples of length n_draw without replacement.
+
+    IID draws conditioned on uniqueness are uniform over ordered samples without
+    replacement. For sparse matrices where n_draw << n_items, rejection is
+    typically much cheaper than one rng.choice call per entity.
+    """
+    out = _rng_integers(rng, n_items, size=(n_rows, n_draw), dtype=dtype)
+    bad = ~_unique_rows_mask(out)
+    while np.any(bad):
+        n_bad = int(np.count_nonzero(bad))
+        redraw = _rng_integers(rng, n_items, size=(n_bad, n_draw), dtype=dtype)
+        out[bad] = redraw
+        bad_idx = np.flatnonzero(bad)
+        bad[bad_idx] = ~_unique_rows_mask(redraw)
+    return out
+
+
+def _fill_fixed_degree_random_indices(
+    degrees: np.ndarray,
+    n_items: int,
+    indptr: np.ndarray,
+    indices: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    sort_within_entity: bool = False,
+    small_degree_max: int = 16,
+    target_temp_entries: int = 5_000_000,
+) -> None:
+    """
+    Fill sparse indices for a fixed-degree null model.
+
+    Entities with the same degree are sampled in blocks to collapse many tiny
+    rng.choice calls into a few vectorised draws. Large degrees fall back to
+    rng.choice to avoid excessive rejection work.
+    """
+    n_items = int(n_items)
+    if n_items <= 0:
+        return
+
+    degrees = np.asarray(degrees, dtype=np.int64)
+    nonzero = np.flatnonzero(degrees > 0)
+    if nonzero.size == 0:
+        return
+
+    dtype = indices.dtype
+    nz_degrees = degrees[nonzero]
+    order = np.argsort(nz_degrees, kind="stable")
+    grouped_entities = nonzero[order]
+    grouped_degrees = nz_degrees[order]
+    unique_degrees, starts = np.unique(grouped_degrees, return_index=True)
+    ends = np.r_[starts[1:], grouped_entities.size]
+
+    for k_raw, group_start, group_end in zip(unique_degrees, starts, ends):
+        k = int(k_raw)
+        entities = grouped_entities[int(group_start):int(group_end)]
+        if entities.size == 0:
+            continue
+        if k > n_items:
+            raise ValueError("Entity degree exceeds number of available items.")
+
+        block_size = max(1, int(target_temp_entries) // max(1, k))
+        for start in range(0, int(entities.size), block_size):
+            ent = entities[start:start + block_size]
+            m = int(ent.size)
+
+            if k == 1:
+                indices[indptr[ent]] = _rng_integers(rng, n_items, size=m, dtype=dtype)
+                continue
+
+            if k == 2:
+                a = _rng_integers(rng, n_items, size=m, dtype=dtype)
+                b = _rng_integers(rng, n_items - 1, size=m, dtype=dtype)
+                b += (b >= a).astype(dtype, copy=False)
+                if sort_within_entity:
+                    lo = np.minimum(a, b)
+                    hi = np.maximum(a, b)
+                    vals = np.column_stack((lo, hi))
+                else:
+                    vals = np.column_stack((a, b))
+            elif k <= small_degree_max:
+                vals = _draw_unique_rows_by_rejection(rng, n_items, k, m, dtype)
+                if sort_within_entity:
+                    vals.sort(axis=1)
+            else:
+                for entity in ent:
+                    s = int(indptr[entity])
+                    e = int(indptr[entity + 1])
+                    draw = rng.choice(n_items, size=k, replace=False)
+                    if sort_within_entity:
+                        draw.sort()
+                    indices[s:e] = draw.astype(dtype, copy=False)
+                continue
+
+            offsets = indptr[ent, None] + np.arange(k, dtype=indptr.dtype)
+            indices[offsets.ravel()] = vals.ravel()
+
+
 def fe_fixed_rows_equiprob_cols(
     X_csr: sp.csr_matrix,
     n_reps: int,
@@ -220,21 +365,23 @@ def fe_fixed_rows_equiprob_cols(
     row_deg = (X_csr.indptr[1:] - X_csr.indptr[:-1]).astype(np.int64, copy=False)
     N = int(row_deg.sum())
     
-    indptr = np.empty(n_rows + 1, dtype=np.int64)
+    indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
     indptr[0] = 0
-    np.cumsum(row_deg, out=indptr[1:])
+    np.cumsum(row_deg, dtype=indptr.dtype, out=indptr[1:])
     
     data = np.ones(N, dtype=_OUT_DTYPE)
     rng = _rng_from_state(random_state)
     
     for _ in range(int(n_reps)):
-        indices = np.empty(N, dtype=np.int64)
-        pos = 0
-        for i in range(n_rows):
-            k = int(row_deg[i])
-            if k:
-                indices[pos:pos + k] = rng.choice(n_cols, size=k, replace=False)
-                pos += k
+        indices = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
+        _fill_fixed_degree_random_indices(
+            row_deg,
+            n_cols,
+            indptr,
+            indices,
+            rng,
+            sort_within_entity=bool(sort_indices),
+        )
         Y = sp.csr_matrix((data, indices, indptr), shape=(n_rows, n_cols))
         if sort_indices:
             Y.sort_indices()
@@ -255,22 +402,23 @@ def ef_equiprob_rows_fixed_cols(
     col_deg = (X_csc.indptr[1:] - X_csc.indptr[:-1]).astype(np.int64, copy=False)
     N = int(col_deg.sum())
     
-    indptr = np.empty(n_cols + 1, dtype=np.int64)
+    indptr = np.empty(n_cols + 1, dtype=_sparse_indptr_dtype(N))
     indptr[0] = 0
-    np.cumsum(col_deg, out=indptr[1:])
+    np.cumsum(col_deg, dtype=indptr.dtype, out=indptr[1:])
     
     data = np.ones(N, dtype=_OUT_DTYPE)
     rng = _rng_from_state(random_state)
     
     for _ in range(int(n_reps)):
-        indices = np.empty(N, dtype=np.int64)
-        for j in range(n_cols):
-            k = int(col_deg[j])
-            if k:
-                s = int(indptr[j])
-                e = int(indptr[j + 1])
-                indices[s:e] = rng.choice(n_rows, size=k, replace=False)
-                
+        indices = np.empty(N, dtype=_sparse_indices_dtype(n_rows))
+        _fill_fixed_degree_random_indices(
+            col_deg,
+            n_rows,
+            indptr,
+            indices,
+            rng,
+            sort_within_entity=bool(sort_indices),
+        )
         Y = sp.csc_matrix((data, indices, indptr), shape=(n_rows, n_cols)).tocsr()
         if sort_indices:
             Y.sort_indices()
@@ -300,19 +448,33 @@ def ee_equiprobable(
         raise ValueError("nnz exceeds total number of cells; invalid input matrix.")
         
     for _ in range(int(n_reps)):
-        lin = rng.choice(n_cells, size=N, replace=False)
-        rows = (lin // n_cols).astype(np.int64, copy=False)
-        cols = (lin % n_cols).astype(np.int64, copy=False)
-        
-        order = np.lexsort((cols, rows))
-        rows = rows[order]
-        cols = cols[order]
-        
-        row_counts = np.bincount(rows, minlength=n_rows).astype(np.int64, copy=False)
-        indptr = np.empty(n_rows + 1, dtype=np.int64)
-        indptr[0] = 0
-        np.cumsum(row_counts, out=indptr[1:])
-        
+        if hasattr(rng, "multivariate_hypergeometric"):
+            row_counts = rng.multivariate_hypergeometric(
+                np.full(n_rows, n_cols, dtype=np.int64),
+                N,
+            ).astype(np.int64, copy=False)
+            indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
+            indptr[0] = 0
+            np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
+            cols = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
+            _fill_fixed_degree_random_indices(
+                row_counts,
+                n_cols,
+                indptr,
+                cols,
+                rng,
+                sort_within_entity=bool(sort_indices),
+            )
+        else:
+            lin = rng.choice(n_cells, size=N, replace=False)
+            lin.sort()
+            rows = (lin // n_cols).astype(np.int64, copy=False)
+            cols = (lin - rows * n_cols).astype(_sparse_indices_dtype(n_cols), copy=False)
+            row_counts = np.bincount(rows, minlength=n_rows).astype(np.int64, copy=False)
+            indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
+            indptr[0] = 0
+            np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
+
         data = np.ones(N, dtype=_OUT_DTYPE)
         Y = sp.csr_matrix((data, cols, indptr), shape=(n_rows, n_cols))
         if sort_indices:
