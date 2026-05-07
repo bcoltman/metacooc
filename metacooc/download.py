@@ -22,9 +22,34 @@ import argparse
 import requests
 import gzip
 import shutil
+from tqdm import tqdm
 
 
 from metacooc._data_config import *
+
+CHUNK_SIZE = 8 * 1024 * 1024
+
+
+def _download_stream(url, temp_path):
+    """
+    Stream a remote file to disk without materializing the full response in RAM.
+    """
+    with requests.get(url, stream=True) as response:
+        response.raise_for_status()
+        total = int(response.headers.get("content-length") or 0)
+
+        with open(temp_path, "wb") as f, tqdm(
+            total=total or None,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc=os.path.basename(temp_path),
+        ) as progress:
+            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                progress.update(len(chunk))
 
 
 def download_data(data_dir, list_data_versions=False, data_version=None, force=False):
@@ -89,11 +114,7 @@ def download_data(data_dir, list_data_versions=False, data_version=None, force=F
             continue
             
         print(f"Downloading {url} to {temp_path} ...")
-        response = requests.get(url)
-        response.raise_for_status()
-        
-        with open(temp_path, "wb") as f:
-            f.write(response.content)
+        _download_stream(url, temp_path)
         print(f"Downloaded {temp_path}")
         
         print(f"Unzipping {temp_path} to {target_path} ...")
@@ -111,7 +132,6 @@ def main():
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
     parser.add_argument("--data_version", default=None, help="Specify which data version to load (default: latest)")
     parser.add_argument("--list_data_versions", action="store_true", help="Specify which data version to load (default: latest)")
-    args = parser.parse_args()
     args = parser.parse_args()
     
     download_data(args.data_dir, list_data_versions=args.list_data_versions, data_version=args.data_version, force=args.force)
