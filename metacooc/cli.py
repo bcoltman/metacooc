@@ -6,11 +6,16 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 RANK_CHOICES = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 NULL_SCOPE_CHOICES = ["biome", "taxa", "metadata", "biome_taxa", "metadata_taxa"]
-NULL_MODEL_CHOICES = ["FF","FE","EF","EE"]#,"EP"]
+NULL_MODEL_CHOICES = ["FF", "FE", "EF", "EE"]
 ANALYSIS_TYPE_CHOICES = ["cooccurrence", "association", "structure"]
-SEARCH_MODE_CHOICES = ["taxon", "metadata", "biome"]
+
+COOCCURRENCE_SEARCH_MODE_CHOICES = ["focal_taxa", "taxa_context", "metadata", "biome"]
+COHORT_SEARCH_MODE_CHOICES = ["taxa_context", "metadata", "biome"]
+SEARCH_SUBCOMMAND_MODE_CHOICES = ["focal_taxa", "taxa_context", "metadata", "biome"]
+
 
 # Helper functions
 def positive_int(value):
@@ -22,6 +27,7 @@ def positive_int(value):
         raise argparse.ArgumentTypeError(f"{value} is not a positive integer")
     return ivalue
 
+
 def validate_threshold(value):
     try:
         value = float(value)
@@ -31,15 +37,17 @@ def validate_threshold(value):
         raise argparse.ArgumentTypeError("Threshold must be between 0 and 1.")
     return value
 
+
 def format_tag(tag, aggregated):
     if aggregated:
         return f"{tag}_aggregated_" if tag else "aggregated_"
     return f"{tag}_" if tag else ""
 
+
 def add_subcommand(subparsers, name, help_text, func):
     sub = subparsers.add_parser(name, help=help_text)
     sub.set_defaults(func=func)
-    func.__subparser__ = sub  # Attach the subparser to the function
+    func.__subparser__ = sub
     return sub
 
 
@@ -48,475 +56,401 @@ def check_required_args(args, required_args, subparser):
     if missing:
         subparser.error(f"The following arguments are required: {', '.join(missing)}")
 
-# Argument group helpers (with group support)
+
+# Argument group helpers
 def add_data_dir(parser, group=None):
     kwargs = {
         "default": DEFAULT_DATA_DIR,
         "help": "Directory containing data files (default: %(default)s)",
     }
-    if group:
-        group.add_argument("--data_dir", **kwargs)
-    else:
-        parser.add_argument("--data_dir", **kwargs)
+    (group or parser).add_argument("--data_dir", **kwargs)
+
 
 def add_data_version(parser, group=None, mode: str = "load"):
     """
     Add --data_version CLI option.
-    
+
     mode:
-        "load"   → select which version to load (default: latest)
-        "format" → label/version to stamp into generated files (default: none)
+        "load"   -> select which version to load (default: latest)
+        "format" -> label/version to stamp into generated files (default: none)
     """
-    
     if mode == "load":
         help_text = (
             "Specify which data version to load (default: latest). "
             "Versions available for download can be listed with "
             "'metacooc download --list_data_versions'."
         )
-        
     elif mode == "format":
         help_text = (
             "Optional version label to embed in the generated Ingredients files. "
             "No default is applied."
         )
-        
     else:
         raise ValueError("mode must be 'load' or 'format'")
-        
+
     kwargs = {
         "default": None,
         "help": help_text,
     }
-    
-    target = group if group else parser
-    target.add_argument("--data_version", **kwargs)
+    (group or parser).add_argument("--data_version", **kwargs)
+
 
 def add_tag_and_aggregated(parser, group=None):
-    kwargs = {
-        "default": "",
-        "help": "Optional tag to prepend to output filenames for distinction.",
-    }
-    if group:
-        group.add_argument("--tag", **kwargs)
-    else:
-        parser.add_argument("--tag", **kwargs)
-        
-    kwargs = {
-        "action": "store_true",
-        "help": "Use the aggregated Ingredients object.",
-    }
-    if group:
-        group.add_argument("--aggregated", **kwargs)
-    else:
-        parser.add_argument("--aggregated", **kwargs)
+    (group or parser).add_argument(
+        "--tag",
+        default="",
+        help="Optional tag to prepend to output filenames for distinction.",
+    )
+    (group or parser).add_argument(
+        "--aggregated",
+        action="store_true",
+        help="Use the aggregated Ingredients object.",
+    )
+
 
 def add_custom_ingredients(parser, group=None):
-    kwargs = {
-        "help": "Path to an Ingredients file to use instead of default.",
-    }
-    if group:
-        group.add_argument("--custom_ingredients", **kwargs)
-    else:
-        parser.add_argument("--custom_ingredients", **kwargs)
+    (group or parser).add_argument(
+        "--custom_ingredients",
+        help="Path to an Ingredients file to use instead of default.",
+    )
+
 
 def add_metadata_file(parser, group=None):
-    kwargs = {
-        "help": "Explicit metadata TSV file to use for metadata search instead of resolving one from --data_dir/--data_version.",
-    }
-    if group:
-        group.add_argument("--metadata_file", **kwargs)
-    else:
-        parser.add_argument("--metadata_file", **kwargs)
-
-def add_search_mode_and_string(parser, required=False, group=None):
-    kwargs = {
-        "choices": SEARCH_MODE_CHOICES,
-        "required": required,
-        "help": "Search mode: 'taxon', 'metadata' or 'biome'.",
-    }
-    if group:
-        group.add_argument("--search_mode", **kwargs)
-    else:
-        parser.add_argument("--search_mode", **kwargs)
-        
-    kwargs = {
-        "type": str,
-        "required": required,
-        "help": (
-            "Search string to query as a single token. "
-            "Use '|' to separate OR-terms and '+' to separate AND-terms. "
-            "Examples: 'foo|bar', 'foo+baz', 'foo|bar+baz|qux'. "
-            "Search string must be wrapped in single or double quotes if it "
-            "contains a special character or space e.g. 's__Escherichia coli'."
+    (group or parser).add_argument(
+        "--metadata_file",
+        help=(
+            "Explicit metadata TSV file to use for metadata search instead of "
+            "resolving one from --data_dir/--data_version."
         ),
-    }
-    if group:
-        group.add_argument("--search_string", **kwargs)
-    else:
-        parser.add_argument("--search_string", **kwargs)
+    )
+
+
+def add_search_mode_and_string(parser, required=False, group=None, choices=None):
+    choices = choices or COHORT_SEARCH_MODE_CHOICES
+
+    (group or parser).add_argument(
+        "--search_mode",
+        choices=choices,
+        required=required,
+        help=f"Search mode. Allowed values: {', '.join(choices)}.",
+    )
+
+    (group or parser).add_argument(
+        "--search_string",
+        type=str,
+        required=required,
+        help=(
+            "Search string. "
+            "In taxa_context mode, use '|' to separate OR groups and '+' to separate AND terms. "
+            "In focal_taxa mode, use commas to separate independent focal taxa queries. "
+            "focal_taxa does not accept '|' or '+'. "
+            "focal_taxa also supports optional 'LHS -> RHS' syntax, where LHS defines the focal cohort "
+            "and RHS defines downstream retrieval-target taxa for cooccurrence reporting. "
+            "Quote search strings containing spaces or special characters, e.g. "
+            "'s__Escherichia coli', 'g__VFJL01 AGGREGATED', or "
+            "'g__VFJL01 -> s__Ignicoccus hospitalis'."
+        ),
+    )
+
 
 def add_search_args(parser, group=None):
-    kwargs = {
-        "choices": RANK_CHOICES,
-        "help": "Taxa identified at a rank higher than this rank are excluded in taxon search mode (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--ranks_for_search_inclusion", **kwargs)
-    else:
-        parser.add_argument("--ranks_for_search_inclusion", **kwargs)
-        
-    kwargs = {
-        "nargs": '+',
-        "help": "metadata mode only: Restrict metadata search to within specified columns. Multiple entries can be specified as e.g. --column_names 'hello' 'world'",
-    }
-    if group:
-        group.add_argument("--column_names", **kwargs)
-    else:
-        parser.add_argument("--column_names", **kwargs)
-        
-    kwargs = {
-        "action": "store_true",
-        "help": "metadata mode only: Restrict metadata search to within a pre-defined and reduced set of columns i.e. ['acc', 'organism', 'env_biome_sam', 'env_feature_sam', 'env_material_sam', 'biosamplemodel_sam']",
-    }
-    if group:
-        group.add_argument("--strict", **kwargs)
-    else:
-        parser.add_argument("--strict", **kwargs)
-        
-    kwargs = {
-        "action": "store_true",
-        "help": "Return inverse of search e.g. if using search_term 'soil' in 'biome' search_mode, then it will return all non-soil samples.",
-    }
-    if group:
-        group.add_argument("--inverse", **kwargs)
-    else:
-        parser.add_argument("--inverse", **kwargs)
+    (group or parser).add_argument(
+        "--ranks_for_search_inclusion",
+        choices=RANK_CHOICES,
+        help=(
+            "Taxa identified at a rank higher than this rank are excluded in taxa_context "
+            "search mode (default: no additional exclusion)."
+        ),
+    )
+
+    (group or parser).add_argument(
+        "--column_names",
+        nargs="+",
+        help=(
+            "metadata mode only: Restrict metadata search to specified columns. "
+            "Example: --column_names organism env_biome_sam"
+        ),
+    )
+
+    (group or parser).add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "metadata mode only: Restrict metadata search to a predefined reduced "
+            "set of columns: ['acc', 'organism', 'env_biome_sam', 'env_feature_sam', "
+            "'env_material_sam', 'biosamplemodel_sam']"
+        ),
+    )
+
+    (group or parser).add_argument(
+        "--inverse",
+        action="store_true",
+        help=(
+            "Return inverse of search. Not supported in focal_taxa mode."
+        ),
+    )
+
 
 def add_null_scope_args(parser, group=None):
-    kwargs = {
-        "choices": NULL_SCOPE_CHOICES,
-        "default": None,
-        "help": (
+    (group or parser).add_argument(
+        "--null_scope",
+        choices=NULL_SCOPE_CHOICES,
+        default=None,
+        help=(
             "Scope used for null model generation. "
-            "By default, uses all samples, 'biome' restricts to --null_biome_query, "
-            "'taxa' uses a neighbourhood around --null_taxa_query taxa and 'metadata' restricts to --null_metadata_query. "
-            "'biome_taxa' first restricts to --null_biome_query and then a neighbourhood "
-            "around -null_taxa_query taxa. 'metadata_taxa' first to --null_biome_query, then around --null_taxa_query"
+            "By default, uses all samples. "
+            "'biome' restricts to --null_biome_query, "
+            "'taxa' uses a neighbourhood around --null_taxa_query, "
+            "'metadata' restricts to --null_metadata_query, "
+            "'biome_taxa' first restricts to --null_biome_query and then to a taxa neighbourhood, "
+            "'metadata_taxa' first restricts to --null_metadata_query and then to a taxa neighbourhood."
         ),
-    }
-    if group:
-        group.add_argument("--null_scope", **kwargs)
-    else:
-        parser.add_argument("--null_scope", **kwargs)
-        
-    kwargs = {
-        "default": None,
-        "help": "Biomes used to restrict samples for null model generation when null_scope includes 'biome'.",
-    }
-    if group:
-        group.add_argument("--null_biome_query", **kwargs)
-    else:
-        parser.add_argument("--null_biome_query", **kwargs)
-        
-    kwargs = {
-        "default": None,
-        "help": "Focal taxon or taxa used to define the taxa neighbourhood when null_scope includes 'taxa' (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--null_taxa_query", **kwargs)
-    else:
-        parser.add_argument("--null_taxa_query", **kwargs)
-        
-    kwargs = {
-        "default": None,
-        "help": "Metadata search term used to restrict samples for null_model generation when null_scope includes 'metadata'.",
-    }
-    if group:
-        group.add_argument("--null_metadata_query", **kwargs)
-    else:
-        parser.add_argument("--null_metadata_query", **kwargs)
-    
-    kwargs = {
-        "type": positive_int,
-        "default": 1,
-        "help": "Minimum number of samples in which two taxa must co-occur for a new taxon to "
-                "be included during BFS expansion (default: %(default)s).",
-             }
-    
-    if group:
-        group.add_argument("--min_shared_samples_between_taxa", **kwargs)
-    else:
-        parser.add_argument("--min_shared_samples_between_taxa", **kwargs)
-    
+    )
+
+    (group or parser).add_argument(
+        "--null_biome_query",
+        default=None,
+        help="Biomes used to restrict samples for null model generation when null_scope includes 'biome'.",
+    )
+
+    (group or parser).add_argument(
+        "--null_taxa_query",
+        default=None,
+        help="Focal taxon or taxa used to define the taxa neighbourhood when null_scope includes 'taxa'.",
+    )
+
+    (group or parser).add_argument(
+        "--null_metadata_query",
+        default=None,
+        help="Metadata search term used to restrict samples for null model generation when null_scope includes 'metadata'.",
+    )
+
+    (group or parser).add_argument(
+        "--min_shared_samples_between_taxa",
+        type=positive_int,
+        default=1,
+        help=(
+            "Minimum number of samples in which two taxa must co-occur for a new taxon "
+            "to be included during BFS expansion (default: %(default)s)."
+        ),
+    )
+
 
 def validate_null_scope_args(args, subparser):
-    if args.null_scope in ['biome', 'biome_taxa'] and args.null_biome_query is None:
+    if args.null_scope in ["biome", "biome_taxa"] and args.null_biome_query is None:
         subparser.error("--null_biome_query is required when null_scope is 'biome' or 'biome_taxa'")
-    if args.null_scope in ['metadata', 'metadata_taxa'] and args.null_metadata_query is None:
+    if args.null_scope in ["metadata", "metadata_taxa"] and args.null_metadata_query is None:
         subparser.error("--null_metadata_query is required when null_scope is 'metadata' or 'metadata_taxa'")
 
 
 def add_filter_args(parser, group=None):
-    kwargs = {
-        "type": positive_int,
-        "default": 1,
-        "help": "Minimum number of taxa a sample must have to be included (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--min_taxa_count", **kwargs)
-    else:
-        parser.add_argument("--min_taxa_count", **kwargs)
-        
-    kwargs = {
-        "type": positive_int,
-        "default": 1,
-        "help": "Minimum number of samples in which a taxon must be present (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--min_sample_count", **kwargs)
-    else:
-        parser.add_argument("--min_sample_count", **kwargs)
-        
-    kwargs = {
-        "choices": RANK_CHOICES,
-        "help": "Taxa identified at a rank higher than this rank are filtered out of results (default: all included).",
-    }
-    if group:
-        group.add_argument("--filter_rank", **kwargs)
-    else:
-        parser.add_argument("--filter_rank", **kwargs)
-        
-    kwargs = {
-        "choices": RANK_CHOICES,
-        "default": "species",
-        "help": (
-            "Taxa identified at a rank higher than this rank are not used to "
-            "determine the number of unique taxa in a sample (default: %(default)s)"
+    (group or parser).add_argument(
+        "--min_taxa_count",
+        type=positive_int,
+        default=1,
+        help="Minimum number of taxa a sample must have to be included (default: %(default)s).",
+    )
+
+    (group or parser).add_argument(
+        "--min_sample_count",
+        type=positive_int,
+        default=1,
+        help="Minimum number of samples in which a taxon must be present (default: %(default)s).",
+    )
+
+    (group or parser).add_argument(
+        "--filter_rank",
+        choices=RANK_CHOICES,
+        help="Taxa identified at a rank higher than this rank are filtered out of results (default: all included).",
+    )
+
+    (group or parser).add_argument(
+        "--taxa_count_rank",
+        choices=RANK_CHOICES,
+        default="species",
+        help=(
+            "Taxa identified at a rank higher than this rank are not used to determine "
+            "the number of unique taxa in a sample (default: %(default)s)"
         ),
-    }
-    if group:
-        group.add_argument("--taxa_count_rank", **kwargs)
-    else:
-        parser.add_argument("--taxa_count_rank", **kwargs)
-        
-    kwargs = {
-        "action": "store_true",
-        "help": (
-            "Remove the min_taxa_count and min_sample_count threshold on the matrix defining the null background. "
-            "In all modes, this is applied before the final filtered ingredients are subsetted. "
+    )
+
+    (group or parser).add_argument(
+        "--remove_null_threshold",
+        action="store_true",
+        help=(
+            "Remove the min_taxa_count and min_sample_count threshold on the matrix "
+            "defining the null background."
         ),
-    }
-    if group:
-        group.add_argument("--remove_null_threshold", **kwargs)
-    else:
-        parser.add_argument("--remove_null_threshold", **kwargs)
-        
-    kwargs = {
-        "type": positive_int,
-        "default": 1,
-        "help": "Sets the k-degree neighbourhood that is returned from the taxa search (default: %(default)s)",
-    }
-    if group:
-        group.add_argument("--taxa_degree", **kwargs)
-    else:
-        parser.add_argument("--taxa_degree", **kwargs)
+    )
+
+    (group or parser).add_argument(
+        "--taxa_degree",
+        type=positive_int,
+        default=1,
+        help="Sets the k-degree neighbourhood returned from taxa neighbourhood expansion (default: %(default)s).",
+    )
+
 
 def add_null_model_args(parser, group=None):
-    kwargs = {
-        "choices": NULL_MODEL_CHOICES,
-        "default": "FE",
-        "help": "Null model to use (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--null_model", **kwargs)
-    else:
-        parser.add_argument("--null_model", **kwargs)
-        
-    kwargs = {
-        "type": positive_int,
-        "default": 10000,
-        "help": "Number of shuffled Null models to generate (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--nm_n_reps", **kwargs)
-    else:
-        parser.add_argument("--nm_n_reps", **kwargs)
-    
-    kwargs = {
-        "type": positive_int,
-        "default": 42,
-        "help": "Random state for sampling (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--nm_random_state", **kwargs)
-    else:
-        parser.add_argument("--nm_random_state", **kwargs)
+    (group or parser).add_argument(
+        "--null_model",
+        choices=NULL_MODEL_CHOICES,
+        default="FE",
+        help="Null model to use (default: %(default)s).",
+    )
+
+    (group or parser).add_argument(
+        "--nm_n_reps",
+        type=positive_int,
+        default=10000,
+        help="Number of shuffled null models to generate (default: %(default)s).",
+    )
+
+    (group or parser).add_argument(
+        "--nm_random_state",
+        type=positive_int,
+        default=42,
+        help="Random state for sampling (default: %(default)s).",
+    )
+
 
 def add_fisher_args(parser, group=None):
-    kwargs = {
-        "action": "store_true",
-        "help": "Perform Fishers exact test",
-    }
-    if group:
-        group.add_argument("--compute_fisher", **kwargs)
-    else:
-        parser.add_argument("--compute_fisher", **kwargs)
+    (group or parser).add_argument(
+        "--compute_fisher",
+        action="store_true",
+        help="Perform Fisher's exact test.",
+    )
+
 
 def add_large_and_max_pairs_args(parser, group=None):
-    kwargs = {
-        "action": "store_true",
-        "help": "Regardless of RAM usage, or file size - calculate all coccurences",
-    }
-    if group:
-        group.add_argument("--large", **kwargs)
-    else:
-        parser.add_argument("--large", **kwargs)
-        
-    kwargs = {
-        "type": positive_int,
-        "default": 100000,
-        "help": "If the number of taxon pairs exceeds this value, then cooccurrence will not be determined unless --large is used.",
-    }
-    if group:
-        group.add_argument("--max_pairs", **kwargs)
-    else:
-        parser.add_argument("--max_pairs", **kwargs)
+    (group or parser).add_argument(
+        "--large",
+        action="store_true",
+        help="Calculate all cooccurrences regardless of RAM usage or output size.",
+    )
+
+    (group or parser).add_argument(
+        "--max_pairs",
+        type=positive_int,
+        default=100000,
+        help="If the number of taxon pairs exceeds this value, cooccurrence will not be determined unless --large is used.",
+    )
+
 
 def add_threshold_arg(parser, group=None):
-    kwargs = {
-        "type": validate_threshold,
-        "default": 0,
-        "help": "Minimum ** value required to output entry (default: %(default)s).",
-    }
-    if group:
-        group.add_argument("--threshold", **kwargs)
-    else:
-        parser.add_argument("--threshold", **kwargs)
+    (group or parser).add_argument(
+        "--threshold",
+        type=validate_threshold,
+        default=0,
+        help="Minimum threshold value required to output an entry (default: %(default)s).",
+    )
+
 
 def add_output_dir(parser, required=True, group=None):
-    kwargs = {
-        "required": required,
-        "help": "Directory where output files will be saved.",
-    }
-    if group:
-        group.add_argument("--output_dir", **kwargs)
-    else:
-        parser.add_argument("--output_dir", **kwargs)
+    (group or parser).add_argument(
+        "--output_dir",
+        required=required,
+        help="Directory where output files will be saved.",
+    )
+
 
 def add_list_column_names(parser, group=None):
-    kwargs = {
-        "action": "store_true",
-        "help": "metadata mode only: WARNING: Will produce lots of output! List available column names from NCBI metadata",
-    }
-    if group:
-        group.add_argument("--list_column_names", **kwargs)
-    else:
-        parser.add_argument("--list_column_names", **kwargs)
+    (group or parser).add_argument(
+        "--list_column_names",
+        action="store_true",
+        help="metadata mode only: WARNING: May produce lots of output. List available column names from NCBI metadata.",
+    )
+
 
 def add_accessions_file(parser, group=None):
-    kwargs = {
-        "help": "File containing accession numbers to filter by.",
-    }
-    if group:
-        group.add_argument("--accessions_file", **kwargs)
-    else:
-        parser.add_argument("--accessions_file", **kwargs)
+    (group or parser).add_argument(
+        "--accessions_file",
+        help="File containing accession numbers to filter by.",
+    )
+
 
 def add_force(parser, group=None):
-    kwargs = {
-        "action": "store_true",
-        "help": "Force re-download even if files exist.",
-    }
-    if group:
-        group.add_argument("--force", **kwargs)
-    else:
-        parser.add_argument("--force", **kwargs)
+    (group or parser).add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-download even if files exist.",
+    )
+
 
 def add_list_data_versions(parser, group=None):
-    kwargs = {
-        "action": "store_true",
-        "help": "List available versions",
-    }
-    if group:
-        group.add_argument("--list_data_versions", **kwargs)
-    else:
-        parser.add_argument("--list_data_versions", **kwargs)
+    (group or parser).add_argument(
+        "--list_data_versions",
+        action="store_true",
+        help="List available versions.",
+    )
+
 
 def add_tax_profile(parser, group=None):
-    kwargs = {
-        "required": True,
-        "help": "Taxonomic profile TSV file.",
-    }
-    if group:
-        group.add_argument("--tax_profile", **kwargs)
-    else:
-        parser.add_argument("--tax_profile", **kwargs)
+    (group or parser).add_argument(
+        "--tax_profile",
+        required=True,
+        help="Taxonomic profile TSV file.",
+    )
+
 
 def add_sample_to_biome_file(parser, group=None):
-    kwargs = {
-        "help": "A CSV file linking SRA accessions to biome classifications.",
-    }
-    if group:
-        group.add_argument("--sample_to_biome_file", **kwargs)
-    else:
-        parser.add_argument("--sample_to_biome_file", **kwargs)
+    (group or parser).add_argument(
+        "--sample_to_biome_file",
+        help="A CSV file linking SRA accessions to biome classifications.",
+    )
+
 
 def add_filtered_file(parser, group=None):
-    kwargs = {
-        "required": True,
-        "help": "Path to the filtered Ingredients pickle file.",
-    }
-    if group:
-        group.add_argument("--filtered_file", **kwargs)
-    else:
-        parser.add_argument("--filtered_file", **kwargs)
+    (group or parser).add_argument(
+        "--filtered_file",
+        required=True,
+        help="Path to the filtered Ingredients pickle file.",
+    )
+
 
 def add_null_file(parser, group=None, required=True):
-    kwargs = {
-        "required": required,
-        "help": "Path to the null Ingredients pickle file. Not required for --analysis_type structure",
-    }
-    if group:
-        group.add_argument("--null_file", **kwargs)
-    else:
-        parser.add_argument("--null_file", **kwargs)
+    (group or parser).add_argument(
+        "--null_file",
+        required=required,
+        help="Path to the null Ingredients pickle file. Not required for --analysis_type structure",
+    )
+
 
 def add_analysis_file(parser, group=None):
-    kwargs = {
-        "required": True,
-        "help": "Path to the analysis file to plot.",
-    }
-    if group:
-        group.add_argument("--analysis_file", **kwargs)
-    else:
-        parser.add_argument("--analysis_file", **kwargs)
+    (group or parser).add_argument(
+        "--analysis_file",
+        required=True,
+        help="Path to the analysis file to plot.",
+    )
+
 
 def add_analysis_type(parser, group=None):
-    kwargs = {
-        "choices": ANALYSIS_TYPE_CHOICES,
-        "required": True,
-        "help": "Analysis mode: 'cooccurrence', 'association' or 'structure'.",
-    }
-    if group:
-        group.add_argument("--analysis_type", **kwargs)
-    else:
-        parser.add_argument("--analysis_type", **kwargs)
+    (group or parser).add_argument(
+        "--analysis_type",
+        choices=ANALYSIS_TYPE_CHOICES,
+        required=True,
+        help="Analysis mode: 'cooccurrence', 'association' or 'structure'.",
+    )
+
 
 def add_return_all_taxa(parser, group=None):
-    kwargs = {
-        "action": "store_true",
-        "help": "Specify whether to return distributions of all taxa (Not aggregated - original values)",
-    }
-    if group:
-        group.add_argument("--return_all_taxa", **kwargs)
-    else:
-        parser.add_argument("--return_all_taxa", **kwargs)
+    (group or parser).add_argument(
+        "--return_all_taxa",
+        action="store_true",
+        help="Return distributions of all taxa (not aggregated/original values).",
+    )
+
 
 # Subcommand functions
 def download_command(args):
     from metacooc.download import download_data
-    download_data(data_dir=args.data_dir, force=args.force, list_data_versions=args.list_data_versions, data_version=args.data_version)
+    download_data(
+        data_dir=args.data_dir,
+        force=args.force,
+        list_data_versions=args.list_data_versions,
+        data_version=args.data_version,
+    )
+
 
 def format_command(args):
     from metacooc.format import format_data
@@ -527,11 +461,12 @@ def format_command(args):
         aggregated=args.aggregated,
         tag=args.tag,
         data_version=args.data_version,
-        
     )
+
 
 def search_command(args, subparser):
     from metacooc.search import search_data
+
     if not args.list_column_names:
         missing = []
         if not args.search_mode:
@@ -541,8 +476,12 @@ def search_command(args, subparser):
         if not args.output_dir:
             missing.append("--output_dir")
         if missing:
-            subparser.error(f"The following arguments are required unless --list_column_names is used: {', '.join(missing)}")
+            subparser.error(
+                f"The following arguments are required unless --list_column_names is used: {', '.join(missing)}"
+            )
+
     args.tag = format_tag(args.tag, args.aggregated)
+
     search_data(
         mode=args.search_mode,
         data_dir=args.data_dir,
@@ -555,13 +494,15 @@ def search_command(args, subparser):
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
         data_version=args.data_version,
-        metadata_file=args.metadata_file,
         list_column_names=args.list_column_names,
+        aggregated=args.aggregated,
+        metadata_file=args.metadata_file,
     )
+
 
 def filter_command(args, subparser):
     from metacooc.filter import filter_data
-    
+
     if (
         args.min_taxa_count == 1
         and args.min_sample_count == 1
@@ -573,8 +514,9 @@ def filter_command(args, subparser):
             "--min_taxa_count (not 1), --min_sample_count (not 1), "
             "--accessions_file, or --filter_rank"
         )
-    
+
     args.tag = format_tag(args.tag, args.aggregated)
+
     filter_data(
         accessions_file=args.accessions_file,
         data_dir=args.data_dir,
@@ -594,20 +536,19 @@ def filter_command(args, subparser):
         min_shared_samples_between_taxa=args.min_shared_samples_between_taxa,
         custom_ingredients=args.custom_ingredients,
         data_version=args.data_version,
-        metadata_file=args.metadata_file)
+        metadata_file=args.metadata_file,
+    )
 
 
 def analysis_command(args):
-    
     args.tag = format_tag(args.tag, False)
     subparser = analysis_command.__subparser__
-    
+
     if args.analysis_type in {"cooccurrence", "association"} and not args.null_file:
         subparser.error("--null_file is required for --analysis_type cooccurrence and association")
-    
+
     if args.analysis_type == "cooccurrence":
         from metacooc.analysis import cooccurrence
-        
         cooccurrence(
             null_ingredients=args.null_file,
             filtered_ingredients=args.filtered_file,
@@ -619,23 +560,23 @@ def analysis_command(args):
             threshold=args.threshold,
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
-            nm_random_state=args.nm_random_state)
-    
+            nm_random_state=args.nm_random_state,
+        )
+
     elif args.analysis_type == "structure":
         from metacooc.structure import structure
-        
         structure(
             ingredients=args.filtered_file,
             output_dir=args.output_dir,
             tag=args.tag,
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
-            compute_null=True, # need to look at adding args.compute_null,
-            nm_random_state=args.nm_random_state)
-            
+            compute_null=True,
+            nm_random_state=args.nm_random_state,
+        )
+
     elif args.analysis_type == "association":
         from metacooc.analysis import association
-        
         association(
             null_ingredients=args.null_file,
             filtered_ingredients=args.filtered_file,
@@ -645,7 +586,9 @@ def analysis_command(args):
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             nm_random_state=args.nm_random_state,
-            compute_fisher=args.compute_fisher)
+            compute_fisher=args.compute_fisher,
+        )
+
 
 def plot_command(args):
     from metacooc.plot import plot_analysis
@@ -656,6 +599,7 @@ def plot_command(args):
         tag=args.tag,
         q_thresh=args.threshold,
     )
+
 
 def cooccurrence_command(args):
     from metacooc.pipelines import run_cooccurrence
@@ -686,8 +630,8 @@ def build_parser():
         description="Co-occurrence data of microorganisms based on metagenome detection"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    
-    # Download subcommand
+
+    # Download
     download_sub = add_subcommand(
         subparsers,
         "download",
@@ -699,8 +643,8 @@ def build_parser():
     add_data_version(download_sub, group=opt)
     add_list_data_versions(download_sub, group=opt)
     add_force(download_sub, group=opt)
-    
-    # Format subcommand
+
+    # Format
     format_sub = add_subcommand(
         subparsers,
         "format",
@@ -714,8 +658,8 @@ def build_parser():
     add_tag_and_aggregated(format_sub, group=opt)
     add_sample_to_biome_file(format_sub, group=opt)
     add_data_version(format_sub, group=opt, mode="format")
-    
-    # Search subcommand
+
+    # Search
     search_sub = add_subcommand(
         subparsers,
         "search",
@@ -724,7 +668,7 @@ def build_parser():
     )
     req = search_sub.add_argument_group("required arguments (unless --list_column_names is used)")
     opt = search_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(search_sub, group=req)
+    add_search_mode_and_string(search_sub, group=req, choices=SEARCH_SUBCOMMAND_MODE_CHOICES)
     add_output_dir(search_sub, required=False, group=req)
     add_data_dir(search_sub, group=opt)
     add_data_version(search_sub, group=opt)
@@ -733,8 +677,8 @@ def build_parser():
     add_metadata_file(search_sub, group=opt)
     add_search_args(search_sub, group=opt)
     add_list_column_names(search_sub, group=opt)
-    
-    # Filter subcommand
+
+    # Filter
     filter_sub = add_subcommand(
         subparsers,
         "filter",
@@ -752,8 +696,8 @@ def build_parser():
     add_filter_args(filter_sub, group=opt)
     add_null_scope_args(filter_sub, group=opt)
     add_accessions_file(filter_sub, group=opt)
-    
-    # Analysis subcommand
+
+    # Analysis
     analysis_sub = add_subcommand(
         subparsers,
         "analysis",
@@ -762,7 +706,6 @@ def build_parser():
     )
     req = analysis_sub.add_argument_group("required arguments")
     opt = analysis_sub.add_argument_group("optional arguments")
-    # add_search_mode_and_string(analysis_sub, required=True, group=req)
     add_analysis_type(analysis_sub, group=req)
     add_output_dir(analysis_sub, group=req)
     add_filtered_file(analysis_sub, group=req)
@@ -776,8 +719,8 @@ def build_parser():
     )
     add_null_model_args(analysis_sub, group=opt)
     add_fisher_args(analysis_sub, group=opt)
-    
-    # Plot subcommand
+
+    # Plot
     plot_sub = add_subcommand(
         subparsers,
         "plot",
@@ -790,8 +733,8 @@ def build_parser():
     add_analysis_file(plot_sub, group=req)
     add_threshold_arg(plot_sub, group=opt)
     add_tag_and_aggregated(plot_sub, group=opt)
-    
-    # Cooccurrence subcommand
+
+    # Cooccurrence
     cooc_sub = add_subcommand(
         subparsers,
         "cooccurrence",
@@ -800,7 +743,7 @@ def build_parser():
     )
     req = cooc_sub.add_argument_group("required arguments")
     opt = cooc_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(cooc_sub, required=True, group=req)
+    add_search_mode_and_string(cooc_sub, required=True, group=req, choices=COOCCURRENCE_SEARCH_MODE_CHOICES)
     add_output_dir(cooc_sub, group=req)
     add_data_dir(cooc_sub, group=opt)
     add_data_version(cooc_sub, group=opt)
@@ -814,8 +757,8 @@ def build_parser():
     add_fisher_args(cooc_sub, group=opt)
     add_large_and_max_pairs_args(cooc_sub, group=opt)
     add_threshold_arg(cooc_sub, group=opt)
-    
-    # Association subcommand
+
+    # Association
     assoc_sub = add_subcommand(
         subparsers,
         "association",
@@ -824,7 +767,7 @@ def build_parser():
     )
     req = assoc_sub.add_argument_group("required arguments")
     opt = assoc_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(assoc_sub, required=True, group=req)
+    add_search_mode_and_string(assoc_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(assoc_sub, group=req)
     add_data_dir(assoc_sub, group=opt)
     add_data_version(assoc_sub, group=opt)
@@ -837,8 +780,8 @@ def build_parser():
     add_null_model_args(assoc_sub, group=opt)
     add_fisher_args(assoc_sub, group=opt)
     add_threshold_arg(assoc_sub, group=opt)
-    
-    # Association subcommand
+
+    # Structure
     structure_sub = add_subcommand(
         subparsers,
         "structure",
@@ -847,7 +790,7 @@ def build_parser():
     )
     req = structure_sub.add_argument_group("required arguments")
     opt = structure_sub.add_argument_group("optional arguments")
-    add_search_mode_and_string(structure_sub, required=True, group=req)
+    add_search_mode_and_string(structure_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(structure_sub, group=req)
     add_data_dir(structure_sub, group=opt)
     add_data_version(structure_sub, group=opt)
@@ -858,8 +801,8 @@ def build_parser():
     add_null_scope_args(structure_sub, group=opt)
     add_filter_args(structure_sub, group=opt)
     add_null_model_args(structure_sub, group=opt)
-    
-    # Biome distribution subcommand
+
+    # Biome distribution
     biome_sub = add_subcommand(
         subparsers,
         "biome_distribution",
@@ -874,17 +817,19 @@ def build_parser():
     add_tag_and_aggregated(biome_sub, group=opt)
     add_custom_ingredients(biome_sub, group=opt)
     add_return_all_taxa(biome_sub, group=opt)
-    
+
     return parser
+
 
 def parse_cli():
     parser = build_parser()
     args = parser.parse_args()
-    
+
     if hasattr(args, "null_scope"):
         validate_null_scope_args(args, args.func.__subparser__)
-        
+
     args.func(args)
+
 
 if __name__ == "__main__":
     parse_cli()

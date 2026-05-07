@@ -267,9 +267,10 @@ def filter_data(accessions_file,
         
         null_matching_accessions = search_data_obj(search_mode=null_scope,
                                               search_string=search_string,
-                                              custom_ingredients=ingredients,
                                               data_dir=data_dir,
+                                              custom_ingredients=ingredients,
                                               data_version=data_version,
+                                              aggregated=aggregated,
                                               metadata_file=metadata_file)
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 
@@ -289,9 +290,10 @@ def filter_data(accessions_file,
         
         null_matching_accessions = search_data_obj(search_mode=search_mode,
                                               search_string=search_string,
-                                              custom_ingredients=ingredients,
                                               data_dir=data_dir,
+                                              custom_ingredients=ingredients,
                                               data_version=data_version,
+                                              aggregated=aggregated,
                                               metadata_file=metadata_file)
         
         null_ingredients, is_successful = filter_data_obj(ingredients, 

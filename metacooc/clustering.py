@@ -1,8 +1,8 @@
 import numpy as np
 from typing import Optional, Iterable, Tuple, List, Set
-from metacooc.search import _search_taxon_rows
-
 from scipy.sparse.csgraph import connected_components
+
+from metacooc.search import resolve_focal_taxa_queries
 
 def cluster_taxa(
     ingredients,
@@ -96,61 +96,23 @@ def cluster_taxa(
     ingredients._clusters_cache = clusters
     ingredients._clusters_valid = True
     return clusters
- 
+
+
 
 def _resolve_focal_taxa_indices(ingredients, focal_taxa):
-    """
-    Resolve focal_taxa (indices, full tax strings, or rank tokens) → np.ndarray[int].
-    
-    Uses the same deepest-token logic as search_by_taxon, via _search_taxon_rows.
-    """
-    # Normalise to list
-    if isinstance(focal_taxa, (str, int, np.integer)):
-        focal_taxa = [focal_taxa]
-    elif isinstance(focal_taxa, np.ndarray):
-        focal_taxa = focal_taxa.tolist()
+    focal_rows = resolve_focal_taxa_queries(ingredients, focal_taxa)
+    if not focal_rows:
+        return np.array([], dtype=int)
         
-    ingredients._ensure_taxa_lookups()
-    n_taxa = len(ingredients.taxa)
-    
-    indices = set()
-    not_found = []
-    
-    for t in focal_taxa:
-        # --- numeric indices ---
-        if isinstance(t, (int, np.integer)):
-            i = int(t)
-            if i < 0 or i >= n_taxa:
-                raise IndexError(f"Taxon index {i} out of range [0, {n_taxa - 1}]")
-            indices.add(i)
-            continue
-            
-        if not isinstance(t, str):
-            not_found.append(t)
-            continue
-            
-        # 1) try exact taxa string match
-        try:
-            idx = ingredients.taxa.index(t)
-            indices.add(idx)
-            continue
-        except ValueError:
-            pass
-            
-        # 2) fall back to taxonomy-based search using deepest ranked token
-        row_idxs = _search_taxon_rows(ingredients, t)
-        if row_idxs:
-            indices.update(row_idxs)
-        else:
-            not_found.append(t)
-            
-    if not_found:
-        raise KeyError(f"Could not resolve taxa: {', '.join(map(str, not_found))}")
-        
-    return np.array(sorted(indices), dtype=int)
+    merged = np.unique(
+        np.concatenate([
+            np.fromiter(rows, dtype=int)
+            for rows in focal_rows.values()
+            if rows
+        ])
+    )
+    return merged.astype(int, copy=False)
 
-
-import numpy as np
 
 def determine_taxa_context(
     ingredients,
