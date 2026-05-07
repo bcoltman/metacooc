@@ -14,21 +14,21 @@ RHIZO_MICRO_HITS = RHIZO_HITS & MICRO_HITS
 
 def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
     taxon_hits = search_data_obj(
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo",
         custom_ingredients=raw_ingredients,
     )
     assert taxon_hits == RHIZO_HITS
 
     and_hits = search_data_obj(
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo+g__Micro",
         custom_ingredients=raw_ingredients,
     )
     assert and_hits == RHIZO_MICRO_HITS
 
     inverse_hits = search_data_obj(
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo",
         custom_ingredients=raw_ingredients,
         inverse=True,

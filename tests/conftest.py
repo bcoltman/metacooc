@@ -62,7 +62,7 @@ def pipeline_args(**overrides):
         aggregated=False,
         custom_ingredients=None,
         metadata_file=None,
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo",
         ranks_for_search_inclusion=None,
         strict=False,

@@ -50,7 +50,7 @@ def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metada
     run_cli(
         "search",
         "--search_mode",
-        "taxon",
+        "taxa_context",
         "--search_string",
         "g__Rhizo",
         "--custom_ingredients",
@@ -180,7 +180,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     run_cli(
         "association",
         "--search_mode",
-        "taxon",
+        "taxa_context",
         "--search_string",
         "g__Rhizo",
         "--custom_ingredients",
@@ -200,7 +200,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     run_cli(
         "cooccurrence",
         "--search_mode",
-        "taxon",
+        "taxa_context",
         "--search_string",
         "g__Rhizo",
         "--custom_ingredients",
@@ -223,7 +223,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     run_cli(
         "structure",
         "--search_mode",
-        "taxon",
+        "taxa_context",
         "--search_string",
         "g__Rhizo",
         "--custom_ingredients",

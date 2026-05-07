@@ -11,7 +11,7 @@ def test_run_association_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo",
         null_model="FE",
     )
@@ -25,7 +25,7 @@ def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo",
         null_model="FE",
         threshold=0.0,
@@ -39,7 +39,7 @@ def test_run_structure_pipeline(tmp_path, raw_ingredients_path):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
-        search_mode="taxon",
+        search_mode="taxa_context",
         search_string="g__Rhizo",
         null_model="FE",
         nm_n_reps=1,
