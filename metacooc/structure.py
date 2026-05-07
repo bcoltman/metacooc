@@ -153,6 +153,7 @@ def structure_obj(
     nm_n_reps: int = 1000,
     compute_null: bool = True,
     nm_random_state: int | None = 42,
+    nm_memory_mb: float | None = None,
 ) -> pd.DataFrame:
     """
     Entry point for association / term-enrichment analysis.
@@ -189,6 +190,7 @@ def structure_obj(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_random_state=nm_random_state,
+        nm_memory_mb=nm_memory_mb,
         compute_null=compute_null,
     )
 
@@ -206,6 +208,7 @@ def _structure_core(
     nm_burn_in_steps: int | None = None,   # FF only
     nm_steps_per_rep: int | None = None,   # FF only
     nm_progress_every: int = 25,           # tqdm granularity inside workers
+    nm_memory_mb: float | None = None,
 ) -> pd.DataFrame:
     """
     Community-structure metrics on the observed presence/absence matrix, with optional null distributions.
@@ -317,6 +320,7 @@ def _structure_core(
         burn_in_steps=nm_burn_in_steps,
         steps_per_rep=nm_steps_per_rep,
         progress_every=int(nm_progress_every),
+        memory_mb=nm_memory_mb,
         # spawn-safe init kwargs (simple types only)
         chunk_rows=int(chunk_rows),
         structure_do_nodf=True,
@@ -347,6 +351,7 @@ def structure(
     nm_n_reps: int = 1000,
     compute_null: bool = True,
     nm_random_state: int | None = 42,
+    nm_memory_mb: float | None = None,
 ) -> pd.DataFrame:
     """
     
@@ -386,6 +391,7 @@ def structure(
         nm_n_reps=nm_n_reps,
         compute_null=compute_null,
         nm_random_state=nm_random_state,
+        nm_memory_mb=nm_memory_mb,
     )
     
     output_path = os.path.join(output_dir, f"{tag}structure.tsv")

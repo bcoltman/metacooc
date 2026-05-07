@@ -184,6 +184,7 @@ def association_obj(
     null_model: str = "FE",
     nm_n_reps: int = 1000,
     nm_random_state: int | None = None,
+    nm_memory_mb: float | None = None,
     compute_fisher: bool = False,
 ) -> pd.DataFrame:
     out = _association_core(
@@ -192,6 +193,7 @@ def association_obj(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_random_state=nm_random_state,
+        nm_memory_mb=nm_memory_mb,
     )
 
     if threshold is not None:
@@ -213,6 +215,7 @@ def _association_core(
     nm_sort_indices: bool = False,
     nm_burn_in_steps: int | None = None,
     nm_steps_per_rep: int | None = None,
+    nm_memory_mb: float | None = None,
 ) -> pd.DataFrame:
     """
     Core taxon-term enrichment (no community-structure metrics).
@@ -353,6 +356,7 @@ def _association_core(
         random_state=nm_random_state,
         n_workers=nm_n_workers,
         mp_start=mp_start,
+        memory_mb=nm_memory_mb,
         term_cols=term_cols,
         nonterm_cols=nonterm_cols,
         subset_idx=subset_idx,
@@ -382,6 +386,7 @@ def association(
     null_model: str = "FE",
     nm_n_reps: int = 1000,
     nm_random_state: int | None = None,
+    nm_memory_mb: float | None = None,
     compute_fisher: bool = False,
 ) -> pd.DataFrame:
     if not os.path.isdir(output_dir):
@@ -397,6 +402,7 @@ def association(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_random_state=nm_random_state,
+        nm_memory_mb=nm_memory_mb,
         compute_fisher=compute_fisher
     )
 
@@ -892,6 +898,7 @@ def cooccurrence_obj(
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_random_state: int | None = None,
+    nm_memory_mb: float | None = None,
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
@@ -1030,6 +1037,7 @@ def cooccurrence_obj(
         random_state=nm_random_state,
         n_workers=nm_n_workers,
         mp_start=mp_start,
+        memory_mb=nm_memory_mb,
         subset_idx=subset_idx,
         iA=iA_all,
         iB=iB_all,
@@ -1140,6 +1148,7 @@ def cooccurrence(
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_random_state: int = 42,
+    nm_memory_mb: float | None = None,
 ):
     """
     Run taxon–taxon co-occurrence analysis and write edge/node tables to disk.
@@ -1161,6 +1170,7 @@ def cooccurrence(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_random_state=nm_random_state,
+        nm_memory_mb=nm_memory_mb,
     )
 
     export_cooccurrence_outputs(

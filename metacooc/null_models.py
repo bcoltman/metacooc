@@ -10,6 +10,9 @@ import scipy.sparse as sp
 
 SIMMODEL = Literal["FF", "FE", "EF", "EE"]
 _OUT_DTYPE = np.int8
+_DEFAULT_NM_MEMORY_MB = 256.0
+_DEFAULT_DIRECT_OUTPUT_LIMIT_MB = 32_768.0
+_SMALL_POPULATION_MAX_CELLS = 5_000_000
 
 
 # -----------------------------------------------------------------------------
@@ -30,6 +33,95 @@ def _rng_from_state(random_state: Optional[int | np.random.Generator]) -> np.ran
     Return a NumPy Generator from an integer seed or an existing Generator.
     """
     return random_state if isinstance(random_state, np.random.Generator) else np.random.default_rng(random_state)
+
+
+def _normalise_memory_mb(memory_mb: Optional[float]) -> float:
+    """
+    Return a positive per-sampler temporary-memory budget in MiB.
+    """
+    if memory_mb is None:
+        return _DEFAULT_NM_MEMORY_MB
+    value = float(memory_mb)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("nm_memory_mb must be a positive finite number.")
+    return value
+
+
+def _memory_budget_bytes(memory_mb: Optional[float]) -> int:
+    """
+    Convert a MiB budget to bytes.
+    """
+    return max(1, int(_normalise_memory_mb(memory_mb) * 1024 * 1024))
+
+
+def _budget_entries(
+    memory_mb: Optional[float],
+    *,
+    itemsize: int,
+    n_arrays: int = 1,
+    floor: int = 1,
+) -> int:
+    """
+    Number of array entries fitting inside the temporary-memory budget.
+    """
+    denom = max(1, int(itemsize) * max(1, int(n_arrays)))
+    return max(int(floor), _memory_budget_bytes(memory_mb) // denom)
+
+
+def _record_debug_event(debug_callback, **event) -> None:
+    """
+    Send a sampler decision to an optional benchmark/debug sink.
+    """
+    if debug_callback is None:
+        return
+    payload = dict(event)
+    if callable(debug_callback):
+        debug_callback(payload)
+    elif hasattr(debug_callback, "append"):
+        debug_callback.append(payload)
+
+
+def _estimate_sparse_output_bytes(
+    shape: tuple[int, int],
+    nnz: int,
+    *,
+    index_extent: int,
+) -> int:
+    """
+    Estimate data + indices + indptr bytes for one sparse output replicate.
+    """
+    n_major = int(shape[0])
+    nnz = int(nnz)
+    return (
+        nnz * np.dtype(_OUT_DTYPE).itemsize
+        + nnz * np.dtype(_sparse_indices_dtype(index_extent)).itemsize
+        + (n_major + 1) * np.dtype(_sparse_indptr_dtype(nnz)).itemsize
+    )
+
+
+def _check_direct_output_memory(
+    shape: tuple[int, int],
+    nnz: int,
+    *,
+    model: str,
+    memory_mb: Optional[float],
+    index_extent: int,
+) -> None:
+    """
+    Fail early when a single direct null replicate is clearly impractical.
+    """
+    if int(nnz) < 0:
+        raise ValueError("nnz must be non-negative.")
+    limit_mb = max(_DEFAULT_DIRECT_OUTPUT_LIMIT_MB, 4.0 * _normalise_memory_mb(memory_mb))
+    estimate = _estimate_sparse_output_bytes(shape, int(nnz), index_extent=int(index_extent))
+    estimate_mb = estimate / (1024 * 1024)
+    if estimate_mb > limit_mb:
+        raise ValueError(
+            f"{model} direct sampler output for shape={tuple(map(int, shape))} "
+            f"and nnz={int(nnz)} is estimated at {estimate_mb:.1f} MiB per replicate, "
+            f"above the configured safety limit of {limit_mb:.1f} MiB. "
+            "Use a smaller matrix/fill or raise nm_memory_mb on a machine sized for it."
+        )
 
 
 def prepare_presence_matrix(
@@ -272,6 +364,101 @@ def _draw_unique_rows_by_rejection(
     return out
 
 
+def _fill_complement_indices(out: np.ndarray, n_items: int, omitted: np.ndarray) -> None:
+    """
+    Fill ``out`` with all item IDs except the sorted/unsorted omitted IDs.
+    """
+    omitted = np.sort(np.asarray(omitted, dtype=np.int64))
+    pos = 0
+    prev = 0
+    dtype = out.dtype
+    for miss_raw in omitted:
+        miss = int(miss_raw)
+        if miss > prev:
+            n = miss - prev
+            out[pos:pos + n] = np.arange(prev, miss, dtype=dtype)
+            pos += n
+        prev = miss + 1
+    if prev < int(n_items):
+        out[pos:] = np.arange(prev, int(n_items), dtype=dtype)
+
+
+def _draw_omitted_rows(
+    rng: np.random.Generator,
+    n_items: int,
+    n_omit: int,
+    n_rows: int,
+    dtype,
+    *,
+    small_degree_max: int,
+) -> np.ndarray:
+    """
+    Draw omitted item IDs for complement sampling.
+    """
+    if n_omit <= 0:
+        return np.empty((int(n_rows), 0), dtype=dtype)
+    if n_omit == 1:
+        return _rng_integers(rng, n_items, size=(int(n_rows), 1), dtype=dtype)
+    if n_omit == 2:
+        a = _rng_integers(rng, n_items, size=int(n_rows), dtype=dtype)
+        b = _rng_integers(rng, n_items - 1, size=int(n_rows), dtype=dtype)
+        b += (b >= a).astype(dtype, copy=False)
+        return np.column_stack((a, b))
+
+    collision_score = (float(n_omit) * float(n_omit - 1)) / (2.0 * float(n_items))
+    if n_omit <= int(small_degree_max) or collision_score <= 0.25:
+        return _draw_unique_rows_by_rejection(rng, n_items, n_omit, int(n_rows), dtype)
+
+    out = np.empty((int(n_rows), int(n_omit)), dtype=dtype)
+    for i in range(int(n_rows)):
+        out[i] = rng.choice(n_items, size=int(n_omit), replace=False).astype(dtype, copy=False)
+    return out
+
+
+def _fill_fixed_degree_complement_blocks(
+    entities: np.ndarray,
+    n_items: int,
+    n_omit: int,
+    indptr: np.ndarray,
+    indices: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    small_degree_max: int,
+    target_temp_entries: int,
+) -> None:
+    """
+    Fill equal-degree entities by sampling the omitted complement.
+    """
+    n_items = int(n_items)
+    n_omit = int(n_omit)
+    if entities.size == 0:
+        return
+
+    if n_omit == 0:
+        all_items = np.arange(n_items, dtype=indices.dtype)
+        for entity in entities:
+            s = int(indptr[entity])
+            e = int(indptr[entity + 1])
+            indices[s:e] = all_items
+        return
+
+    block_size = max(1, int(target_temp_entries) // max(1, n_omit))
+    for start in range(0, int(entities.size), block_size):
+        ent = entities[start:start + block_size]
+        omitted = _draw_omitted_rows(
+            rng,
+            n_items,
+            n_omit,
+            int(ent.size),
+            indices.dtype,
+            small_degree_max=small_degree_max,
+        )
+        for row_pos, entity in enumerate(ent):
+            s = int(indptr[entity])
+            e = int(indptr[entity + 1])
+            _fill_complement_indices(indices[s:e], n_items, omitted[row_pos])
+
+
 def _fill_random_key_subset_blocks(
     entities: np.ndarray,
     n_items: int,
@@ -341,9 +528,12 @@ def _fill_fixed_degree_random_indices(
     *,
     sort_within_entity: bool = False,
     small_degree_max: int = 16,
-    target_temp_entries: int = 5_000_000,
+    target_temp_entries: Optional[int] = None,
     random_key_min_density: float = 0.01,
-    target_key_entries: int = 20_000_000,
+    target_key_entries: Optional[int] = None,
+    memory_mb: Optional[float] = None,
+    debug_callback=None,
+    debug_label: str = "fixed_degree",
 ) -> None:
     """
     Fill sparse indices for a fixed-degree null model.
@@ -362,6 +552,21 @@ def _fill_fixed_degree_random_indices(
         return
 
     dtype = indices.dtype
+    if target_temp_entries is None:
+        target_temp_entries = _budget_entries(
+            memory_mb,
+            itemsize=np.dtype(dtype).itemsize,
+            n_arrays=4,
+            floor=16_384,
+        )
+    if target_key_entries is None:
+        target_key_entries = _budget_entries(
+            memory_mb,
+            itemsize=np.dtype(np.float64).itemsize,
+            n_arrays=1,
+            floor=16_384,
+        )
+
     nz_degrees = degrees[nonzero]
     order = np.argsort(nz_degrees, kind="stable")
     grouped_entities = nonzero[order]
@@ -376,6 +581,109 @@ def _fill_fixed_degree_random_indices(
             continue
         if k > n_items:
             raise ValueError("Entity degree exceeds number of available items.")
+
+        n_omit = n_items - k
+        density = float(k) / float(n_items)
+        complement_density = float(n_omit) / float(n_items)
+        collision_score = (float(k) * float(k - 1)) / (2.0 * float(n_items)) if k > 1 else 0.0
+
+        if k == n_items:
+            _record_debug_event(
+                debug_callback,
+                sampler=debug_label,
+                algorithm="full",
+                degree=k,
+                entities=int(entities.size),
+                n_items=n_items,
+                estimated_temp_entries=int(n_items),
+            )
+            _fill_fixed_degree_complement_blocks(
+                entities,
+                n_items,
+                0,
+                indptr,
+                indices,
+                rng,
+                small_degree_max=small_degree_max,
+                target_temp_entries=int(target_temp_entries),
+            )
+            continue
+
+        use_complement = (
+            k > n_items // 2
+            and n_omit > 0
+            and (n_omit <= int(small_degree_max) or complement_density <= 0.01)
+        )
+        if use_complement:
+            _record_debug_event(
+                debug_callback,
+                sampler=debug_label,
+                algorithm="complement_rejection",
+                degree=k,
+                omitted_degree=int(n_omit),
+                entities=int(entities.size),
+                n_items=n_items,
+                estimated_temp_entries=min(int(target_temp_entries), int(entities.size) * int(n_omit)),
+            )
+            _fill_fixed_degree_complement_blocks(
+                entities,
+                n_items,
+                n_omit,
+                indptr,
+                indices,
+                rng,
+                small_degree_max=small_degree_max,
+                target_temp_entries=int(target_temp_entries),
+            )
+            continue
+
+        use_rejection = k <= int(small_degree_max) or (density <= 0.01 and collision_score <= 0.25)
+        use_random_key = (
+            not use_rejection
+            and min(k, n_omit) / n_items >= float(random_key_min_density)
+            and n_items <= int(target_key_entries)
+        )
+
+        if use_random_key:
+            _record_debug_event(
+                debug_callback,
+                sampler=debug_label,
+                algorithm="random_key_argpartition",
+                degree=k,
+                entities=int(entities.size),
+                n_items=n_items,
+                estimated_temp_entries=min(
+                    int(target_key_entries),
+                    int(max(1, int(target_key_entries) // n_items)) * n_items,
+                ),
+            )
+            _fill_random_key_subset_blocks(
+                entities,
+                n_items,
+                k,
+                indptr,
+                indices,
+                rng,
+                sort_within_entity=sort_within_entity,
+                target_key_entries=int(target_key_entries),
+            )
+            continue
+
+        if use_rejection:
+            algorithm = "rejection"
+        elif n_omit < k:
+            algorithm = "choice_complement_loop"
+        else:
+            algorithm = "choice_loop"
+        _record_debug_event(
+            debug_callback,
+            sampler=debug_label,
+            algorithm=algorithm,
+            degree=k,
+            entities=int(entities.size),
+            n_items=n_items,
+            estimated_temp_entries=min(int(target_temp_entries), int(entities.size) * max(1, min(k, n_omit))),
+        )
 
         block_size = max(1, int(target_temp_entries) // max(1, k))
         for start in range(0, int(entities.size), block_size):
@@ -396,20 +704,20 @@ def _fill_fixed_degree_random_indices(
                     vals = np.column_stack((lo, hi))
                 else:
                     vals = np.column_stack((a, b))
-            elif k <= small_degree_max:
+            elif use_rejection:
                 vals = _draw_unique_rows_by_rejection(rng, n_items, k, m, dtype)
                 if sort_within_entity:
                     vals.sort(axis=1)
-            elif min(k, n_items - k) / n_items >= float(random_key_min_density):
-                _fill_random_key_subset_blocks(
+            elif n_omit < k:
+                _fill_fixed_degree_complement_blocks(
                     ent,
                     n_items,
-                    k,
+                    n_omit,
                     indptr,
                     indices,
                     rng,
-                    sort_within_entity=sort_within_entity,
-                    target_key_entries=target_key_entries,
+                    small_degree_max=small_degree_max,
+                    target_temp_entries=int(target_temp_entries),
                 )
                 continue
             else:
@@ -459,11 +767,248 @@ def _fill_ee_row_indices(
     )
 
 
+def _check_linear_population_size(n_cells: int) -> None:
+    """
+    NumPy integer sampling for direct EE uses signed int64 cell IDs.
+    """
+    if int(n_cells) > np.iinfo(np.int64).max:
+        raise ValueError("EE direct sampler requires n_rows * n_cols to fit in int64.")
+
+
+def _sample_unique_ids_rejection(
+    rng: np.random.Generator,
+    population_size: int,
+    n_draw: int,
+    *,
+    memory_mb: Optional[float],
+) -> np.ndarray:
+    """
+    Sample unique IDs from ``range(population_size)`` by vectorised deduplication.
+    """
+    population_size = int(population_size)
+    n_draw = int(n_draw)
+    if n_draw <= 0:
+        return np.empty(0, dtype=np.int64)
+    if n_draw > population_size:
+        raise ValueError("Cannot sample more unique IDs than the population size.")
+
+    max_batch = _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=4, floor=1024)
+    accepted = np.empty(0, dtype=np.int64)
+
+    while accepted.size < n_draw:
+        remaining = n_draw - int(accepted.size)
+        fill = float(accepted.size) / float(population_size)
+        request = int(np.ceil((remaining / max(1.0e-12, 1.0 - fill)) * 1.15)) + 8
+        request = max(1, min(int(max_batch), request))
+        candidates = _rng_integers(rng, population_size, size=request, dtype=np.int64)
+        candidates = np.unique(candidates)
+        if accepted.size:
+            accepted = np.unique(np.concatenate((accepted, candidates)))
+        else:
+            accepted = candidates
+
+    if accepted.size > n_draw:
+        keep = rng.choice(int(accepted.size), size=n_draw, replace=False)
+        accepted = accepted[keep]
+    return accepted.astype(np.int64, copy=False)
+
+
+def _sample_unique_ids_floyd(
+    rng: np.random.Generator,
+    population_size: int,
+    n_draw: int,
+) -> np.ndarray:
+    """
+    Floyd's exact range-sampling algorithm without allocating the population.
+    """
+    population_size = int(population_size)
+    n_draw = int(n_draw)
+    if n_draw <= 0:
+        return np.empty(0, dtype=np.int64)
+    if n_draw > population_size:
+        raise ValueError("Cannot sample more unique IDs than the population size.")
+
+    selected: set[int] = set()
+    for j in range(population_size - n_draw, population_size):
+        t = int(rng.integers(j + 1))
+        selected.add(j if t in selected else t)
+    return np.fromiter(selected, dtype=np.int64, count=n_draw)
+
+
+def _sample_ee_ids(
+    rng: np.random.Generator,
+    population_size: int,
+    n_draw: int,
+    *,
+    memory_mb: Optional[float],
+    debug_callback=None,
+) -> tuple[str, np.ndarray]:
+    """
+    Select support IDs, or complement IDs, for the EE null model.
+    """
+    population_size = int(population_size)
+    n_draw = int(n_draw)
+    n_missing = population_size - n_draw
+    density = float(n_draw) / float(population_size) if population_size else 0.0
+    missing_density = float(n_missing) / float(population_size) if population_size else 0.0
+
+    small_population_entries = min(
+        _SMALL_POPULATION_MAX_CELLS,
+        _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=2, floor=1),
+    )
+    if population_size <= small_population_entries:
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="choice_small_population",
+            population_size=population_size,
+            n_draw=n_draw,
+            density=density,
+            estimated_temp_entries=population_size,
+        )
+        return "support", rng.choice(population_size, size=n_draw, replace=False).astype(np.int64, copy=False)
+
+    if n_missing < n_draw and (missing_density <= 0.20 or n_missing <= small_population_entries):
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="complement_rejection",
+            population_size=population_size,
+            n_draw=n_draw,
+            n_missing=n_missing,
+            density=density,
+            estimated_temp_entries=min(n_missing, small_population_entries),
+        )
+        return "missing", _sample_unique_ids_rejection(
+            rng,
+            population_size,
+            n_missing,
+            memory_mb=memory_mb,
+        )
+
+    if density <= 0.35:
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="sparse_rejection",
+            population_size=population_size,
+            n_draw=n_draw,
+            density=density,
+            estimated_temp_entries=min(n_draw, small_population_entries),
+        )
+        return "support", _sample_unique_ids_rejection(
+            rng,
+            population_size,
+            n_draw,
+            memory_mb=memory_mb,
+        )
+
+    if n_missing < n_draw:
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="complement_floyd",
+            population_size=population_size,
+            n_draw=n_draw,
+            n_missing=n_missing,
+            density=density,
+            estimated_temp_entries=n_missing,
+        )
+        return "missing", _sample_unique_ids_floyd(rng, population_size, n_missing)
+
+    _record_debug_event(
+        debug_callback,
+        sampler="EE",
+        algorithm="floyd",
+        population_size=population_size,
+        n_draw=n_draw,
+        density=density,
+        estimated_temp_entries=n_draw,
+    )
+    return "support", _sample_unique_ids_floyd(rng, population_size, n_draw)
+
+
+def _csr_from_linear_ids(
+    linear_ids: np.ndarray,
+    *,
+    n_rows: int,
+    n_cols: int,
+) -> sp.csr_matrix:
+    """
+    Build a sorted CSR matrix from sampled linear cell IDs.
+    """
+    linear_ids = np.asarray(linear_ids, dtype=np.int64)
+    linear_ids.sort()
+    N = int(linear_ids.size)
+    indptr = np.empty(int(n_rows) + 1, dtype=_sparse_indptr_dtype(N))
+    indptr[0] = 0
+
+    if N == 0:
+        return sp.csr_matrix((int(n_rows), int(n_cols)), dtype=_OUT_DTYPE)
+
+    rows = linear_ids // int(n_cols)
+    row_counts = np.bincount(rows, minlength=int(n_rows)).astype(np.int64, copy=False)
+    np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
+    cols = (linear_ids - rows * int(n_cols)).astype(_sparse_indices_dtype(n_cols), copy=False)
+    data = np.ones(N, dtype=_OUT_DTYPE)
+    return sp.csr_matrix((data, cols, indptr), shape=(int(n_rows), int(n_cols)))
+
+
+def _csr_from_missing_linear_ids(
+    missing_ids: np.ndarray,
+    *,
+    n_rows: int,
+    n_cols: int,
+) -> sp.csr_matrix:
+    """
+    Build a sorted CSR matrix containing every cell except ``missing_ids``.
+    """
+    n_rows = int(n_rows)
+    n_cols = int(n_cols)
+    missing_ids = np.asarray(missing_ids, dtype=np.int64)
+    missing_ids.sort()
+    n_missing = int(missing_ids.size)
+    N = n_rows * n_cols - n_missing
+
+    indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
+    indptr[0] = 0
+
+    if n_missing:
+        missing_rows = missing_ids // n_cols
+        missing_cols = (missing_ids - missing_rows * n_cols).astype(_sparse_indices_dtype(n_cols), copy=False)
+        missing_counts = np.bincount(missing_rows, minlength=n_rows).astype(np.int64, copy=False)
+    else:
+        missing_cols = np.empty(0, dtype=_sparse_indices_dtype(n_cols))
+        missing_counts = np.zeros(n_rows, dtype=np.int64)
+
+    row_counts = np.full(n_rows, n_cols, dtype=np.int64)
+    row_counts -= missing_counts
+    np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
+
+    indices = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
+    cursor = 0
+    for row in range(n_rows):
+        s = int(indptr[row])
+        e = int(indptr[row + 1])
+        miss_n = int(missing_counts[row])
+        if miss_n == 0:
+            indices[s:e] = np.arange(n_cols, dtype=indices.dtype)
+            continue
+        row_missing = missing_cols[cursor:cursor + miss_n]
+        _fill_complement_indices(indices[s:e], n_cols, row_missing)
+        cursor += miss_n
+
+    data = np.ones(N, dtype=_OUT_DTYPE)
+    return sp.csr_matrix((data, indices, indptr), shape=(n_rows, n_cols))
+
+
 def fe_fixed_rows_equiprob_cols(
     X_csr: sp.csr_matrix,
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
+    memory_mb: Optional[float] = None,
+    debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
     FE model: fixed row totals, columns equiprobable without replacement per row.
@@ -471,6 +1016,13 @@ def fe_fixed_rows_equiprob_cols(
     n_rows, n_cols = X_csr.shape
     row_deg = (X_csr.indptr[1:] - X_csr.indptr[:-1]).astype(np.int64, copy=False)
     N = int(row_deg.sum())
+    _check_direct_output_memory(
+        (int(n_rows), int(n_cols)),
+        N,
+        model="FE",
+        memory_mb=memory_mb,
+        index_extent=int(n_cols),
+    )
     
     indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
     indptr[0] = 0
@@ -488,6 +1040,9 @@ def fe_fixed_rows_equiprob_cols(
             indices,
             rng,
             sort_within_entity=bool(sort_indices),
+            memory_mb=memory_mb,
+            debug_callback=debug_callback,
+            debug_label="FE",
         )
         Y = sp.csr_matrix((data, indices, indptr), shape=(n_rows, n_cols))
         if sort_indices:
@@ -500,6 +1055,8 @@ def ef_equiprob_rows_fixed_cols(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
+    memory_mb: Optional[float] = None,
+    debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
     EF model: fixed column totals, rows equiprobable without replacement per column.
@@ -508,6 +1065,13 @@ def ef_equiprob_rows_fixed_cols(
     n_rows, n_cols = X_csc.shape
     col_deg = (X_csc.indptr[1:] - X_csc.indptr[:-1]).astype(np.int64, copy=False)
     N = int(col_deg.sum())
+    _check_direct_output_memory(
+        (int(n_cols), int(n_rows)),
+        N,
+        model="EF",
+        memory_mb=memory_mb,
+        index_extent=int(n_rows),
+    )
     
     indptr = np.empty(n_cols + 1, dtype=_sparse_indptr_dtype(N))
     indptr[0] = 0
@@ -525,6 +1089,9 @@ def ef_equiprob_rows_fixed_cols(
             indices,
             rng,
             sort_within_entity=bool(sort_indices),
+            memory_mb=memory_mb,
+            debug_callback=debug_callback,
+            debug_label="EF",
         )
         Y = sp.csc_matrix((data, indices, indptr), shape=(n_rows, n_cols)).tocsr()
         if sort_indices:
@@ -537,13 +1104,23 @@ def ee_equiprobable(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
+    memory_mb: Optional[float] = None,
+    debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
     EE model: preserve total fill and sample occupied cells uniformly without replacement.
     """
-    n_rows, n_cols = X_csr.shape
+    n_rows, n_cols = map(int, X_csr.shape)
     N = int(X_csr.nnz)
     n_cells = int(n_rows) * int(n_cols)
+    _check_linear_population_size(n_cells)
+    _check_direct_output_memory(
+        (n_rows, n_cols),
+        N,
+        model="EE",
+        memory_mb=memory_mb,
+        index_extent=n_cols,
+    )
     rng = _rng_from_state(random_state)
     
     if N == 0 or n_cells == 0:
@@ -554,25 +1131,18 @@ def ee_equiprobable(
     if N > n_cells:
         raise ValueError("nnz exceeds total number of cells; invalid input matrix.")
 
-    row_population = np.full(n_rows, n_cols, dtype=np.int64)
-    data = np.ones(N, dtype=_OUT_DTYPE)
-
     for _ in range(int(n_reps)):
-        row_counts = rng.multivariate_hypergeometric(row_population, N).astype(np.int64, copy=False)
-        indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
-        indptr[0] = 0
-        np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
-
-        cols = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
-        _fill_ee_row_indices(
-            row_counts,
-            n_cols,
-            indptr,
-            cols,
+        mode, ids = _sample_ee_ids(
             rng,
-            sort_within_row=bool(sort_indices),
+            n_cells,
+            N,
+            memory_mb=memory_mb,
+            debug_callback=debug_callback,
         )
-        Y = sp.csr_matrix((data, cols, indptr), shape=(n_rows, n_cols))
+        if mode == "missing":
+            Y = _csr_from_missing_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
+        else:
+            Y = _csr_from_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
         if sort_indices:
             Y.sort_indices()
         yield Y
@@ -600,7 +1170,7 @@ class DirectNullSampler:
     Each call to sample() produces an independent replicate stream controlled by seed.
     """
 
-    __slots__ = ("X", "model", "sort_indices", "default_seed")
+    __slots__ = ("X", "model", "sort_indices", "default_random_state", "memory_mb", "debug_callback")
 
     def __init__(
         self,
@@ -608,28 +1178,53 @@ class DirectNullSampler:
         model: str,
         *,
         sort_indices: bool,
-        default_seed: Optional[int],
+        default_random_state: Optional[int | np.random.Generator],
+        memory_mb: Optional[float],
+        debug_callback=None,
     ):
         self.X = X
         self.model = str(model).upper()
         self.sort_indices = bool(sort_indices)
-        self.default_seed = default_seed
+        self.default_random_state = default_random_state
+        self.memory_mb = _normalise_memory_mb(memory_mb)
+        self.debug_callback = debug_callback
 
     def sample(self, n_reps: int, *, seed: Optional[int] = None) -> Iterable[sp.csr_matrix]:
         n_reps = int(n_reps)
         if n_reps <= 0:
             return iter(())
 
-        eff_seed = self.default_seed if seed is None else int(seed)
+        eff_state = self.default_random_state if seed is None else int(seed)
 
         if self.model == "FE":
-            return fe_fixed_rows_equiprob_cols(self.X, n_reps, random_state=eff_seed, sort_indices=self.sort_indices)
+            return fe_fixed_rows_equiprob_cols(
+                self.X,
+                n_reps,
+                random_state=eff_state,
+                sort_indices=self.sort_indices,
+                memory_mb=self.memory_mb,
+                debug_callback=self.debug_callback,
+            )
 
         if self.model == "EF":
-            return ef_equiprob_rows_fixed_cols(self.X, n_reps, random_state=eff_seed, sort_indices=self.sort_indices)
+            return ef_equiprob_rows_fixed_cols(
+                self.X,
+                n_reps,
+                random_state=eff_state,
+                sort_indices=self.sort_indices,
+                memory_mb=self.memory_mb,
+                debug_callback=self.debug_callback,
+            )
 
         if self.model == "EE":
-            return ee_equiprobable(self.X, n_reps, random_state=eff_seed, sort_indices=self.sort_indices)
+            return ee_equiprobable(
+                self.X,
+                n_reps,
+                random_state=eff_state,
+                sort_indices=self.sort_indices,
+                memory_mb=self.memory_mb,
+                debug_callback=self.debug_callback,
+            )
 
         raise ValueError(f"Unknown or unsupported direct null model: {self.model}")
 
@@ -762,6 +1357,8 @@ def make_null_sampler(
     sort_indices: bool = False,
     burn_q=None,
     burn_every: int = 0,
+    memory_mb: Optional[float] = None,
+    debug_callback=None,
 ) -> NullSampler:
     """
     Construct a null sampler that yields CSR int8 presence matrices.
@@ -794,13 +1391,25 @@ def make_null_sampler(
 
     if model_u == "EF":
         Xp = prepare_presence_matrix(X, fmt="csc", copy=bool(copy)) if not prepared else (X.copy() if copy else X)
-        default_seed = None if isinstance(random_state, np.random.Generator) else (None if random_state is None else int(random_state))
-        return DirectNullSampler(Xp, model_u, sort_indices=sort_indices, default_seed=default_seed)
+        return DirectNullSampler(
+            Xp,
+            model_u,
+            sort_indices=sort_indices,
+            default_random_state=random_state,
+            memory_mb=memory_mb,
+            debug_callback=debug_callback,
+        )
 
     if model_u in ("FE", "EE"):
         Xp = prepare_presence_matrix(X, fmt="csr", copy=bool(copy)) if not prepared else (X.copy() if copy else X)
-        default_seed = None if isinstance(random_state, np.random.Generator) else (None if random_state is None else int(random_state))
-        return DirectNullSampler(Xp, model_u, sort_indices=sort_indices, default_seed=default_seed)
+        return DirectNullSampler(
+            Xp,
+            model_u,
+            sort_indices=sort_indices,
+            default_random_state=random_state,
+            memory_mb=memory_mb,
+            debug_callback=debug_callback,
+        )
 
     raise ValueError(f"Unknown or unsupported null model: {model_u}")
 
@@ -994,6 +1603,7 @@ def _worker_init_wrap(
     burn_q,
     burn_every: int,
     seed_q,
+    memory_mb: Optional[float],
 ) -> None:
     """
     Build the per-process null sampler and initialise statistic-function globals.
@@ -1032,6 +1642,7 @@ def _worker_init_wrap(
         sort_indices=bool(sort_indices),
         burn_q=_G_burn_q if model_u == "FF" else None,
         burn_every=_G_burn_every if model_u == "FF" else 0,
+        memory_mb=memory_mb,
     )
 
 
@@ -1165,6 +1776,7 @@ def parallel_null_reduce_vector(
     steps_per_rep: Optional[int] = None,
     mp_start: str = "fork",
     progress_every: int = 1,
+    memory_mb: Optional[float] = None,
     **init_kwargs,
 ) -> dict:
     """
@@ -1193,6 +1805,7 @@ def parallel_null_reduce_vector(
    
    
     model_u = str(model).upper()
+    memory_mb = _normalise_memory_mb(memory_mb)
     
     chunk_n = int(progress_every) if progress_every and progress_every > 0 else 50
     chunk_n = max(1, chunk_n)
@@ -1273,6 +1886,7 @@ def parallel_null_reduce_vector(
             burn_q,
             burn_every,
             seed_q,
+            memory_mb,
         ),
     ) as pool:
     

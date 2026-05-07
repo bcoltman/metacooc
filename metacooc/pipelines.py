@@ -360,6 +360,7 @@ def run_structure(args):
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         nm_random_state=args.nm_random_state,
+        nm_memory_mb=getattr(args, "nm_memory_mb", None),
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
@@ -390,6 +391,7 @@ def run_association(args):
         nm_n_reps=args.nm_n_reps,
         compute_fisher=args.compute_fisher,
         nm_random_state=args.nm_random_state,
+        nm_memory_mb=getattr(args, "nm_memory_mb", None),
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
@@ -435,6 +437,7 @@ def run_cooccurrence(args):
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         nm_random_state=args.nm_random_state,
+        nm_memory_mb=getattr(args, "nm_memory_mb", None),
         focal_query_to_taxa=focal_query_to_taxa,
         rhs_query_to_taxa=rhs_query_to_taxa,
     )
