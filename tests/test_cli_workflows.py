@@ -20,6 +20,16 @@ def run_cli(*args, cwd=None):
     )
 
 
+def run_cli_no_check(*args, cwd=None):
+    return subprocess.run(
+        [sys.executable, "-m", "metacooc", *map(str, args)],
+        cwd=cwd,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 @pytest.fixture
 def cli_formatted_dir(tmp_path, fixture_dir):
     out = tmp_path / "cli_formatted"
@@ -328,3 +338,50 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
     assert micro_000["P_B_given_A"] == pytest.approx(36 / 60)
     assert micro_000["P_A_given_B"] == pytest.approx(36 / 51)
     assert 0 <= micro_000["q_bh"] <= 1
+
+
+@pytest.mark.cli
+def test_cli_invalid_query_grammar_fails_clearly(tmp_path, cli_formatted_dir):
+    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+
+    taxon_mode = run_cli_no_check(
+        "search",
+        "--search_mode",
+        "taxon",
+        "--search_string",
+        "g__Rhizo",
+        "--custom_ingredients",
+        raw,
+        "--output_dir",
+        tmp_path / "bad_taxon",
+    )
+    assert taxon_mode.returncode != 0
+    assert "invalid choice: 'taxon'" in taxon_mode.stderr
+
+    invalid_focal = run_cli_no_check(
+        "cooccurrence",
+        "--search_mode",
+        "focal_taxa",
+        "--search_string",
+        "g__Rhizo+g__Micro",
+        "--custom_ingredients",
+        raw,
+        "--output_dir",
+        tmp_path / "bad_focal",
+        "--large",
+    )
+    assert invalid_focal.returncode != 0
+    assert "focal_taxa mode does not support" in invalid_focal.stderr
+
+    missing_metadata_source = run_cli_no_check(
+        "search",
+        "--search_mode",
+        "metadata",
+        "--search_string",
+        "soil",
+        "--output_dir",
+        tmp_path / "bad_metadata",
+    )
+    assert missing_metadata_source.returncode != 0
+    assert "Missing" in missing_metadata_source.stderr
+    assert "sra_metadata" in missing_metadata_source.stderr

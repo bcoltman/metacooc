@@ -95,6 +95,15 @@ def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
     assert np.all(edge_arrays.cols["iA"] == taxa_by_name[focal_taxon])
     assert all("g__Micro; s__micro_" in taxon for taxon in taxa_arr[edge_arrays.cols["iB"]])
 
+    focal_samples = set(raw_ingredients.presence_matrix[taxa_by_name[focal_taxon]].indices)
+    for row_idx in range(min(5, edge_arrays.n_rows)):
+        b_taxon = taxa_arr[edge_arrays.cols["iB"][row_idx]]
+        b_samples = set(raw_ingredients.presence_matrix[taxa_by_name[b_taxon]].indices)
+        inter = len(focal_samples & b_samples)
+        union = len(focal_samples | b_samples)
+        assert edge_arrays.cols["inter"][row_idx] == inter
+        assert np.isclose(edge_arrays.cols["jaccard"][row_idx], inter / union)
+
     row_idx = np.flatnonzero(taxa_arr[edge_arrays.cols["iB"]] == micro_000)
     assert row_idx.size == 1
     row_idx = int(row_idx[0])
@@ -103,6 +112,27 @@ def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
     assert np.isclose(edge_arrays.cols["jaccard"][row_idx], 36 / 75)
     assert edge_arrays.cols["log_p"][row_idx] <= 0
     assert np.isfinite(edge_arrays.cols["log_q_bh"][row_idx])
+
+
+def test_focal_rhs_cooccurrence_can_resolve_to_no_surviving_edges(raw_ingredients):
+    taxa_universe = list(raw_ingredients.taxa)
+    focal_taxon = next(t for t in taxa_universe if t.endswith("g__Rhizo; s__rhizo_000"))
+    rhs_taxa = [t for t in taxa_universe if "g__Micro; s__micro_" in t]
+
+    edge_arrays, nodes_df = cooccurrence_obj(
+        raw_ingredients,
+        taxa_universe,
+        focal_query_to_taxa={"s__rhizo_000": [focal_taxon]},
+        rhs_query_to_taxa={"s__rhizo_000": rhs_taxa},
+        large=True,
+        threshold=1.0,
+        null_model="FE",
+        nm_n_reps=1,
+        nm_random_state=4,
+    )
+
+    assert edge_arrays is None
+    assert nodes_df is not None
 
 
 def test_structure_obj_observed_only(raw_ingredients):
@@ -159,3 +189,25 @@ def test_association_metrics_have_expected_counts(raw_ingredients):
     assert np.isclose(row["jaccard"], 50 / 60)
     assert np.isclose(row["phi"], 0.8164965809277261)
     assert 0 <= row["q_bh"] <= 1
+
+    filtered_sample_set = set(filtered.samples)
+    null_sample_set = set(raw_ingredients.samples)
+    taxon_to_idx = {taxon: i for i, taxon in enumerate(raw_ingredients.taxa)}
+
+    for taxon in out["taxon"].head(10):
+        taxon_samples = {
+            raw_ingredients.samples[i]
+            for i in raw_ingredients.presence_matrix[taxon_to_idx[taxon]].indices
+        }
+        a = len(taxon_samples & filtered_sample_set)
+        b = len(taxon_samples - filtered_sample_set)
+        c = len(filtered_sample_set - taxon_samples)
+        d = len(null_sample_set - filtered_sample_set - taxon_samples)
+        expected_jaccard = a / (a + b + c)
+
+        metric_row = out.loc[out["taxon"].eq(taxon)].iloc[0]
+        assert metric_row["a"] == a
+        assert metric_row["b"] == b
+        assert metric_row["c"] == c
+        assert metric_row["d"] == d
+        assert np.isclose(metric_row["jaccard"], expected_jaccard)

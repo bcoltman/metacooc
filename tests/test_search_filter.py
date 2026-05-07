@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pickle
 
+import pytest
+
 from metacooc.filter import filter_data, filter_data_obj
 from metacooc.search import search_data_obj
 
@@ -82,6 +84,85 @@ def test_focal_multi_lhs_query_resolution(raw_ingredients):
 
     assert set(resolved.focal_rows_by_query_lhs) == {"s__rhizo_000", "s__micro_000"}
     assert resolved.focal_sample_union == RHIZO_HITS | MICRO_HITS
+
+
+def test_focal_endpoint_and_aggregated_resolution(raw_ingredients, aggregated_ingredients):
+    species = search_data_obj(
+        search_mode="focal_taxa",
+        search_string="s__rhizo_000",
+        custom_ingredients=raw_ingredients,
+        return_details=True,
+    )
+    species_taxa = [
+        raw_ingredients.taxa[i]
+        for i in species.focal_rows_by_query_lhs["s__rhizo_000"]
+    ]
+    assert len(species_taxa) == 1
+    assert species_taxa[0].endswith("g__Rhizo; s__rhizo_000")
+
+    exact_aggregated = search_data_obj(
+        search_mode="focal_taxa",
+        search_string="g__Rhizo AGGREGATED",
+        custom_ingredients=aggregated_ingredients,
+        return_details=True,
+    )
+    aggregated_taxa = [
+        aggregated_ingredients.taxa[i]
+        for i in exact_aggregated.focal_rows_by_query_lhs["g__Rhizo AGGREGATED"]
+    ]
+    assert aggregated_taxa == [
+        "Root; d__Bacteria; p__Proteobacteria; c__Alphaproteobacteria; "
+        "o__Rhizobiales; f__Rhizobiaceae; g__Rhizo AGGREGATED"
+    ]
+    assert exact_aggregated.focal_sample_union == RHIZO_HITS
+
+    expanded = search_data_obj(
+        search_mode="focal_taxa",
+        search_string="g__Rhizo",
+        custom_ingredients=aggregated_ingredients,
+        return_details=True,
+    )
+    expanded_taxa = [
+        aggregated_ingredients.taxa[i]
+        for i in expanded.focal_rows_by_query_lhs["g__Rhizo"]
+    ]
+    assert len(expanded_taxa) == 51
+    assert any(t.endswith("g__Rhizo AGGREGATED") for t in expanded_taxa)
+    assert expanded.focal_sample_union == RHIZO_HITS
+
+
+@pytest.mark.parametrize(
+    ("search_mode", "search_string", "message"),
+    [
+        ("taxon", "g__Rhizo", "search_mode='taxon' has been removed"),
+        ("metadata", "soil -> reef", "'->' syntax is not supported in metadata mode"),
+        ("biome", "soil -> marine", "'->' syntax is not supported in biome mode"),
+        ("taxa_context", "g__Rhizo -> g__Micro", "'->' syntax is not supported in taxa_context mode"),
+        ("focal_taxa", "g__Rhizo+g__Micro", "focal_taxa mode does not support"),
+        ("focal_taxa", "g__Rhizo|g__Micro", "focal_taxa mode does not support"),
+        ("focal_taxa", "g__Rhizo -> ", "Right-hand side of '->' cannot be empty"),
+        ("focal_taxa", " -> g__Micro", "Left-hand side of '->' cannot be empty"),
+    ],
+)
+def test_invalid_query_grammar_raises(raw_ingredients, metadata_file, search_mode, search_string, message):
+    kwargs = {"custom_ingredients": raw_ingredients}
+    if search_mode == "metadata":
+        kwargs = {"metadata_file": str(metadata_file)}
+
+    with pytest.raises(ValueError, match=message):
+        search_data_obj(
+            search_mode=search_mode,
+            search_string=search_string,
+            **kwargs,
+        )
+
+
+def test_metadata_without_file_or_data_dir_raises():
+    with pytest.raises(ValueError, match="data_dir must be provided"):
+        search_data_obj(
+            search_mode="metadata",
+            search_string="soil",
+        )
 
 
 def test_filter_data_obj_by_counts_rank_and_accessions(raw_ingredients):

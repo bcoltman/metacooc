@@ -61,3 +61,17 @@ def test_direct_samplers_are_seed_reproducible(raw_ingredients):
         A = _sample_one(X, model, seed=99)
         B = _sample_one(X, model, seed=99)
         assert (A != B).nnz == 0
+
+
+def test_direct_samplers_are_sorted_csr_without_duplicate_columns(raw_ingredients):
+    X = raw_ingredients.presence_matrix
+
+    for model in ("FE", "EF", "EE"):
+        Y = _sample_one(X, model, seed=101)
+        assert Y.getformat() == "csr"
+        assert Y.has_sorted_indices
+
+        for row in range(Y.shape[0]):
+            start, end = Y.indptr[row], Y.indptr[row + 1]
+            row_indices = Y.indices[start:end]
+            assert np.unique(row_indices).size == row_indices.size
