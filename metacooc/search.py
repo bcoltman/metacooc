@@ -289,14 +289,6 @@ def _resolve_single_focal_taxa_query(ingredients, query: str) -> Set[int]:
     if _is_endpoint_focal_query(query):
         rows = _exact_terminal_taxon_rows(ingredients, query)
 
-        # temporary debug
-        # print(f"DEBUG endpoint query={query!r}")
-        # print(f"DEBUG endpoint n_matches={len(rows)}")
-        if rows:
-            # print("DEBUG endpoint matches=")
-            for i in sorted(rows):
-                print(f"    [{i}] {ingredients.taxa[i]}")
-
         if not rows:
             raise ValueError(f"No exact endpoint taxon matched focal query: {query!r}")
         return rows

@@ -279,3 +279,52 @@ def test_cli_full_workflow_accepts_metadata_file(tmp_path, cli_formatted_dir, me
         "cli",
     )
     assert (out / "cli_global_association.tsv").exists()
+
+
+@pytest.mark.cli
+def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_dir):
+    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    out = tmp_path / "workflow_focal_rhs"
+
+    run_cli(
+        "cooccurrence",
+        "--search_mode",
+        "focal_taxa",
+        "--search_string",
+        "s__rhizo_000 -> g__Micro",
+        "--custom_ingredients",
+        raw,
+        "--output_dir",
+        out,
+        "--large",
+        "--threshold",
+        "0",
+        "--null_model",
+        "FE",
+        "--nm_n_reps",
+        "1",
+        "--tag",
+        "cli",
+    )
+
+    edges = pd.read_csv(out / "cli_global_edges.tsv", sep="\t")
+    assert not edges.empty
+    assert {"focal_query", "focal_taxon"}.issubset(edges.columns)
+    assert set(edges["focal_query"]) == {"s__rhizo_000"}
+    assert edges["focal_taxon"].str.endswith("g__Rhizo; s__rhizo_000").all()
+    assert edges["A_taxon"].str.endswith("g__Rhizo; s__rhizo_000").all()
+    assert edges["B_taxon"].str.contains("g__Micro; s__micro_", regex=False).all()
+
+    micro_000 = edges.loc[edges["B_taxon"].str.endswith("g__Micro; s__micro_000")].iloc[0]
+    assert micro_000["A_B_intersection_count"] == 36
+    assert micro_000["A_total_count"] == 60
+    assert micro_000["B_total_count"] == 51
+    assert micro_000["a"] == 36
+    assert micro_000["b"] == 24
+    assert micro_000["c"] == 15
+    assert micro_000["d"] == 25
+    assert micro_000["N"] == 100
+    assert micro_000["jaccard"] == pytest.approx(36 / 75)
+    assert micro_000["P_B_given_A"] == pytest.approx(36 / 60)
+    assert micro_000["P_A_given_B"] == pytest.approx(36 / 51)
+    assert 0 <= micro_000["q_bh"] <= 1

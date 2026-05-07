@@ -51,6 +51,39 @@ def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
     assert metadata_hits == SOIL_SAMPLES
 
 
+def test_focal_lhs_rhs_query_resolution(raw_ingredients):
+    resolved = search_data_obj(
+        search_mode="focal_taxa",
+        search_string="s__rhizo_000 -> g__Micro",
+        custom_ingredients=raw_ingredients,
+        return_details=True,
+    )
+
+    assert set(resolved.focal_rows_by_query_lhs) == {"s__rhizo_000"}
+    assert set(resolved.focal_rows_by_query_rhs) == {"g__Micro"}
+    assert resolved.focal_sample_union == RHIZO_HITS
+
+    lhs_taxa = [raw_ingredients.taxa[i] for i in resolved.focal_rows_by_query_lhs["s__rhizo_000"]]
+    rhs_taxa = [raw_ingredients.taxa[i] for i in resolved.focal_rows_by_query_rhs["g__Micro"]]
+
+    assert len(lhs_taxa) == 1
+    assert lhs_taxa[0].endswith("g__Rhizo; s__rhizo_000")
+    assert len(rhs_taxa) == 50
+    assert all("g__Micro; s__micro_" in taxon for taxon in rhs_taxa)
+
+
+def test_focal_multi_lhs_query_resolution(raw_ingredients):
+    resolved = search_data_obj(
+        search_mode="focal_taxa",
+        search_string="s__rhizo_000,s__micro_000",
+        custom_ingredients=raw_ingredients,
+        return_details=True,
+    )
+
+    assert set(resolved.focal_rows_by_query_lhs) == {"s__rhizo_000", "s__micro_000"}
+    assert resolved.focal_sample_union == RHIZO_HITS | MICRO_HITS
+
+
 def test_filter_data_obj_by_counts_rank_and_accessions(raw_ingredients):
     filtered, ok = filter_data_obj(
         raw_ingredients,

@@ -66,6 +66,45 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
     assert "jaccard_p_EE" in edge_arrays_ee.cols
 
 
+def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
+    taxa_universe = list(raw_ingredients.taxa)
+    taxa_by_name = {taxon: i for i, taxon in enumerate(taxa_universe)}
+    taxa_arr = np.asarray(taxa_universe, dtype=object)
+
+    focal_taxon = next(t for t in taxa_universe if t.endswith("g__Rhizo; s__rhizo_000"))
+    rhs_taxa = [t for t in taxa_universe if "g__Micro; s__micro_" in t]
+    micro_000 = next(t for t in rhs_taxa if t.endswith("g__Micro; s__micro_000"))
+
+    edge_arrays, _ = cooccurrence_obj(
+        raw_ingredients,
+        taxa_universe,
+        focal_query_to_taxa={"s__rhizo_000": [focal_taxon]},
+        rhs_query_to_taxa={"s__rhizo_000": rhs_taxa},
+        large=True,
+        threshold=0.0,
+        null_model="FE",
+        nm_n_reps=1,
+        nm_random_state=4,
+    )
+
+    assert edge_arrays is not None
+    assert edge_arrays.n_rows == 50
+    assert {"focal_query", "focal_taxon"}.issubset(edge_arrays.cols)
+    assert set(edge_arrays.cols["focal_query"]) == {"s__rhizo_000"}
+    assert set(edge_arrays.cols["focal_taxon"]) == {focal_taxon}
+    assert np.all(edge_arrays.cols["iA"] == taxa_by_name[focal_taxon])
+    assert all("g__Micro; s__micro_" in taxon for taxon in taxa_arr[edge_arrays.cols["iB"]])
+
+    row_idx = np.flatnonzero(taxa_arr[edge_arrays.cols["iB"]] == micro_000)
+    assert row_idx.size == 1
+    row_idx = int(row_idx[0])
+
+    assert edge_arrays.cols["inter"][row_idx] == 36
+    assert np.isclose(edge_arrays.cols["jaccard"][row_idx], 36 / 75)
+    assert edge_arrays.cols["log_p"][row_idx] <= 0
+    assert np.isfinite(edge_arrays.cols["log_q_bh"][row_idx])
+
+
 def test_structure_obj_observed_only(raw_ingredients):
     out = structure_obj(raw_ingredients, compute_null=False)
     assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
@@ -94,3 +133,29 @@ def test_biome_distribution(raw_ingredients):
     assert presence.shape == (2, 300)
     assert coverage.shape == (2, 300)
     assert n_dropped == 0
+
+
+def test_association_metrics_have_expected_counts(raw_ingredients):
+    filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
+    focal_taxon = next(t for t in raw_ingredients.taxa if t.endswith("g__Rhizo; s__rhizo_000"))
+
+    out = association_obj(
+        raw_ingredients,
+        filtered,
+        threshold=0.0,
+        null_model="FE",
+        nm_n_reps=1,
+        nm_random_state=3,
+    )
+    row = out.loc[out["taxon"].eq(focal_taxon)].iloc[0]
+
+    assert row["a"] == 50
+    assert row["b"] == 10
+    assert row["c"] == 0
+    assert row["d"] == 40
+    assert row["N_T"] == 50
+    assert row["N_notT"] == 50
+    assert row["N_null"] == 100
+    assert np.isclose(row["jaccard"], 50 / 60)
+    assert np.isclose(row["phi"], 0.8164965809277261)
+    assert 0 <= row["q_bh"] <= 1
