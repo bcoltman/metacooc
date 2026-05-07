@@ -127,3 +127,29 @@ def test_ee_small_matrix_support_frequencies_are_uniform():
     assert set(counts) == set(supports)
     for support in supports:
         assert abs(counts[support] - expected) < expected * 0.20
+
+
+def test_ee_strategy_variants_preserve_exact_invariants():
+    X = sp.csr_matrix(
+        (np.ones(10, dtype=np.int8), ([0, 0, 1, 2, 3, 4, 4, 5, 6, 7], [0, 5, 1, 2, 3, 4, 8, 6, 7, 9])),
+        shape=(8, 10),
+    )
+
+    for strategy in ("auto", "legacy", "oversample", "chunked", "numpy-choice", "floyd"):
+        events = []
+        sampler = make_null_sampler(
+            X,
+            "EE",
+            random_state=42,
+            sort_indices=True,
+            ee_strategy=strategy,
+            debug_callback=events,
+        )
+        Y = next(iter(sampler.sample(1, seed=42)))
+        coo = Y.tocoo()
+        support = np.column_stack((coo.row, coo.col))
+        assert Y.shape == X.shape
+        assert Y.nnz == X.nnz
+        assert Y.has_sorted_indices
+        assert np.unique(support, axis=0).shape[0] == Y.nnz
+        assert events

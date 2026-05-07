@@ -13,6 +13,7 @@ _OUT_DTYPE = np.int8
 _DEFAULT_NM_MEMORY_MB = 256.0
 _DEFAULT_DIRECT_OUTPUT_LIMIT_MB = 32_768.0
 _SMALL_POPULATION_MAX_CELLS = 5_000_000
+_EE_STRATEGIES = {"auto", "legacy", "oversample", "chunked", "numpy-choice", "floyd"}
 
 
 # -----------------------------------------------------------------------------
@@ -775,6 +776,45 @@ def _check_linear_population_size(n_cells: int) -> None:
         raise ValueError("EE direct sampler requires n_rows * n_cols to fit in int64.")
 
 
+def _normalise_ee_strategy(strategy: Optional[str]) -> str:
+    """
+    Normalise the experimental EE sampler strategy selector.
+    """
+    value = "auto" if strategy is None else str(strategy).strip().lower().replace("_", "-")
+    aliases = {
+        "current": "legacy",
+        "sparse-rejection": "legacy",
+        "rejection": "legacy",
+        "numpy": "numpy-choice",
+        "choice": "numpy-choice",
+        "chunk": "chunked",
+        "chunked-unique": "chunked",
+        "oversample-unique": "oversample",
+    }
+    value = aliases.get(value, value)
+    if value not in _EE_STRATEGIES:
+        raise ValueError(f"Unknown EE strategy {strategy!r}. Expected one of: {', '.join(sorted(_EE_STRATEGIES))}")
+    return value
+
+
+def _trim_unique_ids(
+    rng: np.random.Generator,
+    ids: np.ndarray,
+    n_draw: int,
+) -> np.ndarray:
+    """
+    Uniformly trim a symmetric unique-ID superset down to ``n_draw`` IDs.
+    """
+    ids = np.asarray(ids, dtype=np.int64)
+    n_draw = int(n_draw)
+    if ids.size < n_draw:
+        raise ValueError("Cannot trim fewer unique IDs than requested.")
+    if ids.size == n_draw:
+        return ids.astype(np.int64, copy=False)
+    keep = rng.choice(int(ids.size), size=n_draw, replace=False)
+    return ids[keep].astype(np.int64, copy=False)
+
+
 def _sample_unique_ids_rejection(
     rng: np.random.Generator,
     population_size: int,
@@ -807,10 +847,94 @@ def _sample_unique_ids_rejection(
         else:
             accepted = candidates
 
-    if accepted.size > n_draw:
-        keep = rng.choice(int(accepted.size), size=n_draw, replace=False)
-        accepted = accepted[keep]
-    return accepted.astype(np.int64, copy=False)
+    return _trim_unique_ids(rng, accepted, n_draw)
+
+
+def _sample_unique_ids_oversample(
+    rng: np.random.Generator,
+    population_size: int,
+    n_draw: int,
+    *,
+    memory_mb: Optional[float],
+) -> np.ndarray:
+    """
+    Sample unique IDs with one large oversampled draw plus rare symmetric top-up.
+    """
+    population_size = int(population_size)
+    n_draw = int(n_draw)
+    if n_draw <= 0:
+        return np.empty(0, dtype=np.int64)
+    if n_draw > population_size:
+        raise ValueError("Cannot sample more unique IDs than the population size.")
+
+    density = float(n_draw) / float(population_size)
+    oversample_frac = min(0.05, max(0.002, 3.0 * density + 0.0005))
+    request = min(population_size, int(np.ceil(n_draw * (1.0 + oversample_frac))) + 1024)
+    max_request = _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=3, floor=1024)
+    if request > max_request:
+        raise MemoryError(
+            f"EE oversample strategy needs {request} int64 draws but the memory budget allows about {max_request}."
+        )
+
+    accepted = np.unique(_rng_integers(rng, population_size, size=request, dtype=np.int64))
+    while accepted.size < n_draw:
+        remaining = n_draw - int(accepted.size)
+        topup = min(max_request, max(remaining * 2, 1024))
+        candidates = np.unique(_rng_integers(rng, population_size, size=topup, dtype=np.int64))
+        accepted = np.unique(np.concatenate((accepted, candidates)))
+
+    return _trim_unique_ids(rng, accepted, n_draw)
+
+
+def _sample_unique_ids_chunked(
+    rng: np.random.Generator,
+    population_size: int,
+    n_draw: int,
+    *,
+    memory_mb: Optional[float],
+) -> np.ndarray:
+    """
+    Sample unique IDs by collecting large unique chunks, then merging sparingly.
+    """
+    population_size = int(population_size)
+    n_draw = int(n_draw)
+    if n_draw <= 0:
+        return np.empty(0, dtype=np.int64)
+    if n_draw > population_size:
+        raise ValueError("Cannot sample more unique IDs than the population size.")
+
+    max_chunk = _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=5, floor=1024)
+    density = float(n_draw) / float(population_size)
+    target_unique = min(population_size, int(np.ceil(n_draw * (1.0 + min(0.05, max(0.004, 5.0 * density))))))
+
+    chunks: list[np.ndarray] = []
+    unique_seen_upper = 0
+    while unique_seen_upper < target_unique:
+        remaining = target_unique - unique_seen_upper
+        request = min(max_chunk, max(remaining, 1024))
+        chunk = np.unique(_rng_integers(rng, population_size, size=request, dtype=np.int64))
+        chunks.append(chunk)
+        unique_seen_upper += int(chunk.size)
+
+    accepted = np.unique(np.concatenate(chunks)) if len(chunks) > 1 else chunks[0]
+    while accepted.size < n_draw:
+        remaining = n_draw - int(accepted.size)
+        request = min(max_chunk, max(remaining * 2, 1024))
+        chunk = np.unique(_rng_integers(rng, population_size, size=request, dtype=np.int64))
+        accepted = np.unique(np.concatenate((accepted, chunk)))
+
+    return _trim_unique_ids(rng, accepted, n_draw)
+
+
+def _sample_unique_ids_numpy_choice(
+    rng: np.random.Generator,
+    population_size: int,
+    n_draw: int,
+) -> np.ndarray:
+    """
+    Use NumPy's native integer-population no-replacement sampler.
+    """
+    return rng.choice(int(population_size), size=int(n_draw), replace=False, shuffle=False).astype(np.int64, copy=False)
 
 
 def _sample_unique_ids_floyd(
@@ -842,12 +966,14 @@ def _sample_ee_ids(
     *,
     memory_mb: Optional[float],
     debug_callback=None,
+    strategy: Optional[str] = None,
 ) -> tuple[str, np.ndarray]:
     """
     Select support IDs, or complement IDs, for the EE null model.
     """
     population_size = int(population_size)
     n_draw = int(n_draw)
+    strategy = _normalise_ee_strategy(strategy)
     n_missing = population_size - n_draw
     density = float(n_draw) / float(population_size) if population_size else 0.0
     missing_density = float(n_missing) / float(population_size) if population_size else 0.0
@@ -861,6 +987,7 @@ def _sample_ee_ids(
             debug_callback,
             sampler="EE",
             algorithm="choice_small_population",
+            strategy=strategy,
             population_size=population_size,
             n_draw=n_draw,
             density=density,
@@ -868,29 +995,119 @@ def _sample_ee_ids(
         )
         return "support", rng.choice(population_size, size=n_draw, replace=False).astype(np.int64, copy=False)
 
+    effective_strategy = strategy
+    if effective_strategy == "auto":
+        effective_strategy = "legacy"
+
     if n_missing < n_draw and (missing_density <= 0.20 or n_missing <= small_population_entries):
+        if effective_strategy == "numpy-choice":
+            _record_debug_event(
+                debug_callback,
+                sampler="EE",
+                algorithm="numpy_choice_complement",
+                strategy=strategy,
+                population_size=population_size,
+                n_draw=n_draw,
+                n_missing=n_missing,
+                density=density,
+                estimated_temp_entries=n_missing,
+            )
+            return "missing", _sample_unique_ids_numpy_choice(rng, population_size, n_missing)
+        if effective_strategy == "oversample":
+            sampler = _sample_unique_ids_oversample
+            algorithm = "complement_oversample_unique"
+        elif effective_strategy == "chunked":
+            sampler = _sample_unique_ids_chunked
+            algorithm = "complement_chunked_unique"
+        elif effective_strategy == "floyd":
+            _record_debug_event(
+                debug_callback,
+                sampler="EE",
+                algorithm="complement_floyd_forced",
+                strategy=strategy,
+                population_size=population_size,
+                n_draw=n_draw,
+                n_missing=n_missing,
+                density=density,
+                estimated_temp_entries=n_missing,
+            )
+            return "missing", _sample_unique_ids_floyd(rng, population_size, n_missing)
+        else:
+            sampler = _sample_unique_ids_rejection
+            algorithm = "complement_rejection"
         _record_debug_event(
             debug_callback,
             sampler="EE",
-            algorithm="complement_rejection",
+            algorithm=algorithm,
+            strategy=strategy,
             population_size=population_size,
             n_draw=n_draw,
             n_missing=n_missing,
             density=density,
             estimated_temp_entries=min(n_missing, small_population_entries),
         )
-        return "missing", _sample_unique_ids_rejection(
+        return "missing", sampler(
             rng,
             population_size,
             n_missing,
             memory_mb=memory_mb,
         )
 
-    if density <= 0.35:
+    if effective_strategy == "numpy-choice":
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="numpy_choice",
+            strategy=strategy,
+            population_size=population_size,
+            n_draw=n_draw,
+            density=density,
+            estimated_temp_entries=n_draw,
+        )
+        return "support", _sample_unique_ids_numpy_choice(rng, population_size, n_draw)
+
+    if effective_strategy == "oversample":
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="sparse_oversample_unique",
+            strategy=strategy,
+            population_size=population_size,
+            n_draw=n_draw,
+            density=density,
+            estimated_temp_entries=int(np.ceil(n_draw * (1.0 + min(0.05, max(0.002, 3.0 * density + 0.0005)))) + 1024),
+        )
+        return "support", _sample_unique_ids_oversample(
+            rng,
+            population_size,
+            n_draw,
+            memory_mb=memory_mb,
+        )
+
+    if effective_strategy == "chunked":
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="sparse_chunked_unique",
+            strategy=strategy,
+            population_size=population_size,
+            n_draw=n_draw,
+            density=density,
+            estimated_temp_entries=min(n_draw, _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=5, floor=1024)),
+        )
+        return "support", _sample_unique_ids_chunked(
+            rng,
+            population_size,
+            n_draw,
+            memory_mb=memory_mb,
+        )
+
+    if effective_strategy == "legacy" and density <= 0.35:
         _record_debug_event(
             debug_callback,
             sampler="EE",
             algorithm="sparse_rejection",
+            strategy=strategy,
             population_size=population_size,
             n_draw=n_draw,
             density=density,
@@ -903,11 +1120,25 @@ def _sample_ee_ids(
             memory_mb=memory_mb,
         )
 
+    if effective_strategy == "floyd":
+        _record_debug_event(
+            debug_callback,
+            sampler="EE",
+            algorithm="floyd_forced",
+            strategy=strategy,
+            population_size=population_size,
+            n_draw=n_draw,
+            density=density,
+            estimated_temp_entries=n_draw,
+        )
+        return "support", _sample_unique_ids_floyd(rng, population_size, n_draw)
+
     if n_missing < n_draw:
         _record_debug_event(
             debug_callback,
             sampler="EE",
             algorithm="complement_floyd",
+            strategy=strategy,
             population_size=population_size,
             n_draw=n_draw,
             n_missing=n_missing,
@@ -920,6 +1151,7 @@ def _sample_ee_ids(
         debug_callback,
         sampler="EE",
         algorithm="floyd",
+        strategy=strategy,
         population_size=population_size,
         n_draw=n_draw,
         density=density,
@@ -1106,6 +1338,7 @@ def ee_equiprobable(
     sort_indices: bool = False,
     memory_mb: Optional[float] = None,
     debug_callback=None,
+    ee_strategy: Optional[str] = None,
 ) -> Iterable[sp.csr_matrix]:
     """
     EE model: preserve total fill and sample occupied cells uniformly without replacement.
@@ -1122,6 +1355,7 @@ def ee_equiprobable(
         index_extent=n_cols,
     )
     rng = _rng_from_state(random_state)
+    ee_strategy = _normalise_ee_strategy(ee_strategy)
     
     if N == 0 or n_cells == 0:
         for _ in range(int(n_reps)):
@@ -1138,6 +1372,7 @@ def ee_equiprobable(
             N,
             memory_mb=memory_mb,
             debug_callback=debug_callback,
+            strategy=ee_strategy,
         )
         if mode == "missing":
             Y = _csr_from_missing_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
@@ -1170,7 +1405,7 @@ class DirectNullSampler:
     Each call to sample() produces an independent replicate stream controlled by seed.
     """
 
-    __slots__ = ("X", "model", "sort_indices", "default_random_state", "memory_mb", "debug_callback")
+    __slots__ = ("X", "model", "sort_indices", "default_random_state", "memory_mb", "debug_callback", "ee_strategy")
 
     def __init__(
         self,
@@ -1181,6 +1416,7 @@ class DirectNullSampler:
         default_random_state: Optional[int | np.random.Generator],
         memory_mb: Optional[float],
         debug_callback=None,
+        ee_strategy: Optional[str] = None,
     ):
         self.X = X
         self.model = str(model).upper()
@@ -1188,6 +1424,7 @@ class DirectNullSampler:
         self.default_random_state = default_random_state
         self.memory_mb = _normalise_memory_mb(memory_mb)
         self.debug_callback = debug_callback
+        self.ee_strategy = _normalise_ee_strategy(ee_strategy)
 
     def sample(self, n_reps: int, *, seed: Optional[int] = None) -> Iterable[sp.csr_matrix]:
         n_reps = int(n_reps)
@@ -1224,6 +1461,7 @@ class DirectNullSampler:
                 sort_indices=self.sort_indices,
                 memory_mb=self.memory_mb,
                 debug_callback=self.debug_callback,
+                ee_strategy=self.ee_strategy,
             )
 
         raise ValueError(f"Unknown or unsupported direct null model: {self.model}")
@@ -1359,6 +1597,7 @@ def make_null_sampler(
     burn_every: int = 0,
     memory_mb: Optional[float] = None,
     debug_callback=None,
+    ee_strategy: Optional[str] = None,
 ) -> NullSampler:
     """
     Construct a null sampler that yields CSR int8 presence matrices.
@@ -1398,6 +1637,7 @@ def make_null_sampler(
             default_random_state=random_state,
             memory_mb=memory_mb,
             debug_callback=debug_callback,
+            ee_strategy=ee_strategy,
         )
 
     if model_u in ("FE", "EE"):
@@ -1409,6 +1649,7 @@ def make_null_sampler(
             default_random_state=random_state,
             memory_mb=memory_mb,
             debug_callback=debug_callback,
+            ee_strategy=ee_strategy,
         )
 
     raise ValueError(f"Unknown or unsupported null model: {model_u}")

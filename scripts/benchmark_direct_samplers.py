@@ -26,6 +26,7 @@ from metacooc.null_models import make_null_sampler  # noqa: E402
 
 
 MODELS = ("FE", "EF", "EE")
+EE_VARIANTS = ("auto", "legacy", "oversample", "chunked", "numpy-choice", "floyd")
 SCENARIOS = (
     "fixture",
     "ingredients",
@@ -242,13 +243,15 @@ def _estimate_temp_mb(events: list[dict]) -> float:
     return (max_entries * np.dtype(np.int64).itemsize) / (1024 * 1024)
 
 
-def _run_benchmark(case: dict, model: str, args: argparse.Namespace) -> dict:
+def _run_benchmark(case: dict, model: str, args: argparse.Namespace, *, ee_variant: str | None = None) -> dict:
     X = case["X"].tocsr()
     debug_events: list[dict] = []
+    ee_variant = ee_variant if model == "EE" else None
     result = {
         "case": case["name"],
         "scenario": case["scenario"],
         "model": model,
+        "ee_variant": ee_variant,
         "seed": int(args.seed),
         "reps": int(args.reps),
         "shape": [int(X.shape[0]), int(X.shape[1])],
@@ -272,6 +275,7 @@ def _run_benchmark(case: dict, model: str, args: argparse.Namespace) -> dict:
             random_state=args.seed,
             sort_indices=args.sort_indices,
             memory_mb=args.memory_mb,
+            ee_strategy=ee_variant,
             debug_callback=debug_events,
         )
         result["construct_sec"] = time.perf_counter() - construct_start
@@ -312,17 +316,18 @@ def _markdown_summary(results: list[dict]) -> str:
     lines = [
         "# Direct Null Sampler Benchmark",
         "",
-        "| case | model | shape | nnz | density | reps | algorithms | mean s/rep | ok |",
-        "| --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- |",
+        "| case | model | EE variant | shape | nnz | density | reps | algorithms | mean s/rep | ok |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- |",
     ]
     for row in results:
         algorithms = ", ".join(f"{name}={count}" for name, count in row["algorithm_counts"].items()) or "-"
         mean_sec = "-" if row["mean_sec"] is None else f"{row['mean_sec']:.6f}"
         ok = "yes" if row["ok"] else f"no ({row['failure'] or 'invariant failed'})"
         lines.append(
-            "| {case} | {model} | {shape} | {nnz} | {density:.3e} | {reps} | {algorithms} | {mean_sec} | {ok} |".format(
+            "| {case} | {model} | {ee_variant} | {shape} | {nnz} | {density:.3e} | {reps} | {algorithms} | {mean_sec} | {ok} |".format(
                 case=row["case"],
                 model=row["model"],
+                ee_variant=row.get("ee_variant") or "-",
                 shape=_shape_label(tuple(row["shape"])),
                 nnz=row["nnz"],
                 density=row["density"],
@@ -350,6 +355,7 @@ def _write_results(path: Path, results: list[dict], args: argparse.Namespace) ->
             "memory_mb": args.memory_mb,
             "sort_indices": bool(args.sort_indices),
             "scenarios": list(args.scenario),
+            "ee_variants": list(args.ee_variant),
         },
         "results": results,
     }
@@ -368,6 +374,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Benchmark scenario to run. Defaults to ingredients when --ingredients is set, otherwise fixture.",
     )
     parser.add_argument("--model", action="append", choices=MODELS, help="Restrict to one or more models. Defaults to each case's models.")
+    parser.add_argument(
+        "--ee-variant",
+        action="append",
+        choices=EE_VARIANTS,
+        default=["auto"],
+        help=(
+            "EE implementation variant to benchmark. Repeat for multiple variants. "
+            "Use with --model EE to compare EE variants directly."
+        ),
+    )
     parser.add_argument("--reps", type=_positive_int, default=3, help="Replicates per case/model.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--memory-mb", type=_positive_float, default=None, help="Temporary-memory budget passed to direct samplers.")
@@ -388,7 +404,11 @@ def main(argv: list[str] | None = None) -> int:
     for case in _build_cases(args):
         for model in case["models"]:
             if model in model_filter:
-                results.append(_run_benchmark(case, model, args))
+                if model == "EE":
+                    for ee_variant in args.ee_variant:
+                        results.append(_run_benchmark(case, model, args, ee_variant=ee_variant))
+                else:
+                    results.append(_run_benchmark(case, model, args))
 
     print(_markdown_summary(results))
     if args.out is not None:
