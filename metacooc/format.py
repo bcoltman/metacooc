@@ -17,7 +17,7 @@ from scipy.sparse import csr_matrix, vstack
 import warnings
 from typing import Optional
 
-from metacooc.pantry import Ingredients
+from metacooc.pantry import Ingredients, save_ingredients
 
 
 def build_indices(tax_profile: str):
@@ -281,4 +281,3 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
         coverage_matrix=full_C,
         sample_to_biome=ingredients.sample_to_biome,
     )
-

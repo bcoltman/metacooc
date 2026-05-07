@@ -19,7 +19,8 @@ dependencies = [
 	"scipy",
     "matplotlib",
 	"requests",
-	"pyarrow"
+	"pyarrow",
+    "tqdm"
 ]
 keywords = ["metagenomics","co-occurrence","bioinformatics"]
 
@@ -41,6 +42,14 @@ Tracker = "https://github.com/bcoltman/metacooc/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "black", "isort", "mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: end-to-end workflow tests",
+    "cli: subprocess tests for command-line entrypoints",
+    "nullmodels: null model sampler tests",
+]
 
 [project.scripts]
 metacooc = "metacooc.__main__:main"
