@@ -183,15 +183,29 @@ def association_obj(
     threshold: float = 0.0,
     null_model: str = "FE",
     nm_n_reps: int = 1000,
-    nm_random_state: int | None = None,
+    nm_seed: int | None = None,
     compute_fisher: bool = False,
+    *,
+    nm_n_workers: int | None = None,
+    nm_mp_start: str | None = None,
+    nm_sort_indices: bool = False,
+    nm_burn_in_steps: int | None = None,
+    nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ) -> pd.DataFrame:
     out = _association_core(
         null_ingredients=null_ingredients,
         filtered_ingredients=filtered_ingredients,
         null_model=null_model,
         nm_n_reps=nm_n_reps,
-        nm_random_state=nm_random_state,
+        nm_seed=nm_seed,
+        compute_fisher=compute_fisher,
+        nm_n_workers=nm_n_workers,
+        nm_mp_start=nm_mp_start,
+        nm_sort_indices=nm_sort_indices,
+        nm_burn_in_steps=nm_burn_in_steps,
+        nm_steps_per_rep=nm_steps_per_rep,
+        nm_progress_every=nm_progress_every,
     )
 
     if threshold is not None:
@@ -205,7 +219,7 @@ def _association_core(
     filtered_ingredients: "Ingredients",
     null_model: str = "FE",
     nm_n_reps: int = 1000,
-    nm_random_state: int | None = None,
+    nm_seed: int | None = None,
     compute_fisher: bool = False,
     *,
     nm_n_workers: int | None = None,
@@ -213,6 +227,7 @@ def _association_core(
     nm_sort_indices: bool = False,
     nm_burn_in_steps: int | None = None,
     nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ) -> pd.DataFrame:
     """
     Core taxon-term enrichment (no community-structure metrics).
@@ -350,9 +365,13 @@ def _association_core(
         n_reps=n_reps,
         obs=obs_jacc,
         stat_fn=stat_fn_association_jaccard,
-        random_state=nm_random_state,
+        seed=nm_seed,
         n_workers=nm_n_workers,
         mp_start=mp_start,
+        sort_indices=nm_sort_indices,
+        burn_in_steps=nm_burn_in_steps,
+        steps_per_rep=nm_steps_per_rep,
+        progress_every=int(nm_progress_every),
         term_cols=term_cols,
         nonterm_cols=nonterm_cols,
         subset_idx=subset_idx,
@@ -369,6 +388,13 @@ def _association_core(
     out[f"n_err_{null_model}"] = int(j_res["n_err"])
     out[f"n_done_{null_model}"] = int(j_res["n_done"])
     out[f"n_requested_{null_model}"] = int(j_res["n_target"])
+    out["null_seed"] = int(j_res["null_seed"])
+    out["null_seed_source"] = j_res["null_seed_source"]
+    out["null_model"] = j_res["null_model"]
+    print(
+        f"INFO: Null simulation seed {j_res['null_seed']} "
+        f"({j_res['null_seed_source']}, model={j_res['null_model']})."
+    )
 
     return out
 
@@ -381,8 +407,15 @@ def association(
     threshold: float = 0.0,
     null_model: str = "FE",
     nm_n_reps: int = 1000,
-    nm_random_state: int | None = None,
+    nm_seed: int | None = None,
     compute_fisher: bool = False,
+    *,
+    nm_n_workers: int | None = None,
+    nm_mp_start: str | None = None,
+    nm_sort_indices: bool = False,
+    nm_burn_in_steps: int | None = None,
+    nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ) -> pd.DataFrame:
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir, exist_ok=True)
@@ -396,8 +429,14 @@ def association(
         threshold=threshold,
         null_model=null_model,
         nm_n_reps=nm_n_reps,
-        nm_random_state=nm_random_state,
-        compute_fisher=compute_fisher
+        nm_seed=nm_seed,
+        compute_fisher=compute_fisher,
+        nm_n_workers=nm_n_workers,
+        nm_mp_start=nm_mp_start,
+        nm_sort_indices=nm_sort_indices,
+        nm_burn_in_steps=nm_burn_in_steps,
+        nm_steps_per_rep=nm_steps_per_rep,
+        nm_progress_every=nm_progress_every,
     )
 
     if association_df is not None:
@@ -891,13 +930,14 @@ def cooccurrence_obj(
     threshold: float = 0.1,
     null_model: str = "FE",
     nm_n_reps: int = 10,
-    nm_random_state: int | None = None,
+    nm_seed: int | None = None,
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
     nm_sort_indices: bool = False,
     nm_burn_in_steps: int | None = None,
     nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ) -> Tuple[Optional[CooccurrenceArrays], Optional[pd.DataFrame]]:
     """
     Pairwise co-occurrence of taxa.
@@ -1027,9 +1067,13 @@ def cooccurrence_obj(
         n_reps=n_reps,
         obs=obs_jacc,
         stat_fn=stat_fn_cooccurrence_jaccard,
-        random_state=nm_random_state,
+        seed=nm_seed,
         n_workers=nm_n_workers,
         mp_start=mp_start,
+        sort_indices=nm_sort_indices,
+        burn_in_steps=nm_burn_in_steps,
+        steps_per_rep=nm_steps_per_rep,
+        progress_every=int(nm_progress_every),
         subset_idx=subset_idx,
         iA=iA_all,
         iB=iB_all,
@@ -1049,6 +1093,13 @@ def cooccurrence_obj(
     edge_arrays.meta[f"n_err_{null_model}"] = int(j_res["n_err"])
     edge_arrays.meta[f"n_done_{null_model}"] = int(j_res["n_done"])
     edge_arrays.meta[f"n_requested_{null_model}"] = int(j_res["n_target"])
+    edge_arrays.meta["null_seed"] = int(j_res["null_seed"])
+    edge_arrays.meta["null_seed_source"] = j_res["null_seed_source"]
+    edge_arrays.meta["null_model"] = j_res["null_model"]
+    print(
+        f"INFO: Null simulation seed {j_res['null_seed']} "
+        f"({j_res['null_seed_source']}, model={j_res['null_model']})."
+    )
 
     return edge_arrays, nodes_df
 
@@ -1139,7 +1190,14 @@ def cooccurrence(
     threshold: float = 0.1,
     null_model: str = "FE",
     nm_n_reps: int = 10,
-    nm_random_state: int = 42,
+    nm_seed: int | None = None,
+    *,
+    nm_n_workers: int | None = None,
+    nm_mp_start: str | None = None,
+    nm_sort_indices: bool = False,
+    nm_burn_in_steps: int | None = None,
+    nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ):
     """
     Run taxon–taxon co-occurrence analysis and write edge/node tables to disk.
@@ -1160,7 +1218,13 @@ def cooccurrence(
         threshold=threshold,
         null_model=null_model,
         nm_n_reps=nm_n_reps,
-        nm_random_state=nm_random_state,
+        nm_seed=nm_seed,
+        nm_n_workers=nm_n_workers,
+        nm_mp_start=nm_mp_start,
+        nm_sort_indices=nm_sort_indices,
+        nm_burn_in_steps=nm_burn_in_steps,
+        nm_steps_per_rep=nm_steps_per_rep,
+        nm_progress_every=nm_progress_every,
     )
 
     export_cooccurrence_outputs(

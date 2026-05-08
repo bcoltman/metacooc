@@ -15,7 +15,7 @@ def test_association_obj_fe_and_ee(raw_ingredients):
         threshold=0.0,
         null_model="FE",
         nm_n_reps=1,
-        nm_random_state=3,
+        nm_seed=3,
     )
     assert not fe.empty
     assert {"taxon", "a", "b", "c", "d", "p_T_given_X", "jaccard", "q_bh"}.issubset(fe.columns)
@@ -27,10 +27,11 @@ def test_association_obj_fe_and_ee(raw_ingredients):
         threshold=0.0,
         null_model="EE",
         nm_n_reps=1,
-        nm_random_state=3,
+        nm_seed=3,
     )
     assert "jaccard_null_mean_EE" in ee.columns
     assert "jaccard_p_EE" in ee.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.issubset(ee.columns)
     assert np.isfinite(ee["jaccard"].to_numpy()).all()
 
 
@@ -44,7 +45,7 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
         threshold=0.0,
         null_model="FE",
         nm_n_reps=1,
-        nm_random_state=4,
+        nm_seed=4,
     )
     assert nodes_df is not None
     assert not nodes_df.empty
@@ -59,11 +60,14 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
         threshold=0.0,
         null_model="EE",
         nm_n_reps=1,
-        nm_random_state=4,
+        nm_seed=4,
     )
     assert edge_arrays_ee is not None
     assert "jaccard_null_mean_EE" in edge_arrays_ee.cols
     assert "jaccard_p_EE" in edge_arrays_ee.cols
+    assert edge_arrays_ee.meta["null_seed"] == 4
+    assert edge_arrays_ee.meta["null_seed_source"] == "user"
+    assert edge_arrays_ee.meta["null_model"] == "EE"
 
 
 def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
@@ -84,7 +88,7 @@ def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
         threshold=0.0,
         null_model="FE",
         nm_n_reps=1,
-        nm_random_state=4,
+        nm_seed=4,
     )
 
     assert edge_arrays is not None
@@ -128,7 +132,7 @@ def test_focal_rhs_cooccurrence_can_resolve_to_no_surviving_edges(raw_ingredient
         threshold=1.0,
         null_model="FE",
         nm_n_reps=1,
-        nm_random_state=4,
+        nm_seed=4,
     )
 
     assert edge_arrays is None
@@ -147,7 +151,7 @@ def test_structure_core_all_null_models(raw_ingredients):
             raw_ingredients,
             null_model=model,
             nm_n_reps=1,
-            nm_random_state=5,
+            nm_seed=5,
             compute_null=True,
             nm_burn_in_steps=2,
             nm_steps_per_rep=2,
@@ -155,6 +159,7 @@ def test_structure_core_all_null_models(raw_ingredients):
         )
         assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
         assert f"null_mean_{model}" in out.columns
+        assert {"null_seed", "null_seed_source", "null_model"}.issubset(out.columns)
 
 
 def test_biome_distribution(raw_ingredients):
@@ -175,7 +180,7 @@ def test_association_metrics_have_expected_counts(raw_ingredients):
         threshold=0.0,
         null_model="FE",
         nm_n_reps=1,
-        nm_random_state=3,
+        nm_seed=3,
     )
     row = out.loc[out["taxon"].eq(focal_taxon)].iloc[0]
 

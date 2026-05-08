@@ -152,7 +152,14 @@ def structure_obj(
     null_model: str = "FE",               # "FE" or "FF"
     nm_n_reps: int = 1000,
     compute_null: bool = True,
-    nm_random_state: int | None = 42,
+    nm_seed: int | None = None,
+    *,
+    nm_n_workers: int | None = None,
+    nm_mp_start: str | None = None,
+    nm_sort_indices: bool = False,
+    nm_burn_in_steps: int | None = None,
+    nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ) -> pd.DataFrame:
     """
     Entry point for association / term-enrichment analysis.
@@ -174,7 +181,7 @@ def structure_obj(
         and attach C-score, NODF, mean Jaccard (global + subset) in attrs.
     nm_n_reps : int
         Number of SIM9 null matrices if community_structure is True.
-    nm_random_state : int or None
+    nm_seed : int or None
         Random seed for SIM9.
 
     Returns
@@ -188,15 +195,21 @@ def structure_obj(
         ingredients=ingredients,
         null_model=null_model,
         nm_n_reps=nm_n_reps,
-        nm_random_state=nm_random_state,
+        nm_seed=nm_seed,
         compute_null=compute_null,
+        nm_n_workers=nm_n_workers,
+        nm_mp_start=nm_mp_start,
+        nm_sort_indices=nm_sort_indices,
+        nm_burn_in_steps=nm_burn_in_steps,
+        nm_steps_per_rep=nm_steps_per_rep,
+        nm_progress_every=nm_progress_every,
     )
 
 def _structure_core(
     ingredients: "Ingredients",
     null_model: str = "FF",
     nm_n_reps: int = 0,
-    nm_random_state: int | None = None,
+    nm_seed: int | None = None,
     compute_null: bool = False,
     chunk_rows: int = 50_000,
     *,
@@ -310,7 +323,7 @@ def _structure_core(
         n_reps=n_reps,
         obs=obs_vec,
         stat_fn=stat_fn_structure_metrics,
-        random_state=nm_random_state,
+        seed=nm_seed,
         n_workers=nm_n_workers,
         mp_start=mp_start,
         sort_indices=nm_sort_indices,
@@ -334,7 +347,15 @@ def _structure_core(
         payload[f"n_err_{suffix}"]     = int(j_res["n_err"])
         payload[f"n_done_{suffix}"]    = int(j_res["n_done"])
         payload[f"n_requested_{suffix}"]    = int(j_res["n_target"])
+        payload["null_seed"] = int(j_res["null_seed"])
+        payload["null_seed_source"] = j_res["null_seed_source"]
+        payload["null_model"] = j_res["null_model"]
         out_rows.append(payload)
+
+    print(
+        f"INFO: Null simulation seed {j_res['null_seed']} "
+        f"({j_res['null_seed_source']}, model={j_res['null_model']})."
+    )
         
     return pd.DataFrame(out_rows)
 
@@ -346,7 +367,14 @@ def structure(
     null_model: str = "FE",
     nm_n_reps: int = 1000,
     compute_null: bool = True,
-    nm_random_state: int | None = 42,
+    nm_seed: int | None = None,
+    *,
+    nm_n_workers: int | None = None,
+    nm_mp_start: str | None = None,
+    nm_sort_indices: bool = False,
+    nm_burn_in_steps: int | None = None,
+    nm_steps_per_rep: int | None = None,
+    nm_progress_every: int = 25,
 ) -> pd.DataFrame:
     """
     
@@ -367,8 +395,8 @@ def structure(
         Number of null replicates.
     compute_null : bool, default True
         Whether to compute null distributions.
-    nm_random_state : int or None, default 42
-        Random seed for null generation.
+    nm_seed : int or None
+        Random seed for null generation. If None, an entropy-backed seed is generated.
         
     Returns
     -------
@@ -385,7 +413,13 @@ def structure(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         compute_null=compute_null,
-        nm_random_state=nm_random_state,
+        nm_seed=nm_seed,
+        nm_n_workers=nm_n_workers,
+        nm_mp_start=nm_mp_start,
+        nm_sort_indices=nm_sort_indices,
+        nm_burn_in_steps=nm_burn_in_steps,
+        nm_steps_per_rep=nm_steps_per_rep,
+        nm_progress_every=nm_progress_every,
     )
     
     output_path = os.path.join(output_dir, f"{tag}structure.tsv")

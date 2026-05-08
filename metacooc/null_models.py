@@ -32,17 +32,17 @@ def _rng_from_state(random_state: Optional[int | np.random.Generator]) -> np.ran
     return random_state if isinstance(random_state, np.random.Generator) else np.random.default_rng(random_state)
 
 
-def _record_debug_event(debug_callback, **event) -> None:
+def _record_debug_event(_debug_callback, **event) -> None:
     """
     Send a sampler decision to an optional benchmark/debug sink.
     """
-    if debug_callback is None:
+    if _debug_callback is None:
         return
     payload = dict(event)
-    if callable(debug_callback):
-        debug_callback(payload)
-    elif hasattr(debug_callback, "append"):
-        debug_callback.append(payload)
+    if callable(_debug_callback):
+        _debug_callback(payload)
+    elif hasattr(_debug_callback, "append"):
+        _debug_callback.append(payload)
 def prepare_presence_matrix(
     X: sp.spmatrix,
     *,
@@ -450,7 +450,7 @@ def _fill_fixed_degree_random_indices(
     target_temp_entries: int = 5_000_000,
     random_key_min_density: float = 0.01,
     target_key_entries: int = 20_000_000,
-    debug_callback=None,
+    _debug_callback=None,
     debug_label: str = "fixed_degree",
 ) -> None:
     """
@@ -492,7 +492,7 @@ def _fill_fixed_degree_random_indices(
 
         if k == n_items:
             _record_debug_event(
-                debug_callback,
+                _debug_callback,
                 sampler=debug_label,
                 algorithm="full",
                 degree=k,
@@ -519,7 +519,7 @@ def _fill_fixed_degree_random_indices(
         )
         if use_complement:
             _record_debug_event(
-                debug_callback,
+                _debug_callback,
                 sampler=debug_label,
                 algorithm="complement_rejection",
                 degree=k,
@@ -549,7 +549,7 @@ def _fill_fixed_degree_random_indices(
 
         if use_random_key:
             _record_debug_event(
-                debug_callback,
+                _debug_callback,
                 sampler=debug_label,
                 algorithm="random_key_argpartition",
                 degree=k,
@@ -579,7 +579,7 @@ def _fill_fixed_degree_random_indices(
         else:
             algorithm = "choice_loop"
         _record_debug_event(
-            debug_callback,
+            _debug_callback,
             sampler=debug_label,
             algorithm=algorithm,
             degree=k,
@@ -650,7 +650,7 @@ def _sample_ee_linear_ids(
     population_size: int,
     n_draw: int,
     *,
-    debug_callback=None,
+    _debug_callback=None,
 ) -> np.ndarray:
     """
     Sample EE support cell IDs uniformly without replacement.
@@ -664,7 +664,7 @@ def _sample_ee_linear_ids(
 
     density = float(n_draw) / float(population_size) if population_size else 0.0
     _record_debug_event(
-        debug_callback,
+        _debug_callback,
         sampler="EE",
         algorithm="numpy_choice",
         population_size=population_size,
@@ -706,7 +706,7 @@ def fe_fixed_rows_equiprob_cols(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
-    debug_callback=None,
+    _debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
     FE model: fixed row totals, columns equiprobable without replacement per row.
@@ -731,7 +731,7 @@ def fe_fixed_rows_equiprob_cols(
             indices,
             rng,
             sort_within_entity=bool(sort_indices),
-            debug_callback=debug_callback,
+            _debug_callback=_debug_callback,
             debug_label="FE",
         )
         Y = sp.csr_matrix((data, indices, indptr), shape=(n_rows, n_cols))
@@ -745,7 +745,7 @@ def ef_equiprob_rows_fixed_cols(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
-    debug_callback=None,
+    _debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
     EF model: fixed column totals, rows equiprobable without replacement per column.
@@ -771,7 +771,7 @@ def ef_equiprob_rows_fixed_cols(
             indices,
             rng,
             sort_within_entity=bool(sort_indices),
-            debug_callback=debug_callback,
+            _debug_callback=_debug_callback,
             debug_label="EF",
         )
         Y = sp.csc_matrix((data, indices, indptr), shape=(n_rows, n_cols)).tocsr()
@@ -785,7 +785,7 @@ def ee_equiprobable(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
-    debug_callback=None,
+    _debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
     EE model: preserve total fill and sample occupied cells uniformly without replacement.
@@ -809,7 +809,7 @@ def ee_equiprobable(
             rng,
             n_cells,
             N,
-            debug_callback=debug_callback,
+            _debug_callback=_debug_callback,
         )
         Y = _csr_from_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
         if sort_indices:
@@ -839,7 +839,7 @@ class DirectNullSampler:
     Each call to sample() produces an independent replicate stream controlled by seed.
     """
 
-    __slots__ = ("X", "model", "sort_indices", "default_random_state", "debug_callback")
+    __slots__ = ("X", "model", "sort_indices", "default_random_state", "_debug_callback")
 
     def __init__(
         self,
@@ -848,13 +848,13 @@ class DirectNullSampler:
         *,
         sort_indices: bool,
         default_random_state: Optional[int | np.random.Generator],
-        debug_callback=None,
+        _debug_callback=None,
     ):
         self.X = X
         self.model = str(model).upper()
         self.sort_indices = bool(sort_indices)
         self.default_random_state = default_random_state
-        self.debug_callback = debug_callback
+        self._debug_callback = _debug_callback
 
     def sample(self, n_reps: int, *, seed: Optional[int] = None) -> Iterable[sp.csr_matrix]:
         n_reps = int(n_reps)
@@ -869,7 +869,7 @@ class DirectNullSampler:
                 n_reps,
                 random_state=eff_state,
                 sort_indices=self.sort_indices,
-                debug_callback=self.debug_callback,
+                _debug_callback=self._debug_callback,
             )
 
         if self.model == "EF":
@@ -878,7 +878,7 @@ class DirectNullSampler:
                 n_reps,
                 random_state=eff_state,
                 sort_indices=self.sort_indices,
-                debug_callback=self.debug_callback,
+                _debug_callback=self._debug_callback,
             )
 
         if self.model == "EE":
@@ -887,7 +887,7 @@ class DirectNullSampler:
                 n_reps,
                 random_state=eff_state,
                 sort_indices=self.sort_indices,
-                debug_callback=self.debug_callback,
+                _debug_callback=self._debug_callback,
             )
 
         raise ValueError(f"Unknown or unsupported direct null model: {self.model}")
@@ -964,11 +964,9 @@ class FFCurveballSampler:
         burn_q.put(("DONE", 1))
 
     def _snapshot(self) -> sp.csr_matrix:
-        # Y = self.X.tocsr(copy=True)
-        # Y.data = np.ones(Y.indices.size, dtype=_OUT_DTYPE)
-        # if self.sort_indices:
-            # Y.sort_indices()
-        # return Y
+        # FF streams the mutable Markov-chain state without copying. Reducers
+        # must consume each sample immediately; callers that retain snapshots
+        # need to copy them explicitly.
         return self.X
 
     def sample(self, n_reps: int, *, seed: Optional[int] = None) -> Iterable[sp.csr_matrix]:
@@ -1021,7 +1019,7 @@ def make_null_sampler(
     sort_indices: bool = False,
     burn_q=None,
     burn_every: int = 0,
-    debug_callback=None,
+    _debug_callback=None,
 ) -> NullSampler:
     """
     Construct a null sampler that yields CSR int8 presence matrices.
@@ -1059,7 +1057,7 @@ def make_null_sampler(
             model_u,
             sort_indices=sort_indices,
             default_random_state=random_state,
-            debug_callback=debug_callback,
+            _debug_callback=_debug_callback,
         )
 
     if model_u in ("FE", "EE"):
@@ -1069,7 +1067,7 @@ def make_null_sampler(
             model_u,
             sort_indices=sort_indices,
             default_random_state=random_state,
-            debug_callback=debug_callback,
+            _debug_callback=_debug_callback,
         )
 
     raise ValueError(f"Unknown or unsupported null model: {model_u}")
@@ -1079,11 +1077,21 @@ def make_null_sampler(
 # Chunk planning and accumulator utilities
 # -----------------------------------------------------------------------------
 
-def _seed_seq_spawn(master_seed: Optional[int], n: int) -> list[int]:
+def _resolve_master_seed(seed: Optional[int]) -> tuple[int, str]:
+    """
+    Return the integer master seed and whether it came from the user.
+    """
+    if seed is not None:
+        return int(seed), "user"
+    ss = np.random.SeedSequence()
+    return int(ss.generate_state(1, dtype=np.uint32)[0]), "generated"
+
+
+def _seed_seq_spawn(master_seed: int, n: int) -> list[int]:
     """
     Generate deterministic per-worker seeds using NumPy SeedSequence.
     """
-    ss = np.random.SeedSequence(0 if master_seed is None else int(master_seed))
+    ss = np.random.SeedSequence(int(master_seed))
     return [int(s.generate_state(1, dtype=np.uint32)[0]) for s in ss.spawn(int(n))]
 
 
@@ -1427,7 +1435,7 @@ def parallel_null_reduce_vector(
     n_reps: int,
     obs: np.ndarray,
     stat_fn: Callable[[sp.csr_matrix], np.ndarray],
-    random_state: Optional[int] = None,
+    seed: Optional[int] = None,
     n_workers: Optional[int] = None,
     chunksize: int = 1,
     sort_indices: bool = False,
@@ -1454,8 +1462,11 @@ def parallel_null_reduce_vector(
             "n_err": 0,
             "n_done": 0,
             "n_target": 0,
+            "null_seed": None,
+            "null_seed_source": None,
+            "null_model": str(model).upper(),
         }
-        
+
     # Default to a single worker unless explicitly requested
     if n_workers is None:
         n_workers = 1
@@ -1463,13 +1474,14 @@ def parallel_null_reduce_vector(
    
    
     model_u = str(model).upper()
+    master_seed, seed_source = _resolve_master_seed(seed)
     
     chunk_n = int(progress_every) if progress_every and progress_every > 0 else 50
     chunk_n = max(1, chunk_n)
     
     chunk_sizes = _chunk_reps(n_reps, block=chunk_n)
     
-    ss = np.random.SeedSequence(0 if random_state is None else int(random_state))
+    ss = np.random.SeedSequence(master_seed)
     child_seqs = ss.spawn(len(chunk_sizes))
     chunk_seeds = [int(cs.generate_state(1, dtype=np.uint32)[0]) for cs in child_seqs]
     
@@ -1522,7 +1534,7 @@ def parallel_null_reduce_vector(
         burn_q = ctx.Queue()
         seed_q = ctx.Queue()
         
-        worker_seeds = _seed_seq_spawn(random_state, n_procs)
+        worker_seeds = _seed_seq_spawn(master_seed, n_procs)
         for s in worker_seeds:
             seed_q.put(int(s))
             
@@ -1574,6 +1586,9 @@ def parallel_null_reduce_vector(
                 pbar.update(int(chunk_k))
                 
     out = _finalise_accumulator(obs, acc0)
+    out["null_seed"] = int(master_seed)
+    out["null_seed_source"] = seed_source
+    out["null_model"] = model_u
     
     if int(out.get("n_done", 0)) != int(out.get("n_target", 0)):
         raise RuntimeError(

@@ -7,9 +7,19 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from metacooc.null_models import make_null_sampler
+from metacooc.null_models import (
+    _seed_seq_spawn,
+    make_null_sampler,
+    parallel_null_reduce_vector,
+)
 
 pytestmark = pytest.mark.nullmodels
+
+
+def _stat_support_checksum(X):
+    coo = X.tocoo()
+    linear = coo.row.astype(np.float64) * X.shape[1] + coo.col.astype(np.float64)
+    return np.array([linear.sum()], dtype=float)
 
 
 def _sample_one(X, model, seed=11):
@@ -127,3 +137,76 @@ def test_ee_small_matrix_support_frequencies_are_uniform():
     assert set(counts) == set(supports)
     for support in supports:
         assert abs(counts[support] - expected) < expected * 0.20
+
+
+def test_generated_null_seed_reproduces_when_reused():
+    X = sp.csr_matrix(
+        (np.ones(5, dtype=np.int8), ([0, 1, 2, 2, 3], [1, 2, 0, 3, 1])),
+        shape=(4, 5),
+    )
+    obs = np.array([0.0], dtype=float)
+
+    first = parallel_null_reduce_vector(
+        X=X,
+        model="EE",
+        n_reps=8,
+        obs=obs,
+        stat_fn=_stat_support_checksum,
+        seed=None,
+        n_workers=2,
+        progress_every=1,
+    )
+    replay = parallel_null_reduce_vector(
+        X=X,
+        model="EE",
+        n_reps=8,
+        obs=obs,
+        stat_fn=_stat_support_checksum,
+        seed=first["null_seed"],
+        n_workers=2,
+        progress_every=1,
+    )
+
+    assert first["null_seed_source"] == "generated"
+    assert replay["null_seed_source"] == "user"
+    assert replay["null_seed"] == first["null_seed"]
+    assert np.array_equal(replay["mean"], first["mean"])
+    assert np.array_equal(replay["sd"], first["sd"])
+
+
+def test_spawned_worker_seeds_are_distinct():
+    seeds = _seed_seq_spawn(12345, 8)
+    assert len(seeds) == 8
+    assert len(set(seeds)) == len(seeds)
+
+
+def test_ff_sampler_streams_mutable_snapshots(raw_ingredients):
+    sampler = make_null_sampler(
+        raw_ingredients.presence_matrix,
+        "FF",
+        random_state=123,
+        burn_in_steps=0,
+        steps_per_rep=1,
+        sort_indices=True,
+    )
+    stream = iter(sampler.sample(2))
+    first = next(stream)
+    second = next(stream)
+
+    assert first is second
+
+
+def test_direct_sampler_snapshots_do_not_alias(raw_ingredients):
+    sampler = make_null_sampler(
+        raw_ingredients.presence_matrix,
+        "FE",
+        random_state=123,
+        sort_indices=True,
+    )
+    stream = iter(sampler.sample(2))
+    first = next(stream)
+    first_copy = first.copy()
+    second = next(stream)
+
+    assert first is not second
+    assert (first != first_copy).nnz == 0

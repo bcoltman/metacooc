@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import multiprocessing as mp
 
 import pandas as pd
 import pytest
@@ -28,6 +29,55 @@ def run_cli_no_check(*args, cwd=None):
         capture_output=True,
         text=True,
     )
+
+
+@pytest.mark.cli
+def test_cli_null_hpc_options_parse_and_forward(monkeypatch, tmp_path):
+    from metacooc.cli import build_parser
+    import metacooc.pipelines as pipelines
+
+    captured = {}
+
+    def fake_run_structure(args):
+        captured.update(vars(args))
+
+    monkeypatch.setattr(pipelines, "run_structure", fake_run_structure)
+    mp_start = mp.get_all_start_methods()[0]
+
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "structure",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            str(tmp_path),
+            "--nm_seed",
+            "123",
+            "--nm_n_workers",
+            "2",
+            "--nm_mp_start",
+            mp_start,
+            "--nm_sort_indices",
+            "--nm_burn_in_steps",
+            "3",
+            "--nm_steps_per_rep",
+            "4",
+            "--nm_progress_every",
+            "5",
+        ]
+    )
+    args.func(args)
+
+    assert captured["nm_seed"] == 123
+    assert captured["nm_n_workers"] == 2
+    assert captured["nm_mp_start"] == mp_start
+    assert captured["nm_sort_indices"] is True
+    assert captured["nm_burn_in_steps"] == 3
+    assert captured["nm_steps_per_rep"] == 4
+    assert captured["nm_progress_every"] == 5
 
 
 @pytest.fixture

@@ -359,7 +359,13 @@ def run_structure(args):
         filt_ing,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
-        nm_random_state=args.nm_random_state,
+        nm_seed=args.nm_seed,
+        nm_n_workers=getattr(args, "nm_n_workers", None),
+        nm_mp_start=getattr(args, "nm_mp_start", None),
+        nm_sort_indices=getattr(args, "nm_sort_indices", False),
+        nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),
+        nm_steps_per_rep=getattr(args, "nm_steps_per_rep", None),
+        nm_progress_every=getattr(args, "nm_progress_every", 25),
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
@@ -389,7 +395,13 @@ def run_association(args):
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         compute_fisher=args.compute_fisher,
-        nm_random_state=args.nm_random_state,
+        nm_seed=args.nm_seed,
+        nm_n_workers=getattr(args, "nm_n_workers", None),
+        nm_mp_start=getattr(args, "nm_mp_start", None),
+        nm_sort_indices=getattr(args, "nm_sort_indices", False),
+        nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),
+        nm_steps_per_rep=getattr(args, "nm_steps_per_rep", None),
+        nm_progress_every=getattr(args, "nm_progress_every", 25),
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
@@ -434,7 +446,13 @@ def run_cooccurrence(args):
         threshold=args.threshold,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
-        nm_random_state=args.nm_random_state,
+        nm_seed=args.nm_seed,
+        nm_n_workers=getattr(args, "nm_n_workers", None),
+        nm_mp_start=getattr(args, "nm_mp_start", None),
+        nm_sort_indices=getattr(args, "nm_sort_indices", False),
+        nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),
+        nm_steps_per_rep=getattr(args, "nm_steps_per_rep", None),
+        nm_progress_every=getattr(args, "nm_progress_every", 25),
         focal_query_to_taxa=focal_query_to_taxa,
         rhs_query_to_taxa=rhs_query_to_taxa,
     )

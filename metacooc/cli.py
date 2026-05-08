@@ -28,6 +28,28 @@ def positive_int(value):
     return ivalue
 
 
+def nonnegative_int(value):
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not an integer")
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"{value} is not a non-negative integer")
+    return ivalue
+
+
+def validate_mp_start(value):
+    import multiprocessing as mp
+
+    methods = mp.get_all_start_methods()
+    if value not in methods:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a valid multiprocessing start method. "
+            f"Expected one of: {', '.join(methods)}"
+        )
+    return value
+
+
 def validate_threshold(value):
     try:
         value = float(value)
@@ -307,10 +329,51 @@ def add_null_model_args(parser, group=None):
     )
 
     (group or parser).add_argument(
-        "--nm_random_state",
+        "--nm_seed",
+        type=nonnegative_int,
+        default=None,
+        help="Seed for null sampling. If omitted, a seed is generated and reported.",
+    )
+
+    (group or parser).add_argument(
+        "--nm_n_workers",
         type=positive_int,
-        default=42,
-        help="Random state for sampling (default: %(default)s).",
+        default=None,
+        help="Number of null simulation worker processes (default: one worker).",
+    )
+
+    (group or parser).add_argument(
+        "--nm_mp_start",
+        type=validate_mp_start,
+        default=None,
+        help="Multiprocessing start method for null simulations.",
+    )
+
+    (group or parser).add_argument(
+        "--nm_sort_indices",
+        action="store_true",
+        help="Sort sparse indices on generated null matrices.",
+    )
+
+    (group or parser).add_argument(
+        "--nm_burn_in_steps",
+        type=nonnegative_int,
+        default=None,
+        help="FF null model burn-in steps per chain.",
+    )
+
+    (group or parser).add_argument(
+        "--nm_steps_per_rep",
+        type=nonnegative_int,
+        default=None,
+        help="FF null model Curveball steps between retained replicates.",
+    )
+
+    (group or parser).add_argument(
+        "--nm_progress_every",
+        type=positive_int,
+        default=25,
+        help="Null simulation progress update interval in replicates (default: %(default)s).",
     )
 
 
@@ -560,7 +623,13 @@ def analysis_command(args):
             threshold=args.threshold,
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
-            nm_random_state=args.nm_random_state,
+            nm_seed=args.nm_seed,
+            nm_n_workers=args.nm_n_workers,
+            nm_mp_start=args.nm_mp_start,
+            nm_sort_indices=args.nm_sort_indices,
+            nm_burn_in_steps=args.nm_burn_in_steps,
+            nm_steps_per_rep=args.nm_steps_per_rep,
+            nm_progress_every=args.nm_progress_every,
         )
 
     elif args.analysis_type == "structure":
@@ -572,7 +641,13 @@ def analysis_command(args):
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             compute_null=True,
-            nm_random_state=args.nm_random_state,
+            nm_seed=args.nm_seed,
+            nm_n_workers=args.nm_n_workers,
+            nm_mp_start=args.nm_mp_start,
+            nm_sort_indices=args.nm_sort_indices,
+            nm_burn_in_steps=args.nm_burn_in_steps,
+            nm_steps_per_rep=args.nm_steps_per_rep,
+            nm_progress_every=args.nm_progress_every,
         )
 
     elif args.analysis_type == "association":
@@ -585,8 +660,14 @@ def analysis_command(args):
             threshold=args.threshold,
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
-            nm_random_state=args.nm_random_state,
+            nm_seed=args.nm_seed,
             compute_fisher=args.compute_fisher,
+            nm_n_workers=args.nm_n_workers,
+            nm_mp_start=args.nm_mp_start,
+            nm_sort_indices=args.nm_sort_indices,
+            nm_burn_in_steps=args.nm_burn_in_steps,
+            nm_steps_per_rep=args.nm_steps_per_rep,
+            nm_progress_every=args.nm_progress_every,
         )
 
 
