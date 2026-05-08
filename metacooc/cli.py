@@ -265,18 +265,23 @@ def validate_null_scope_args(args, subparser):
         subparser.error("--null_metadata_query is required when null_scope is 'metadata' or 'metadata_taxa'")
 
 
-def add_count_filter_args(parser, group=None):
+def add_count_filter_args(
+    parser,
+    group=None,
+    min_taxa_count_default=1,
+    min_sample_count_default=1,
+):
     (group or parser).add_argument(
         "--min_taxa_count",
         type=positive_int,
-        default=1,
+        default=min_taxa_count_default,
         help="Minimum number of taxa a sample must have to be included (default: %(default)s).",
     )
 
     (group or parser).add_argument(
         "--min_sample_count",
         type=positive_int,
-        default=1,
+        default=min_sample_count_default,
         help="Minimum number of samples in which a taxon must be present (default: %(default)s).",
     )
 
@@ -930,7 +935,12 @@ def build_parser():
     add_tag_and_aggregated(biome_sub, group=opt)
     add_custom_ingredients(biome_sub, group=opt)
     add_return_all_taxa(biome_sub, group=opt)
-    add_count_filter_args(biome_sub, group=opt)
+    add_count_filter_args(
+        biome_sub,
+        group=opt,
+        min_taxa_count_default=None,
+        min_sample_count_default=None,
+    )
     add_biome_distribution_args(biome_sub, group=opt)
 
     return parser

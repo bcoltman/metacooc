@@ -56,7 +56,32 @@ def test_run_biome_distribution_pipeline(tmp_path, raw_ingredients_path):
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
         return_all_taxa=True,
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
     )
+    pipelines.run_biome_distribution(args)
+    assert (tmp_path / "test_taxa_biome_distribution.tsv").exists()
+
+
+def test_run_biome_distribution_skips_filtering_by_default(
+    tmp_path,
+    raw_ingredients_path,
+    monkeypatch,
+):
+    def fail_filter_data_obj(*args, **kwargs):
+        raise AssertionError("biome_distribution should not filter unless requested")
+
+    monkeypatch.setattr(pipelines, "filter_data_obj", fail_filter_data_obj)
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        return_all_taxa=True,
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
+    )
+
     pipelines.run_biome_distribution(args)
     assert (tmp_path / "test_taxa_biome_distribution.tsv").exists()
 
@@ -68,6 +93,9 @@ def test_run_biome_distribution_taxa_query_and_biome_level(tmp_path, raw_ingredi
         return_all_taxa=False,
         taxa_query="s__rhizo_000,s__micro_000",
         biome_level="level_2",
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
     )
     pipelines.run_biome_distribution(args)
 
@@ -88,6 +116,8 @@ def test_run_biome_distribution_applies_count_filter_before_distribution(
         return_all_taxa=False,
         taxa_query="s__rhizo_000",
         min_taxa_count=50,
+        min_sample_count=None,
+        filter_rank=None,
         taxa_count_rank="species",
     )
     pipelines.run_biome_distribution(args)
@@ -104,6 +134,9 @@ def test_run_biome_distribution_rejects_invalid_taxa_query(tmp_path, raw_ingredi
         output_dir=str(tmp_path),
         return_all_taxa=False,
         taxa_query="g__Rhizo|g__Micro",
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
     )
 
     with pytest.raises(ValueError, match="focal_taxa mode does not support"):

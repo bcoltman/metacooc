@@ -80,6 +80,38 @@ def test_cli_null_hpc_options_parse_and_forward(monkeypatch, tmp_path):
     assert captured["nm_progress_every"] == 5
 
 
+@pytest.mark.cli
+def test_cli_biome_distribution_filter_defaults_are_command_specific(tmp_path):
+    from metacooc.cli import build_parser
+
+    parser = build_parser()
+    biome_args = parser.parse_args(
+        [
+            "biome_distribution",
+            "--output_dir",
+            str(tmp_path / "biome"),
+        ]
+    )
+    assert biome_args.min_taxa_count is None
+    assert biome_args.min_sample_count is None
+    assert biome_args.taxa_count_rank == "species"
+
+    structure_args = parser.parse_args(
+        [
+            "structure",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            str(tmp_path / "structure"),
+        ]
+    )
+    assert structure_args.min_taxa_count == 1
+    assert structure_args.min_sample_count == 1
+    assert structure_args.taxa_count_rank == "species"
+
+
 @pytest.fixture
 def cli_formatted_dir(tmp_path, fixture_dir):
     out = tmp_path / "cli_formatted"

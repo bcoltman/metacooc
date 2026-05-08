@@ -84,6 +84,22 @@ def _taxa_indices_from_query(ingredients, taxa_query):
     return sorted(rows)
 
 
+def _biome_distribution_filter_requested(args):
+    return any(
+        getattr(args, name, None) is not None
+        for name in ("min_taxa_count", "min_sample_count", "filter_rank")
+    )
+
+
+def _biome_distribution_taxa_frame(presence, biomes, taxa, indices):
+    selected_taxa = [taxa[i] for i in indices]
+    return pd.DataFrame(
+        data=presence[:, indices].toarray(),
+        columns=selected_taxa,
+        index=biomes,
+    ).T
+
+
 def run_shared_pipeline_setup(args):
     """
     Shared setup for cooccurrence, association, and structure pipelines.
@@ -487,41 +503,42 @@ def run_biome_distribution(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
-    ingredients, is_successful = filter_data_obj(
-        ingredients,
-        min_taxa_count=getattr(args, "min_taxa_count", None),
-        min_sample_count=getattr(args, "min_sample_count", None),
-        filter_rank=getattr(args, "filter_rank", None),
-        taxa_count_rank=getattr(args, "taxa_count_rank", "species"),
-    )
-    if not is_successful:
-        return
+    if _biome_distribution_filter_requested(args):
+        ingredients, is_successful = filter_data_obj(
+            ingredients,
+            min_taxa_count=getattr(args, "min_taxa_count", None),
+            min_sample_count=getattr(args, "min_sample_count", None),
+            filter_rank=getattr(args, "filter_rank", None),
+            taxa_count_rank=getattr(args, "taxa_count_rank", "species"),
+        )
+        if not is_successful:
+            return
 
     biome_level = getattr(args, "biome_level", "level_1")
     biomes, presence, coverage, n_dropped = ingredients.biome_distribution(level=biome_level)
-    biome_by_taxa_df = pd.DataFrame(data=presence.todense(), columns=ingredients.taxa, index=biomes)
 
     taxa_query = getattr(args, "taxa_query", None)
     if taxa_query:
         indices = _taxa_indices_from_query(ingredients, taxa_query)
-        biome_by_query_df = biome_by_taxa_df.iloc[:, indices].T
+        biome_by_query_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
         biome_by_query_df.to_csv(output_path, sep="\t")
 
-    elif args.return_all_taxa:
+    elif getattr(args, "return_all_taxa", False):
+        biome_by_taxa_df = pd.DataFrame(data=presence.toarray(), columns=ingredients.taxa, index=biomes)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
         biome_by_taxa_df.to_csv(output_path, sep="\t")
 
     elif args.aggregated:
-        if not [i for i in biome_by_taxa_df.columns if "AGGREGATED" in i]:
+        if not [i for i in ingredients.taxa if "AGGREGATED" in i]:
             print("WARNING: Ingredients did not contain aggregated taxa. Only species will be output")
-        indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v or "AGGREGATED" in v]
-        biome_by_agg_df = biome_by_taxa_df.iloc[:, indices].T
+        indices = [i for i, v in enumerate(ingredients.taxa) if "s__" in v or "AGGREGATED" in v]
+        biome_by_agg_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
         biome_by_agg_df.to_csv(output_path, sep="\t")
 
     else:
-        indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v]
-        biome_by_species_df = biome_by_taxa_df.iloc[:, indices].T
+        indices = [i for i, v in enumerate(ingredients.taxa) if "s__" in v]
+        biome_by_species_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution_species.tsv")
         biome_by_species_df.to_csv(output_path, sep="\t")
