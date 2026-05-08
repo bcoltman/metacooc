@@ -78,6 +78,8 @@ class Ingredients:
         object.__setattr__(self, "_coverage_matrix", _csr(coverage_matrix))
         object.__setattr__(self, "_presence_matrix_path", None)
         object.__setattr__(self, "_coverage_matrix_path", None)
+        object.__setattr__(self, "_presence_matrix_shape", self._presence_matrix.shape)
+        object.__setattr__(self, "_coverage_matrix_shape", self._coverage_matrix.shape)
         
         self.total_counts = self._compute_total_counts()
         
@@ -115,6 +117,8 @@ class Ingredients:
         object.__setattr__(self, "_coverage_matrix", state.get("_coverage_matrix"))
         object.__setattr__(self, "_presence_matrix_path", None)
         object.__setattr__(self, "_coverage_matrix_path", None)
+        object.__setattr__(self, "_presence_matrix_shape", self._presence_matrix.shape)
+        object.__setattr__(self, "_coverage_matrix_shape", self._coverage_matrix.shape)
         
         self._rank_lookups = None
         self._terminal_rank_prefixes = None
@@ -172,24 +176,28 @@ class Ingredients:
     def presence_matrix(self) -> sp.csr_matrix:
         if self._presence_matrix is None:
             self._presence_matrix = sp.load_npz(self._presence_matrix_path).tocsr()
+            self._presence_matrix_shape = self._presence_matrix.shape
         return self._presence_matrix
     
     @presence_matrix.setter
     def presence_matrix(self, mat: sp.csr_matrix):
         self._presence_matrix = _presence_csr(mat)
         self._presence_matrix_path = None
+        self._presence_matrix_shape = self._presence_matrix.shape
         self.total_counts = self._compute_total_counts()
     
     @property
     def coverage_matrix(self) -> sp.csr_matrix:
         if self._coverage_matrix is None:
             self._coverage_matrix = sp.load_npz(self._coverage_matrix_path).tocsr()
+            self._coverage_matrix_shape = self._coverage_matrix.shape
         return self._coverage_matrix
     
     @coverage_matrix.setter
     def coverage_matrix(self, mat: sp.csr_matrix):
         self._coverage_matrix = _csr(mat)
         self._coverage_matrix_path = None
+        self._coverage_matrix_shape = self._coverage_matrix.shape
     
     def _compute_total_counts(self) -> np.ndarray:
         """
@@ -203,11 +211,17 @@ class Ingredients:
         # return np.array((self._presence_matrix > 0).sum(axis=1)).flatten()
     
     def __repr__(self):
+        presence_shape = getattr(self, "_presence_matrix_shape", None)
+        if presence_shape is None:
+            presence_shape = self.presence_matrix.shape
+        coverage_shape = getattr(self, "_coverage_matrix_shape", None)
+        if coverage_shape is None:
+            coverage_shape = self.coverage_matrix.shape
         return (
             f"<Ingredients: {len(self.taxa)} taxa, "
             f"{len(self.samples)} samples, "
-            f"presence: {self.presence_matrix.shape}, "
-            f"coverage: {self.coverage_matrix.shape}>"
+            f"presence: {presence_shape}, "
+            f"coverage: {coverage_shape}>"
         )
     
     @staticmethod
@@ -245,6 +259,8 @@ class Ingredients:
         object.__setattr__(new, "_coverage_matrix", self._coverage_matrix)
         object.__setattr__(new, "_presence_matrix_path", self._presence_matrix_path)
         object.__setattr__(new, "_coverage_matrix_path", self._coverage_matrix_path)
+        object.__setattr__(new, "_presence_matrix_shape", self._presence_matrix_shape)
+        object.__setattr__(new, "_coverage_matrix_shape", self._coverage_matrix_shape)
         
         new.total_counts = self.total_counts
         new.sample_to_biome = self.sample_to_biome
@@ -296,6 +312,8 @@ class Ingredients:
         self._coverage_matrix = self.coverage_matrix[:, idx]
         self._presence_matrix_path = None
         self._coverage_matrix_path = None
+        self._presence_matrix_shape = self._presence_matrix.shape
+        self._coverage_matrix_shape = self._coverage_matrix.shape
         
         # sample filtering changes row totals
         self.total_counts = self._compute_total_counts()
@@ -331,6 +349,8 @@ class Ingredients:
         self._coverage_matrix = self.coverage_matrix[idx, :]
         self._presence_matrix_path = None
         self._coverage_matrix_path = None
+        self._presence_matrix_shape = self._presence_matrix.shape
+        self._coverage_matrix_shape = self._coverage_matrix.shape
         
         # taxa filtering does not change per-row counts except subsetting them
         self.total_counts = self.total_counts[idx].astype(np.int32, copy=False)
@@ -466,16 +486,8 @@ class Ingredients:
         n_dropped = int((idxs < 0).sum())
         return biomes, presence, coverage, n_dropped
 
-def _samples_path(directory: str) -> str:
-    return os.path.join(directory, "samples.tsv")
-
-
-def _taxa_path(directory: str) -> str:
-    return os.path.join(directory, "taxa.tsv")
-
-
 def _read_one_column_tsv(path: str, column: str) -> list[str]:
-    df = pd.read_csv(path, sep="\t", dtype=str)
+    df = pd.read_csv(path, sep="\t", dtype=str, usecols=lambda c: c == column)
     if column not in df.columns:
         raise ValueError(f"{path} is missing required column '{column}'")
     return df[column].fillna("").tolist()
@@ -488,17 +500,22 @@ def _write_one_column_tsv(path: str, column: str, values: list[str]) -> None:
 def _read_sample_to_biome(path: str) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
     if not os.path.exists(path) or os.path.getsize(path) == 0:
         return {}
-    df = pd.read_csv(path, sep="\t", dtype=str).fillna("")
     required = {"accession", "level_1", "level_2"}
+    df = pd.read_csv(path, sep="\t", dtype=str, usecols=lambda c: c in required)
     missing = required.difference(df.columns)
     if missing:
         raise ValueError(f"{path} is missing required columns: {', '.join(sorted(missing))}")
-    out = {}
-    for _, row in df.iterrows():
-        b1 = row["level_1"] or None
-        b2 = row["level_2"] or None
-        out[row["accession"]] = (b1, b2)
-    return out
+
+    accessions = df["accession"].fillna("").to_numpy(dtype=object)
+    level_1_series = df["level_1"].astype(object)
+    level_2_series = df["level_2"].astype(object)
+    level_1 = level_1_series.where(level_1_series.notna() & (level_1_series != ""), None).to_numpy(dtype=object)
+    level_2 = level_2_series.where(level_2_series.notna() & (level_2_series != ""), None).to_numpy(dtype=object)
+
+    return {
+        sample: (b1, b2)
+        for sample, b1, b2 in zip(accessions, level_1, level_2)
+    }
 
 
 def _write_sample_to_biome(path: str, sample_to_biome: Dict[str, Tuple[Optional[str], Optional[str]]]) -> None:
@@ -524,6 +541,7 @@ def _ingredients_from_directory(directory: str) -> Ingredients:
         manifest = json.load(f)
 
     components = manifest.get("components", {})
+    matrix_shapes = manifest.get("matrix_shapes", {})
     samples = _read_one_column_tsv(os.path.join(directory, components.get("samples", "samples.tsv")), "sample")
     taxa = _read_one_column_tsv(os.path.join(directory, components.get("taxa", "taxa.tsv")), "taxon")
     sample_to_biome = _read_sample_to_biome(
@@ -546,6 +564,8 @@ def _ingredients_from_directory(directory: str) -> Ingredients:
         "_coverage_matrix_path",
         os.path.join(directory, components.get("coverage_matrix", "coverage.npz")),
     )
+    object.__setattr__(new, "_presence_matrix_shape", tuple(matrix_shapes.get("presence", (len(taxa), len(samples)))))
+    object.__setattr__(new, "_coverage_matrix_shape", tuple(matrix_shapes.get("coverage", (len(taxa), len(samples)))))
     new.total_counts = total_counts.astype(np.int32, copy=False)
     new.sample_to_biome = sample_to_biome
     if new.sample_to_biome:

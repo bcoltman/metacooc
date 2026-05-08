@@ -5,7 +5,7 @@ import os
 import scipy.sparse as sp
 
 from metacooc.format import format_data
-from metacooc.pantry import Ingredients, load_ingredients
+from metacooc.pantry import Ingredients, _read_sample_to_biome, load_ingredients
 from metacooc.analysis import _cooccur_core
 
 def test_format_data_writes_raw_and_aggregated(raw_ingredients_path, aggregated_ingredients_path):
@@ -92,10 +92,30 @@ def test_ingredients_directory_lazy_loads_matrices(raw_ingredients_path, monkeyp
     assert np.array_equal(loaded.total_counts[:3], np.array([60, 13, 14], dtype=np.int32))
     assert calls == []
 
+    assert "presence: (300, 100)" in repr(loaded)
+    assert "coverage: (300, 100)" in repr(loaded)
+    assert calls == []
+
     assert loaded.presence_matrix.dtype == np.uint8
     assert calls == ["presence.npz"]
     assert loaded.coverage_matrix.shape == (300, 100)
     assert calls == ["presence.npz", "coverage.npz"]
+
+
+def test_read_sample_to_biome_vectorized_missing_values(tmp_path):
+    path = tmp_path / "sample_to_biome.tsv"
+    path.write_text(
+        "accession\tlevel_1\tlevel_2\textra\n"
+        "S001\tterrestrial\tsoil\tignored\n"
+        "S002\t\tmarine\tignored\n"
+        "S003\taquatic\t\tignored\n"
+    )
+
+    assert _read_sample_to_biome(str(path)) == {
+        "S001": ("terrestrial", "soil"),
+        "S002": (None, "marine"),
+        "S003": ("aquatic", None),
+    }
 
 
 def test_format_data_archive_option_writes_tarballs(tmp_path, fixture_dir):

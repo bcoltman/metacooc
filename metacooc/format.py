@@ -16,7 +16,7 @@ from scipy.sparse import csr_matrix, vstack
 import warnings
 from typing import Optional
 
-from metacooc.pantry import Ingredients, save_ingredients
+from metacooc.pantry import Ingredients, _read_sample_to_biome, save_ingredients
 
 
 def build_indices(tax_profile: str):
@@ -145,11 +145,7 @@ def format_data(
     sample_to_biome = {}
     if sample_to_biome_file:
         if os.path.exists(sample_to_biome_file):
-            df = pd.read_csv(sample_to_biome_file, dtype=str, sep="\t")
-            sample_to_biome = {
-                row["accession"]: (row["level_1"], row["level_2"])
-                for _, row in df.iterrows()
-            }
+            sample_to_biome = _read_sample_to_biome(sample_to_biome_file)
         else:
             warnings.warn(
                 f"Biome mapping file '{sample_to_biome_file}' not found",
