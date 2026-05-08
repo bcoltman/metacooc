@@ -95,6 +95,8 @@ def pipeline_args(**overrides):
         large=True,
         max_pairs=100_000,
         return_all_taxa=True,
+        taxa_query=None,
+        biome_level="level_1",
     )
     base.update(overrides)
     return SimpleNamespace(**base)
