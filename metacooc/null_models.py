@@ -12,7 +12,6 @@ SIMMODEL = Literal["FF", "FE", "EF", "EE"]
 _OUT_DTYPE = np.int8
 _DEFAULT_NM_MEMORY_MB = 256.0
 _DEFAULT_DIRECT_OUTPUT_LIMIT_MB = 32_768.0
-_SMALL_POPULATION_MAX_CELLS = 5_000_000
 
 
 # -----------------------------------------------------------------------------
@@ -734,39 +733,6 @@ def _fill_fixed_degree_random_indices(
             indices[offsets.ravel()] = vals.ravel()
 
 
-def _fill_ee_row_indices(
-    row_counts: np.ndarray,
-    n_cols: int,
-    indptr: np.ndarray,
-    indices: np.ndarray,
-    rng: np.random.Generator,
-    *,
-    sort_within_row: bool = False,
-    small_degree_max: int = 16,
-) -> None:
-    """
-    Fill CSR column indices for EE after exact row-count sampling.
-
-    Small rows use the batched FE-style filler. Dense rows are filled by the
-    shared random-key block sampler instead of one rng.choice call per row.
-    """
-    row_counts = np.asarray(row_counts, dtype=np.int64)
-    n_cols = int(n_cols)
-    if n_cols <= 0:
-        return
-
-    _fill_fixed_degree_random_indices(
-        row_counts,
-        n_cols,
-        indptr,
-        indices,
-        rng,
-        sort_within_entity=sort_within_row,
-        small_degree_max=small_degree_max,
-        random_key_min_density=0.01,
-    )
-
-
 def _check_linear_population_size(n_cells: int) -> None:
     """
     NumPy integer sampling for direct EE uses signed int64 cell IDs.
@@ -775,157 +741,34 @@ def _check_linear_population_size(n_cells: int) -> None:
         raise ValueError("EE direct sampler requires n_rows * n_cols to fit in int64.")
 
 
-def _sample_unique_ids_rejection(
+def _sample_ee_linear_ids(
     rng: np.random.Generator,
     population_size: int,
     n_draw: int,
     *,
-    memory_mb: Optional[float],
-) -> np.ndarray:
-    """
-    Sample unique IDs from ``range(population_size)`` by vectorised deduplication.
-    """
-    population_size = int(population_size)
-    n_draw = int(n_draw)
-    if n_draw <= 0:
-        return np.empty(0, dtype=np.int64)
-    if n_draw > population_size:
-        raise ValueError("Cannot sample more unique IDs than the population size.")
-
-    max_batch = _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=4, floor=1024)
-    accepted = np.empty(0, dtype=np.int64)
-
-    while accepted.size < n_draw:
-        remaining = n_draw - int(accepted.size)
-        fill = float(accepted.size) / float(population_size)
-        request = int(np.ceil((remaining / max(1.0e-12, 1.0 - fill)) * 1.15)) + 8
-        request = max(1, min(int(max_batch), request))
-        candidates = _rng_integers(rng, population_size, size=request, dtype=np.int64)
-        candidates = np.unique(candidates)
-        if accepted.size:
-            accepted = np.unique(np.concatenate((accepted, candidates)))
-        else:
-            accepted = candidates
-
-    if accepted.size > n_draw:
-        keep = rng.choice(int(accepted.size), size=n_draw, replace=False)
-        accepted = accepted[keep]
-    return accepted.astype(np.int64, copy=False)
-
-
-def _sample_unique_ids_floyd(
-    rng: np.random.Generator,
-    population_size: int,
-    n_draw: int,
-) -> np.ndarray:
-    """
-    Floyd's exact range-sampling algorithm without allocating the population.
-    """
-    population_size = int(population_size)
-    n_draw = int(n_draw)
-    if n_draw <= 0:
-        return np.empty(0, dtype=np.int64)
-    if n_draw > population_size:
-        raise ValueError("Cannot sample more unique IDs than the population size.")
-
-    selected: set[int] = set()
-    for j in range(population_size - n_draw, population_size):
-        t = int(rng.integers(j + 1))
-        selected.add(j if t in selected else t)
-    return np.fromiter(selected, dtype=np.int64, count=n_draw)
-
-
-def _sample_ee_ids(
-    rng: np.random.Generator,
-    population_size: int,
-    n_draw: int,
-    *,
-    memory_mb: Optional[float],
     debug_callback=None,
-) -> tuple[str, np.ndarray]:
+) -> np.ndarray:
     """
-    Select support IDs, or complement IDs, for the EE null model.
+    Sample EE support cell IDs uniformly without replacement.
     """
     population_size = int(population_size)
     n_draw = int(n_draw)
-    n_missing = population_size - n_draw
+    if n_draw <= 0:
+        return np.empty(0, dtype=np.int64)
+    if n_draw > population_size:
+        raise ValueError("Cannot sample more unique IDs than the population size.")
+
     density = float(n_draw) / float(population_size) if population_size else 0.0
-    missing_density = float(n_missing) / float(population_size) if population_size else 0.0
-
-    small_population_entries = min(
-        _SMALL_POPULATION_MAX_CELLS,
-        _budget_entries(memory_mb, itemsize=np.dtype(np.int64).itemsize, n_arrays=2, floor=1),
-    )
-    if population_size <= small_population_entries:
-        _record_debug_event(
-            debug_callback,
-            sampler="EE",
-            algorithm="choice_small_population",
-            population_size=population_size,
-            n_draw=n_draw,
-            density=density,
-            estimated_temp_entries=population_size,
-        )
-        return "support", rng.choice(population_size, size=n_draw, replace=False).astype(np.int64, copy=False)
-
-    if n_missing < n_draw and (missing_density <= 0.20 or n_missing <= small_population_entries):
-        _record_debug_event(
-            debug_callback,
-            sampler="EE",
-            algorithm="complement_rejection",
-            population_size=population_size,
-            n_draw=n_draw,
-            n_missing=n_missing,
-            density=density,
-            estimated_temp_entries=min(n_missing, small_population_entries),
-        )
-        return "missing", _sample_unique_ids_rejection(
-            rng,
-            population_size,
-            n_missing,
-            memory_mb=memory_mb,
-        )
-
-    if density <= 0.35:
-        _record_debug_event(
-            debug_callback,
-            sampler="EE",
-            algorithm="sparse_rejection",
-            population_size=population_size,
-            n_draw=n_draw,
-            density=density,
-            estimated_temp_entries=min(n_draw, small_population_entries),
-        )
-        return "support", _sample_unique_ids_rejection(
-            rng,
-            population_size,
-            n_draw,
-            memory_mb=memory_mb,
-        )
-
-    if n_missing < n_draw:
-        _record_debug_event(
-            debug_callback,
-            sampler="EE",
-            algorithm="complement_floyd",
-            population_size=population_size,
-            n_draw=n_draw,
-            n_missing=n_missing,
-            density=density,
-            estimated_temp_entries=n_missing,
-        )
-        return "missing", _sample_unique_ids_floyd(rng, population_size, n_missing)
-
     _record_debug_event(
         debug_callback,
         sampler="EE",
-        algorithm="floyd",
+        algorithm="numpy_choice",
         population_size=population_size,
         n_draw=n_draw,
         density=density,
         estimated_temp_entries=n_draw,
     )
-    return "support", _sample_unique_ids_floyd(rng, population_size, n_draw)
+    return rng.choice(population_size, size=n_draw, replace=False, shuffle=False).astype(np.int64, copy=False)
 
 
 def _csr_from_linear_ids(
@@ -952,54 +795,6 @@ def _csr_from_linear_ids(
     cols = (linear_ids - rows * int(n_cols)).astype(_sparse_indices_dtype(n_cols), copy=False)
     data = np.ones(N, dtype=_OUT_DTYPE)
     return sp.csr_matrix((data, cols, indptr), shape=(int(n_rows), int(n_cols)))
-
-
-def _csr_from_missing_linear_ids(
-    missing_ids: np.ndarray,
-    *,
-    n_rows: int,
-    n_cols: int,
-) -> sp.csr_matrix:
-    """
-    Build a sorted CSR matrix containing every cell except ``missing_ids``.
-    """
-    n_rows = int(n_rows)
-    n_cols = int(n_cols)
-    missing_ids = np.asarray(missing_ids, dtype=np.int64)
-    missing_ids.sort()
-    n_missing = int(missing_ids.size)
-    N = n_rows * n_cols - n_missing
-
-    indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
-    indptr[0] = 0
-
-    if n_missing:
-        missing_rows = missing_ids // n_cols
-        missing_cols = (missing_ids - missing_rows * n_cols).astype(_sparse_indices_dtype(n_cols), copy=False)
-        missing_counts = np.bincount(missing_rows, minlength=n_rows).astype(np.int64, copy=False)
-    else:
-        missing_cols = np.empty(0, dtype=_sparse_indices_dtype(n_cols))
-        missing_counts = np.zeros(n_rows, dtype=np.int64)
-
-    row_counts = np.full(n_rows, n_cols, dtype=np.int64)
-    row_counts -= missing_counts
-    np.cumsum(row_counts, dtype=indptr.dtype, out=indptr[1:])
-
-    indices = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
-    cursor = 0
-    for row in range(n_rows):
-        s = int(indptr[row])
-        e = int(indptr[row + 1])
-        miss_n = int(missing_counts[row])
-        if miss_n == 0:
-            indices[s:e] = np.arange(n_cols, dtype=indices.dtype)
-            continue
-        row_missing = missing_cols[cursor:cursor + miss_n]
-        _fill_complement_indices(indices[s:e], n_cols, row_missing)
-        cursor += miss_n
-
-    data = np.ones(N, dtype=_OUT_DTYPE)
-    return sp.csr_matrix((data, indices, indptr), shape=(n_rows, n_cols))
 
 
 def fe_fixed_rows_equiprob_cols(
@@ -1132,17 +927,13 @@ def ee_equiprobable(
         raise ValueError("nnz exceeds total number of cells; invalid input matrix.")
 
     for _ in range(int(n_reps)):
-        mode, ids = _sample_ee_ids(
+        ids = _sample_ee_linear_ids(
             rng,
             n_cells,
             N,
-            memory_mb=memory_mb,
             debug_callback=debug_callback,
         )
-        if mode == "missing":
-            Y = _csr_from_missing_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
-        else:
-            Y = _csr_from_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
+        Y = _csr_from_linear_ids(ids, n_rows=n_rows, n_cols=n_cols)
         if sort_indices:
             Y.sort_indices()
         yield Y
