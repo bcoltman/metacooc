@@ -412,6 +412,7 @@ def load_ingredients(
     
     # determine ingredients file path
     if not custom_ingredients:
+        defaulted_data_version = data_version is None
         data_version = data_version or LATEST_VERSION
         filenames, _ = get_file_info(data_version)
         if not data_dir:
@@ -432,10 +433,14 @@ def load_ingredients(
             f"{custom_ingredients} is either not found or isn't an Ingredients object"
             )
         
-        avail = ", ".join(sorted(RELEASES.keys()))
-        raise FileNotFoundError(
-            f"Ingredients file '{filepath}' not found.\n"
-            f"Missing version {data_version}. Available: {avail}"
+        raise DataVersionError(
+            missing_data_version_message(
+                data_dir=data_dir,
+                data_version=data_version,
+                missing_path=filepath,
+                file_kind="Ingredients",
+                defaulted=defaulted_data_version,
+            )
         )
     
     # load ingredients object

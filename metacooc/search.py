@@ -599,12 +599,23 @@ def search_data_obj(
             raise ValueError("'->' syntax is not supported in metadata mode")
 
         if metadata_file is None:
+            defaulted_data_version = data_version is None
             data_version = data_version or LATEST_VERSION
             filenames, _ = get_file_info(data_version)
             if not data_dir:
                 raise ValueError("data_dir must be provided if searching metadata without metadata_file")
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
-        if not os.path.exists(metadata_file):
+            if not os.path.exists(metadata_file):
+                raise DataVersionError(
+                    missing_data_version_message(
+                        data_dir=data_dir,
+                        data_version=data_version,
+                        missing_path=metadata_file,
+                        file_kind="metadata",
+                        defaulted=defaulted_data_version,
+                    )
+                )
+        elif not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
 
         if return_details:
@@ -727,12 +738,23 @@ def search_data(
     """
     if list_column_names:
         if metadata_file is None:
+            defaulted_data_version = data_version is None
             data_version = data_version or LATEST_VERSION
             filenames, _ = get_file_info(data_version)
             if not data_dir:
                 raise ValueError("data_dir must be provided if listing metadata columns without metadata_file")
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
-        if not os.path.exists(metadata_file):
+            if not os.path.exists(metadata_file):
+                raise DataVersionError(
+                    missing_data_version_message(
+                        data_dir=data_dir,
+                        data_version=data_version,
+                        missing_path=metadata_file,
+                        file_kind="metadata",
+                        defaulted=defaulted_data_version,
+                    )
+                )
+        elif not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
         with open(metadata_file, "r") as f:
             headers = f.readline().strip().split("\t")

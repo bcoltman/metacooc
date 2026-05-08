@@ -904,13 +904,18 @@ def build_parser():
 
 
 def parse_cli():
+    from metacooc._data_config import DataVersionError
+
     parser = build_parser()
     args = parser.parse_args()
 
     if hasattr(args, "null_scope"):
         validate_null_scope_args(args, args.func.__subparser__)
 
-    args.func(args)
+    try:
+        args.func(args)
+    except DataVersionError as e:
+        parser.error(str(e))
 
 
 if __name__ == "__main__":
