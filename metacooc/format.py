@@ -11,7 +11,6 @@ Converts a raw sandpiper taxonomic profile (TSV file) into two sparse matrix rep
 import numpy as np
 import os
 import pandas as pd
-import pickle
 import re
 from scipy.sparse import csr_matrix, vstack
 import warnings
@@ -98,8 +97,9 @@ def create_sparse_matrices(tax_profile: str, sample_to_index: dict, taxon_to_ind
     presence_matrix = csr_matrix(
         (data_presence, (row_indices, col_indices)),
         shape=(num_taxa, num_samples),
-        dtype=int
+        dtype=np.uint8,
     )
+    presence_matrix.data[:] = 1
     coverage_matrix = csr_matrix(
         (data_coverage, (row_indices, col_indices)),
         shape=(num_taxa, num_samples),
@@ -127,6 +127,7 @@ def format_data(
     aggregated: bool = False,
     tag: str = "",
     data_version: Optional[str] = None,
+    archive_ingredients: bool = False,
 ):
     """
     Process the sandpiper TSV file and save Ingredients objects.
@@ -169,6 +170,8 @@ def format_data(
         output_dir,
         aggregated=False,
         tag=tag,
+        data_version=data_version,
+        archive=archive_ingredients,
     )
     
     # aggregated
@@ -181,6 +184,8 @@ def format_data(
             output_dir,
             aggregated=True,
             tag=tag,
+            data_version=data_version,
+            archive=archive_ingredients,
         )
 
 

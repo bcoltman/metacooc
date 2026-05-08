@@ -1380,7 +1380,9 @@ def stat_fn_cooccurrence_jaccard(X: sp.csr_matrix) -> np.ndarray:
     """
     Compute pairwise Jaccard overlap for a subset of taxa.
     """
-    X_sub = X[_G_subset_idx, :].tocsr()
+    from metacooc.pantry import presence_for_counts
+
+    X_sub = presence_for_counts(X)[_G_subset_idx, :].tocsr()
     totals = np.asarray(X_sub.sum(axis=1)).ravel().astype(np.float64, copy=False)
     
     co = (X_sub @ X_sub.T).tocsr()

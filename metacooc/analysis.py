@@ -339,7 +339,7 @@ def _association_core(
         print("FE: association determined analytically - no need for shuffling null and probabilistic approach")
         return out
 
-    X_full = null_ingredients.presence_matrix.tocsr()
+    X_full = presence_for_counts(null_ingredients).tocsr()
     X_full.eliminate_zeros()
     X_full.sum_duplicates()
     X_full.sort_indices()
@@ -448,7 +448,7 @@ def association(
 def presence_submatrix_by_taxa(ingredients: Ingredients, taxa_subset: List[str]) -> sp.csr_matrix:
     row_map = {t: i for i, t in enumerate(ingredients.taxa)}
     rows = [row_map[t] for t in taxa_subset]
-    return ingredients.presence_matrix[rows, :].tocsr()
+    return presence_for_counts(ingredients)[rows, :].tocsr()
 
 
 def _cooccur_core(
@@ -1047,7 +1047,7 @@ def cooccurrence_obj(
         print("FE: cooccurrence determined analytically - no need for shuffling null and probabilistic approach")
         return edge_arrays, nodes_df
 
-    X_full = null_ingredients.presence_matrix.tocsr()
+    X_full = presence_for_counts(null_ingredients).tocsr()
     X_full.eliminate_zeros()
     X_full.sum_duplicates()
     X_full.sort_indices()

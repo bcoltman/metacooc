@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pickle
 import subprocess
 import sys
 
@@ -13,7 +12,7 @@ from metacooc._data_config import (
     format_local_data_versions,
     local_data_versions,
 )
-from metacooc.pantry import Ingredients, load_ingredients
+from metacooc.pantry import Ingredients, load_ingredients, save_ingredients
 from metacooc.search import search_data_obj
 
 
@@ -26,13 +25,12 @@ def _write_minimal_ingredients(path, data_version="1.1.0_globdb"):
         coverage_matrix=matrix.copy(),
         data_version=data_version,
     )
-    with path.open("wb") as f:
-        pickle.dump(ingredients, f)
+    save_ingredients(ingredients, str(path.parent), data_version=data_version)
 
 
 def test_local_data_versions_reports_full_sources(tmp_path):
-    (tmp_path / "ingredients_raw_1.1.0_globdb.pkl").touch()
-    (tmp_path / "ingredients_aggregated_1.1.0_gtdb.pkl").touch()
+    (tmp_path / "ingredients_raw_1.1.0_globdb").mkdir()
+    (tmp_path / "ingredients_aggregated_1.1.0_gtdb").mkdir()
     (tmp_path / "sra_metadata_1.1.0.tsv").touch()
 
     assert local_data_versions(tmp_path) == ["1.1.0_globdb", "1.1.0_gtdb"]
@@ -42,7 +40,7 @@ def test_local_data_versions_reports_full_sources(tmp_path):
 
 
 def test_load_ingredients_missing_default_lists_local_variant(tmp_path):
-    (tmp_path / "ingredients_raw_1.1.0_globdb.pkl").touch()
+    (tmp_path / "ingredients_raw_1.1.0_globdb").mkdir()
 
     with pytest.raises(DataVersionError) as excinfo:
         load_ingredients(data_dir=str(tmp_path), aggregated=False, data_version=None)
@@ -56,7 +54,7 @@ def test_load_ingredients_missing_default_lists_local_variant(tmp_path):
 
 
 def test_load_ingredients_explicit_available_variant_succeeds(tmp_path):
-    path = tmp_path / "ingredients_raw_1.1.0_globdb.pkl"
+    path = tmp_path / "ingredients_raw_1.1.0_globdb"
     _write_minimal_ingredients(path)
 
     ingredients = load_ingredients(
@@ -69,7 +67,7 @@ def test_load_ingredients_explicit_available_variant_succeeds(tmp_path):
 
 
 def test_metadata_missing_default_uses_data_version_error(tmp_path):
-    (tmp_path / "ingredients_raw_1.1.0_globdb.pkl").touch()
+    (tmp_path / "ingredients_raw_1.1.0_globdb").mkdir()
 
     with pytest.raises(DataVersionError) as excinfo:
         search_data_obj(
@@ -85,7 +83,7 @@ def test_metadata_missing_default_uses_data_version_error(tmp_path):
 
 
 def test_cli_missing_default_data_version_has_no_traceback(tmp_path):
-    (tmp_path / "ingredients_raw_1.1.0_globdb.pkl").touch()
+    (tmp_path / "ingredients_raw_1.1.0_globdb").mkdir()
     out = tmp_path / "out"
 
     result = subprocess.run(

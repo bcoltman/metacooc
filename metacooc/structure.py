@@ -10,7 +10,7 @@ from metacooc.null_models import (
     _best_mp_start
 )
 
-from metacooc.pantry import load_ingredients
+from metacooc.pantry import load_ingredients, presence_for_counts
 
 import os 
 
@@ -50,6 +50,7 @@ def compute_nodf_streamed(
     Returns 0..100 scale.
     """
 
+    X = presence_for_counts(X).tocsr()
     n_rows, n_cols = X.shape
     # if n_rows < 2 and n_cols < 2:
     if n_rows < 2 or n_cols < 2:
@@ -84,6 +85,7 @@ def compute_c_score(X: sp.spmatrix, chunk_rows: int = 50_000) -> float:
     Returns mean C-score across all i<j taxa pairs, or np.nan if undefined.
     """
     
+    X = presence_for_counts(X).tocsr()
     R = np.diff(X.indptr).astype(np.float64, copy=False)
     n_taxa = R.size
     if n_taxa < 2:
@@ -121,6 +123,7 @@ def mean_jaccard_dot(X: sp.spmatrix, chunk_rows: int = 50_000) -> float:
         mean_{i<j} |Ti∩Tj| / |Ti∪Tj|
     """
     
+    X = presence_for_counts(X).tocsr()
     deg_all = np.diff(X.indptr).astype(np.int64, copy=False)
     nonempty = deg_all > 0
     n = int(nonempty.sum())
@@ -245,7 +248,7 @@ def _structure_core(
     pd.DataFrame with one row per metric. If compute_null, attaches null summary columns.
     """
     # --- observed matrix (CSR, normalised once) ---
-    X_obs = ingredients.presence_matrix.tocsr()
+    X_obs = presence_for_counts(ingredients).tocsr()
     X_obs.eliminate_zeros()
     X_obs.sum_duplicates()
     X_obs.sort_indices()

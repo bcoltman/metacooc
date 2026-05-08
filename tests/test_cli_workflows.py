@@ -129,14 +129,14 @@ def cli_formatted_dir(tmp_path, fixture_dir):
         "--data_version",
         "test",
     )
-    assert (out / "ingredients_raw_cli.pkl").exists()
-    assert (out / "ingredients_aggregated_cli.pkl").exists()
+    assert (out / "ingredients_raw_cli").exists()
+    assert (out / "ingredients_aggregated_cli").exists()
     return out
 
 
 @pytest.mark.cli
 def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metadata_file):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
 
     taxon_out = tmp_path / "search_taxon"
     run_cli(
@@ -185,7 +185,7 @@ def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metada
 
 @pytest.mark.cli
 def test_cli_search_lists_available_biomes(cli_formatted_dir):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
 
     result = run_cli(
         "search",
@@ -204,7 +204,7 @@ def test_cli_search_lists_available_biomes(cli_formatted_dir):
 
 @pytest.mark.cli
 def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
     accessions = tmp_path / "accessions.txt"
     accessions.write_text("".join(f"{sample}\n" for sample in SOIL_SAMPLE_LINES))
 
@@ -222,8 +222,8 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "--tag",
         "cli",
     )
-    null_file = filter_out / "cli_ingredients_null.pkl"
-    filtered_file = filter_out / "cli_ingredients_filtered.pkl"
+    null_file = filter_out / "cli_ingredients_null"
+    filtered_file = filter_out / "cli_ingredients_filtered"
     assert null_file.exists()
     assert filtered_file.exists()
 
@@ -285,7 +285,7 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
 
 @pytest.mark.cli
 def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
 
     assoc_out = tmp_path / "workflow_assoc"
     run_cli(
@@ -404,7 +404,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
 
 @pytest.mark.cli
 def test_cli_full_workflow_accepts_metadata_file(tmp_path, cli_formatted_dir, metadata_file):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
     out = tmp_path / "workflow_metadata"
     run_cli(
         "association",
@@ -432,7 +432,7 @@ def test_cli_full_workflow_accepts_metadata_file(tmp_path, cli_formatted_dir, me
 
 @pytest.mark.cli
 def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_dir):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
     out = tmp_path / "workflow_focal_rhs"
 
     run_cli(
@@ -481,7 +481,7 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
 
 @pytest.mark.cli
 def test_cli_invalid_query_grammar_fails_clearly(tmp_path, cli_formatted_dir):
-    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+    raw = cli_formatted_dir / "ingredients_raw_cli"
 
     taxon_mode = run_cli_no_check(
         "search",

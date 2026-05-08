@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import pickle
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from metacooc.format import format_data
+from metacooc.pantry import load_ingredients
 
 
 @pytest.fixture
@@ -30,24 +30,22 @@ def formatted_data_dir(tmp_path: Path, fixture_dir: Path) -> Path:
 
 @pytest.fixture
 def raw_ingredients_path(formatted_data_dir: Path) -> Path:
-    return formatted_data_dir / "ingredients_raw_test.pkl"
+    return formatted_data_dir / "ingredients_raw_test"
 
 
 @pytest.fixture
 def aggregated_ingredients_path(formatted_data_dir: Path) -> Path:
-    return formatted_data_dir / "ingredients_aggregated_test.pkl"
+    return formatted_data_dir / "ingredients_aggregated_test"
 
 
 @pytest.fixture
 def raw_ingredients(raw_ingredients_path: Path):
-    with raw_ingredients_path.open("rb") as f:
-        return pickle.load(f)
+    return load_ingredients(custom_ingredients=str(raw_ingredients_path))
 
 
 @pytest.fixture
 def aggregated_ingredients(aggregated_ingredients_path: Path):
-    with aggregated_ingredients_path.open("rb") as f:
-        return pickle.load(f)
+    return load_ingredients(custom_ingredients=str(aggregated_ingredients_path))
 
 
 @pytest.fixture

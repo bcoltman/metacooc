@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import builtins
+import io
+import tarfile
+
 from metacooc import download
 
 
@@ -57,3 +61,34 @@ def test_download_stream_writes_chunks_without_buffering_response(monkeypatch, t
 
     assert out.read_bytes() == b"abcdefgh"
     assert progress_updates == [3, 4, 1]
+
+
+def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path):
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:gz") as tar:
+        data = b'{"format_version": 1}\n'
+        info = tarfile.TarInfo("ingredients_raw_1.1.0_gtdb/manifest.json")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    archive_bytes = payload.getvalue()
+
+    monkeypatch.setattr(
+        download,
+        "get_file_info",
+        lambda version: (
+            {"ingredients_raw": "ingredients_raw_1.1.0_gtdb"},
+            {"ingredients_raw_1.1.0_gtdb.tar.gz": "https://example.test/raw.tar.gz"},
+        ),
+    )
+    monkeypatch.setattr(builtins, "input", lambda prompt: "y")
+
+    def fake_download_stream(url, temp_path):
+        assert url == "https://example.test/raw.tar.gz"
+        with open(temp_path, "wb") as f:
+            f.write(archive_bytes)
+
+    monkeypatch.setattr(download, "_download_stream", fake_download_stream)
+
+    download.download_data(tmp_path, data_version="1.1.0_gtdb")
+
+    assert (tmp_path / "ingredients_raw_1.1.0_gtdb" / "manifest.json").exists()
