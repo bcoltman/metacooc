@@ -331,6 +331,44 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     )
     assert (biome_out / "cli_taxa_biome_distribution.tsv").exists()
 
+    filtered_biome_out = tmp_path / "workflow_biome_filtered"
+    run_cli(
+        "biome_distribution",
+        "--custom_ingredients",
+        raw,
+        "--output_dir",
+        filtered_biome_out,
+        "--tag",
+        "cli",
+        "--taxa_query",
+        "s__rhizo_000,s__micro_000",
+        "--biome_level",
+        "level_2",
+        "--min_taxa_count",
+        "2",
+        "--taxa_count_rank",
+        "species",
+    )
+    filtered_biome = pd.read_csv(
+        filtered_biome_out / "cli_taxa_biome_distribution.tsv",
+        sep="\t",
+        index_col=0,
+    )
+    assert filtered_biome.columns.tolist() == ["soil", "marine"]
+    assert len(filtered_biome) == 2
+
+    invalid_biome = run_cli_no_check(
+        "biome_distribution",
+        "--custom_ingredients",
+        raw,
+        "--output_dir",
+        tmp_path / "workflow_biome_invalid",
+        "--taxa_query",
+        "g__Rhizo|g__Micro",
+    )
+    assert invalid_biome.returncode != 0
+    assert "focal_taxa mode does not support" in invalid_biome.stderr
+
 
 @pytest.mark.cli
 def test_cli_full_workflow_accepts_metadata_file(tmp_path, cli_formatted_dir, metadata_file):

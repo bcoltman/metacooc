@@ -26,7 +26,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from metacooc.search import search_data_obj
+from metacooc.search import resolve_focal_taxa_queries, search_data_obj
 from metacooc.filter import filter_data_obj
 from metacooc.pantry import load_ingredients
 from metacooc.analysis import (
@@ -74,6 +74,15 @@ def _rows_to_taxa_in_universe(
             out[query] = resolved_taxa
 
     return out if out else None
+
+
+def _taxa_indices_from_query(ingredients, taxa_query):
+    rows_by_query = resolve_focal_taxa_queries(ingredients, taxa_query)
+    rows = set()
+    for query_rows in rows_by_query.values():
+        rows.update(query_rows)
+    return sorted(rows)
+
 
 def run_shared_pipeline_setup(args):
     """
@@ -478,10 +487,28 @@ def run_biome_distribution(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
-    biomes, presence, coverage, n_dropped = ingredients.biome_distribution()
+    ingredients, is_successful = filter_data_obj(
+        ingredients,
+        min_taxa_count=getattr(args, "min_taxa_count", None),
+        min_sample_count=getattr(args, "min_sample_count", None),
+        filter_rank=getattr(args, "filter_rank", None),
+        taxa_count_rank=getattr(args, "taxa_count_rank", "species"),
+    )
+    if not is_successful:
+        return
+
+    biome_level = getattr(args, "biome_level", "level_1")
+    biomes, presence, coverage, n_dropped = ingredients.biome_distribution(level=biome_level)
     biome_by_taxa_df = pd.DataFrame(data=presence.todense(), columns=ingredients.taxa, index=biomes)
 
-    if args.return_all_taxa:
+    taxa_query = getattr(args, "taxa_query", None)
+    if taxa_query:
+        indices = _taxa_indices_from_query(ingredients, taxa_query)
+        biome_by_query_df = biome_by_taxa_df.iloc[:, indices].T
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
+        biome_by_query_df.to_csv(output_path, sep="\t")
+
+    elif args.return_all_taxa:
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
         biome_by_taxa_df.to_csv(output_path, sep="\t")
 

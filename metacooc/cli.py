@@ -265,7 +265,7 @@ def validate_null_scope_args(args, subparser):
         subparser.error("--null_metadata_query is required when null_scope is 'metadata' or 'metadata_taxa'")
 
 
-def add_filter_args(parser, group=None):
+def add_count_filter_args(parser, group=None):
     (group or parser).add_argument(
         "--min_taxa_count",
         type=positive_int,
@@ -295,6 +295,10 @@ def add_filter_args(parser, group=None):
             "the number of unique taxa in a sample (default: %(default)s)"
         ),
     )
+
+
+def add_filter_args(parser, group=None):
+    add_count_filter_args(parser, group=group)
 
     (group or parser).add_argument(
         "--remove_null_threshold",
@@ -509,6 +513,22 @@ def add_return_all_taxa(parser, group=None):
         "--return_all_taxa",
         action="store_true",
         help="Return distributions of all taxa (not aggregated/original values).",
+    )
+
+
+def add_biome_distribution_args(parser, group=None):
+    (group or parser).add_argument(
+        "--taxa_query",
+        help=(
+            "Restrict output rows to taxa matching comma-separated focal-taxa-style "
+            "queries, for example 'g__Nitrosomonas,g__Nitrosospira'."
+        ),
+    )
+    (group or parser).add_argument(
+        "--biome_level",
+        choices=["level_1", "level_2"],
+        default="level_1",
+        help="Biome level to report (default: %(default)s).",
     )
 
 
@@ -910,6 +930,8 @@ def build_parser():
     add_tag_and_aggregated(biome_sub, group=opt)
     add_custom_ingredients(biome_sub, group=opt)
     add_return_all_taxa(biome_sub, group=opt)
+    add_count_filter_args(biome_sub, group=opt)
+    add_biome_distribution_args(biome_sub, group=opt)
 
     return parser
 
