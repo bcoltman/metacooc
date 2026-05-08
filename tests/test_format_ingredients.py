@@ -5,7 +5,7 @@ import os
 import scipy.sparse as sp
 
 from metacooc.format import format_data
-from metacooc.pantry import Ingredients, _read_sample_to_biome, load_ingredients
+from metacooc.pantry import Ingredients, _read_sample_to_biome, load_ingredients, presence_for_counts
 from metacooc.analysis import _cooccur_core
 
 def test_format_data_writes_raw_and_aggregated(raw_ingredients_path, aggregated_ingredients_path):
@@ -102,6 +102,27 @@ def test_ingredients_directory_lazy_loads_matrices(raw_ingredients_path, monkeyp
     assert calls == ["presence.npz", "coverage.npz"]
 
 
+def test_biome_distribution_does_not_load_coverage(raw_ingredients_path, monkeypatch):
+    calls = []
+    real_load_npz = sp.load_npz
+
+    def tracked_load_npz(path):
+        calls.append(os.path.basename(path))
+        return real_load_npz(path)
+
+    monkeypatch.setattr(sp, "load_npz", tracked_load_npz)
+    loaded = load_ingredients(custom_ingredients=str(raw_ingredients_path))
+    assert loaded._coverage_matrix is None
+
+    biomes, presence, n_dropped = loaded.biome_distribution()
+
+    assert biomes == ["terrestrial", "aquatic"]
+    assert presence.shape == (2, 300)
+    assert n_dropped == 0
+    assert calls == ["presence.npz"]
+    assert loaded._coverage_matrix is None
+
+
 def test_read_sample_to_biome_vectorized_missing_values(tmp_path):
     path = tmp_path / "sample_to_biome.tsv"
     path.write_text(
@@ -152,6 +173,18 @@ def test_count_operations_do_not_overflow_uint8_presence():
 
     edge_arrays, _ = _cooccur_core(ingredients, ingredients.taxa, threshold=0.0)
     assert edge_arrays.cols["inter"][0] == 299
+
+
+def test_presence_for_counts_prevents_uint8_sparse_product_overflow():
+    matrix = sp.csr_matrix(np.ones((1, 300), dtype=np.uint8))
+
+    direct = matrix @ matrix.T
+    safe = presence_for_counts(matrix) @ presence_for_counts(matrix).T
+
+    assert direct.dtype == np.uint8
+    assert direct[0, 0] == 44
+    assert safe.dtype == np.int32
+    assert safe[0, 0] == 300
 
 
 def test_ingredients_filter_and_copy_consistency(raw_ingredients):

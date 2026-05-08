@@ -448,10 +448,9 @@ class Ingredients:
             level (str): Biome level to use ("level_1" or "level_2").
             
         Returns:
-            Tuple[List[str], sp.csr_matrix, sp.csr_matrix, int]:
+            Tuple[List[str], sp.csr_matrix, int]:
                 - Unique biomes for the level.
                 - Presence matrix for the level.
-                - Coverage matrix for the level.
                 - Number of samples with missing biome assignments.
         """
         if level not in ("level_1", "level_2"):
@@ -472,19 +471,9 @@ class Ingredients:
         # 2) Presence counts
         Pbin = presence_for_counts(self)
         presence = B @ Pbin.T
-        
-        # 3) Coverage means
-        coverage_sums = B @ self.coverage_matrix.T
-        counts = np.array(B.sum(axis=1)).ravel()
-        # Make a copy for means
-        coverage = coverage_sums.tolil()
-        for b in range(n_biomes):
-            if counts[b] > 0:
-                coverage[b, :] = coverage_sums[b, :].toarray() / counts[b]
-        coverage = coverage.tocsr()
-        
+
         n_dropped = int((idxs < 0).sum())
-        return biomes, presence, coverage, n_dropped
+        return biomes, presence, n_dropped
 
 def _read_one_column_tsv(path: str, column: str) -> list[str]:
     df = pd.read_csv(path, sep="\t", dtype=str, usecols=lambda c: c == column)

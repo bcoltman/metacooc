@@ -515,7 +515,7 @@ def run_biome_distribution(args):
             return
 
     biome_level = getattr(args, "biome_level", "level_1")
-    biomes, presence, coverage, n_dropped = ingredients.biome_distribution(level=biome_level)
+    biomes, presence, n_dropped = ingredients.biome_distribution(level=biome_level)
 
     taxa_query = getattr(args, "taxa_query", None)
     if taxa_query:
