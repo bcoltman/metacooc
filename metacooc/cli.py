@@ -425,6 +425,14 @@ def add_list_column_names(parser, group=None):
     )
 
 
+def add_list_biomes(parser, group=None):
+    (group or parser).add_argument(
+        "--list_biomes",
+        action="store_true",
+        help="List available biome query terms from the selected Ingredients object.",
+    )
+
+
 def add_accessions_file(parser, group=None):
     (group or parser).add_argument(
         "--accessions_file",
@@ -530,7 +538,7 @@ def format_command(args):
 def search_command(args, subparser):
     from metacooc.search import search_data
 
-    if not args.list_column_names:
+    if not args.list_column_names and not args.list_biomes:
         missing = []
         if not args.search_mode:
             missing.append("--search_mode")
@@ -540,7 +548,8 @@ def search_command(args, subparser):
             missing.append("--output_dir")
         if missing:
             subparser.error(
-                f"The following arguments are required unless --list_column_names is used: {', '.join(missing)}"
+                "The following arguments are required unless --list_column_names "
+                f"or --list_biomes is used: {', '.join(missing)}"
             )
 
     args.tag = format_tag(args.tag, args.aggregated)
@@ -558,6 +567,7 @@ def search_command(args, subparser):
         custom_ingredients=args.custom_ingredients,
         data_version=args.data_version,
         list_column_names=args.list_column_names,
+        list_biomes=args.list_biomes,
         aggregated=args.aggregated,
         metadata_file=args.metadata_file,
     )
@@ -747,7 +757,7 @@ def build_parser():
         "Perform a file-based search.",
         lambda args: search_command(args, search_sub),
     )
-    req = search_sub.add_argument_group("required arguments (unless --list_column_names is used)")
+    req = search_sub.add_argument_group("required arguments (unless --list_column_names or --list_biomes is used)")
     opt = search_sub.add_argument_group("optional arguments")
     add_search_mode_and_string(search_sub, group=req, choices=SEARCH_SUBCOMMAND_MODE_CHOICES)
     add_output_dir(search_sub, required=False, group=req)
@@ -758,6 +768,7 @@ def build_parser():
     add_metadata_file(search_sub, group=opt)
     add_search_args(search_sub, group=opt)
     add_list_column_names(search_sub, group=opt)
+    add_list_biomes(search_sub, group=opt)
 
     # Filter
     filter_sub = add_subcommand(

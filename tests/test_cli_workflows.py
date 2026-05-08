@@ -152,6 +152,25 @@ def test_cli_search_taxon_biome_and_metadata(tmp_path, cli_formatted_dir, metada
 
 
 @pytest.mark.cli
+def test_cli_search_lists_available_biomes(cli_formatted_dir):
+    raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
+
+    result = run_cli(
+        "search",
+        "--list_biomes",
+        "--custom_ingredients",
+        raw,
+    )
+
+    assert "level_1:" in result.stdout
+    assert "  terrestrial (50 samples)" in result.stdout
+    assert "  aquatic (50 samples)" in result.stdout
+    assert "level_2:" in result.stdout
+    assert "  soil (50 samples)" in result.stdout
+    assert "  marine (50 samples)" in result.stdout
+
+
+@pytest.mark.cli
 def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
     raw = cli_formatted_dir / "ingredients_raw_cli.pkl"
     accessions = tmp_path / "accessions.txt"

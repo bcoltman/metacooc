@@ -714,6 +714,7 @@ def search_data(
     custom_ingredients=None,
     data_version=None,
     list_column_names=False,
+    list_biomes=False,
     aggregated=False,
     metadata_file=None,
 ):
@@ -736,6 +737,16 @@ def search_data(
     The results (one accession per line) are written to:
         {output_dir}/{tag}search_results.txt
     """
+    if list_biomes:
+        ingredients = load_ingredients(
+            data_dir=data_dir,
+            aggregated=aggregated,
+            custom_ingredients=custom_ingredients,
+            data_version=data_version,
+        )
+        print(format_available_biomes(ingredients))
+        return
+
     if list_column_names:
         if metadata_file is None:
             defaulted_data_version = data_version is None
@@ -787,3 +798,26 @@ def search_data(
         f"Mode={mode!r}: Found {len(matching_accessions)} matching accessions. "
         f"Results saved to {output_file}"
     )
+
+
+def format_available_biomes(ingredients) -> str:
+    """
+    Format available biome query terms for CLI output.
+    """
+    available = ingredients.available_biomes()
+    if not any(available.values()):
+        return "No biome annotations are available for this Ingredients object."
+
+    lines = []
+    for level in ("level_1", "level_2"):
+        lines.append(f"{level}:")
+        rows = available.get(level, [])
+        if rows:
+            for row in rows:
+                sample_word = "sample" if int(row["n_samples"]) == 1 else "samples"
+                lines.append(f"  {row['biome']} ({row['n_samples']} {sample_word})")
+        else:
+            lines.append("  none")
+        if level != "level_2":
+            lines.append("")
+    return "\n".join(lines)

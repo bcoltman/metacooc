@@ -353,6 +353,35 @@ class Ingredients:
             "level_1": np.array(idxs_level_1, dtype=int),
             "level_2": np.array(idxs_level_2, dtype=int),
         }
+
+    def available_biomes(self) -> dict[str, list[dict[str, object]]]:
+        """
+        Return available biome query terms grouped by biome level.
+
+        Each item contains:
+          - biome: biome name
+          - n_samples: number of samples assigned to that biome
+        """
+        if not getattr(self, "sample_to_biome", None):
+            return {"level_1": [], "level_2": []}
+
+        if not hasattr(self, "biomes_order") or not hasattr(self, "sample_biome_indices"):
+            self._allocate_biomes()
+
+        out: dict[str, list[dict[str, object]]] = {}
+        for level in ("level_1", "level_2"):
+            biomes = self.biomes_order.get(level, [])
+            idxs = self.sample_biome_indices.get(level, np.array([], dtype=int))
+            rows = []
+            for idx, biome in enumerate(biomes):
+                rows.append(
+                    {
+                        "biome": biome,
+                        "n_samples": int(np.count_nonzero(idxs == idx)),
+                    }
+                )
+            out[level] = rows
+        return out
         
     def biome_distribution(self, level: str = "level_1"):
         """

@@ -29,6 +29,31 @@ def test_raw_ingredients_contents(raw_ingredients):
     assert raw_ingredients.biomes_order["level_2"] == ["soil", "marine"]
 
 
+def test_available_biomes_reports_counts(raw_ingredients):
+    available = raw_ingredients.available_biomes()
+    assert available == {
+        "level_1": [
+            {"biome": "terrestrial", "n_samples": 50},
+            {"biome": "aquatic", "n_samples": 50},
+        ],
+        "level_2": [
+            {"biome": "soil", "n_samples": 50},
+            {"biome": "marine", "n_samples": 50},
+        ],
+    }
+
+
+def test_available_biomes_handles_missing_mapping(raw_ingredients):
+    ingredients = raw_ingredients.copy(deep=False)
+    ingredients.sample_to_biome = {}
+    if hasattr(ingredients, "biomes_order"):
+        delattr(ingredients, "biomes_order")
+    if hasattr(ingredients, "sample_biome_indices"):
+        delattr(ingredients, "sample_biome_indices")
+
+    assert ingredients.available_biomes() == {"level_1": [], "level_2": []}
+
+
 def test_aggregated_ingredients_contains_ancestors(aggregated_ingredients):
     assert aggregated_ingredients.data_version == "test"
     assert aggregated_ingredients.presence_matrix.shape[1] == 100
