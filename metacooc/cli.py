@@ -28,16 +28,6 @@ def positive_int(value):
     return ivalue
 
 
-def positive_float(value):
-    try:
-        fvalue = float(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"{value} is not a valid number")
-    if fvalue <= 0:
-        raise argparse.ArgumentTypeError(f"{value} is not a positive number")
-    return fvalue
-
-
 def validate_threshold(value):
     try:
         value = float(value)
@@ -323,13 +313,6 @@ def add_null_model_args(parser, group=None):
         help="Random state for sampling (default: %(default)s).",
     )
 
-    (group or parser).add_argument(
-        "--nm_memory_mb",
-        type=positive_float,
-        default=None,
-        help="Temporary-memory budget in MiB for direct null samplers (default: internal conservative budget).",
-    )
-
 
 def add_fisher_args(parser, group=None):
     (group or parser).add_argument(
@@ -578,7 +561,6 @@ def analysis_command(args):
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             nm_random_state=args.nm_random_state,
-            nm_memory_mb=args.nm_memory_mb,
         )
 
     elif args.analysis_type == "structure":
@@ -591,7 +573,6 @@ def analysis_command(args):
             nm_n_reps=args.nm_n_reps,
             compute_null=True,
             nm_random_state=args.nm_random_state,
-            nm_memory_mb=args.nm_memory_mb,
         )
 
     elif args.analysis_type == "association":
@@ -605,7 +586,6 @@ def analysis_command(args):
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             nm_random_state=args.nm_random_state,
-            nm_memory_mb=args.nm_memory_mb,
             compute_fisher=args.compute_fisher,
         )
 

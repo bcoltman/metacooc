@@ -10,8 +10,6 @@ import scipy.sparse as sp
 
 SIMMODEL = Literal["FF", "FE", "EF", "EE"]
 _OUT_DTYPE = np.int8
-_DEFAULT_NM_MEMORY_MB = 256.0
-_DEFAULT_DIRECT_OUTPUT_LIMIT_MB = 32_768.0
 
 
 # -----------------------------------------------------------------------------
@@ -34,39 +32,6 @@ def _rng_from_state(random_state: Optional[int | np.random.Generator]) -> np.ran
     return random_state if isinstance(random_state, np.random.Generator) else np.random.default_rng(random_state)
 
 
-def _normalise_memory_mb(memory_mb: Optional[float]) -> float:
-    """
-    Return a positive per-sampler temporary-memory budget in MiB.
-    """
-    if memory_mb is None:
-        return _DEFAULT_NM_MEMORY_MB
-    value = float(memory_mb)
-    if not np.isfinite(value) or value <= 0:
-        raise ValueError("nm_memory_mb must be a positive finite number.")
-    return value
-
-
-def _memory_budget_bytes(memory_mb: Optional[float]) -> int:
-    """
-    Convert a MiB budget to bytes.
-    """
-    return max(1, int(_normalise_memory_mb(memory_mb) * 1024 * 1024))
-
-
-def _budget_entries(
-    memory_mb: Optional[float],
-    *,
-    itemsize: int,
-    n_arrays: int = 1,
-    floor: int = 1,
-) -> int:
-    """
-    Number of array entries fitting inside the temporary-memory budget.
-    """
-    denom = max(1, int(itemsize) * max(1, int(n_arrays)))
-    return max(int(floor), _memory_budget_bytes(memory_mb) // denom)
-
-
 def _record_debug_event(debug_callback, **event) -> None:
     """
     Send a sampler decision to an optional benchmark/debug sink.
@@ -78,51 +43,6 @@ def _record_debug_event(debug_callback, **event) -> None:
         debug_callback(payload)
     elif hasattr(debug_callback, "append"):
         debug_callback.append(payload)
-
-
-def _estimate_sparse_output_bytes(
-    shape: tuple[int, int],
-    nnz: int,
-    *,
-    index_extent: int,
-) -> int:
-    """
-    Estimate data + indices + indptr bytes for one sparse output replicate.
-    """
-    n_major = int(shape[0])
-    nnz = int(nnz)
-    return (
-        nnz * np.dtype(_OUT_DTYPE).itemsize
-        + nnz * np.dtype(_sparse_indices_dtype(index_extent)).itemsize
-        + (n_major + 1) * np.dtype(_sparse_indptr_dtype(nnz)).itemsize
-    )
-
-
-def _check_direct_output_memory(
-    shape: tuple[int, int],
-    nnz: int,
-    *,
-    model: str,
-    memory_mb: Optional[float],
-    index_extent: int,
-) -> None:
-    """
-    Fail early when a single direct null replicate is clearly impractical.
-    """
-    if int(nnz) < 0:
-        raise ValueError("nnz must be non-negative.")
-    limit_mb = max(_DEFAULT_DIRECT_OUTPUT_LIMIT_MB, 4.0 * _normalise_memory_mb(memory_mb))
-    estimate = _estimate_sparse_output_bytes(shape, int(nnz), index_extent=int(index_extent))
-    estimate_mb = estimate / (1024 * 1024)
-    if estimate_mb > limit_mb:
-        raise ValueError(
-            f"{model} direct sampler output for shape={tuple(map(int, shape))} "
-            f"and nnz={int(nnz)} is estimated at {estimate_mb:.1f} MiB per replicate, "
-            f"above the configured safety limit of {limit_mb:.1f} MiB. "
-            "Use a smaller matrix/fill or raise nm_memory_mb on a machine sized for it."
-        )
-
-
 def prepare_presence_matrix(
     X: sp.spmatrix,
     *,
@@ -527,10 +447,9 @@ def _fill_fixed_degree_random_indices(
     *,
     sort_within_entity: bool = False,
     small_degree_max: int = 16,
-    target_temp_entries: Optional[int] = None,
+    target_temp_entries: int = 5_000_000,
     random_key_min_density: float = 0.01,
-    target_key_entries: Optional[int] = None,
-    memory_mb: Optional[float] = None,
+    target_key_entries: int = 20_000_000,
     debug_callback=None,
     debug_label: str = "fixed_degree",
 ) -> None:
@@ -551,21 +470,6 @@ def _fill_fixed_degree_random_indices(
         return
 
     dtype = indices.dtype
-    if target_temp_entries is None:
-        target_temp_entries = _budget_entries(
-            memory_mb,
-            itemsize=np.dtype(dtype).itemsize,
-            n_arrays=4,
-            floor=16_384,
-        )
-    if target_key_entries is None:
-        target_key_entries = _budget_entries(
-            memory_mb,
-            itemsize=np.dtype(np.float64).itemsize,
-            n_arrays=1,
-            floor=16_384,
-        )
-
     nz_degrees = degrees[nonzero]
     order = np.argsort(nz_degrees, kind="stable")
     grouped_entities = nonzero[order]
@@ -802,7 +706,6 @@ def fe_fixed_rows_equiprob_cols(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
-    memory_mb: Optional[float] = None,
     debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
@@ -811,13 +714,6 @@ def fe_fixed_rows_equiprob_cols(
     n_rows, n_cols = X_csr.shape
     row_deg = (X_csr.indptr[1:] - X_csr.indptr[:-1]).astype(np.int64, copy=False)
     N = int(row_deg.sum())
-    _check_direct_output_memory(
-        (int(n_rows), int(n_cols)),
-        N,
-        model="FE",
-        memory_mb=memory_mb,
-        index_extent=int(n_cols),
-    )
     
     indptr = np.empty(n_rows + 1, dtype=_sparse_indptr_dtype(N))
     indptr[0] = 0
@@ -835,7 +731,6 @@ def fe_fixed_rows_equiprob_cols(
             indices,
             rng,
             sort_within_entity=bool(sort_indices),
-            memory_mb=memory_mb,
             debug_callback=debug_callback,
             debug_label="FE",
         )
@@ -850,7 +745,6 @@ def ef_equiprob_rows_fixed_cols(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
-    memory_mb: Optional[float] = None,
     debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
@@ -860,13 +754,6 @@ def ef_equiprob_rows_fixed_cols(
     n_rows, n_cols = X_csc.shape
     col_deg = (X_csc.indptr[1:] - X_csc.indptr[:-1]).astype(np.int64, copy=False)
     N = int(col_deg.sum())
-    _check_direct_output_memory(
-        (int(n_cols), int(n_rows)),
-        N,
-        model="EF",
-        memory_mb=memory_mb,
-        index_extent=int(n_rows),
-    )
     
     indptr = np.empty(n_cols + 1, dtype=_sparse_indptr_dtype(N))
     indptr[0] = 0
@@ -884,7 +771,6 @@ def ef_equiprob_rows_fixed_cols(
             indices,
             rng,
             sort_within_entity=bool(sort_indices),
-            memory_mb=memory_mb,
             debug_callback=debug_callback,
             debug_label="EF",
         )
@@ -899,7 +785,6 @@ def ee_equiprobable(
     n_reps: int,
     random_state: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
-    memory_mb: Optional[float] = None,
     debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
     """
@@ -909,13 +794,6 @@ def ee_equiprobable(
     N = int(X_csr.nnz)
     n_cells = int(n_rows) * int(n_cols)
     _check_linear_population_size(n_cells)
-    _check_direct_output_memory(
-        (n_rows, n_cols),
-        N,
-        model="EE",
-        memory_mb=memory_mb,
-        index_extent=n_cols,
-    )
     rng = _rng_from_state(random_state)
     
     if N == 0 or n_cells == 0:
@@ -961,7 +839,7 @@ class DirectNullSampler:
     Each call to sample() produces an independent replicate stream controlled by seed.
     """
 
-    __slots__ = ("X", "model", "sort_indices", "default_random_state", "memory_mb", "debug_callback")
+    __slots__ = ("X", "model", "sort_indices", "default_random_state", "debug_callback")
 
     def __init__(
         self,
@@ -970,14 +848,12 @@ class DirectNullSampler:
         *,
         sort_indices: bool,
         default_random_state: Optional[int | np.random.Generator],
-        memory_mb: Optional[float],
         debug_callback=None,
     ):
         self.X = X
         self.model = str(model).upper()
         self.sort_indices = bool(sort_indices)
         self.default_random_state = default_random_state
-        self.memory_mb = _normalise_memory_mb(memory_mb)
         self.debug_callback = debug_callback
 
     def sample(self, n_reps: int, *, seed: Optional[int] = None) -> Iterable[sp.csr_matrix]:
@@ -993,7 +869,6 @@ class DirectNullSampler:
                 n_reps,
                 random_state=eff_state,
                 sort_indices=self.sort_indices,
-                memory_mb=self.memory_mb,
                 debug_callback=self.debug_callback,
             )
 
@@ -1003,7 +878,6 @@ class DirectNullSampler:
                 n_reps,
                 random_state=eff_state,
                 sort_indices=self.sort_indices,
-                memory_mb=self.memory_mb,
                 debug_callback=self.debug_callback,
             )
 
@@ -1013,7 +887,6 @@ class DirectNullSampler:
                 n_reps,
                 random_state=eff_state,
                 sort_indices=self.sort_indices,
-                memory_mb=self.memory_mb,
                 debug_callback=self.debug_callback,
             )
 
@@ -1148,7 +1021,6 @@ def make_null_sampler(
     sort_indices: bool = False,
     burn_q=None,
     burn_every: int = 0,
-    memory_mb: Optional[float] = None,
     debug_callback=None,
 ) -> NullSampler:
     """
@@ -1187,7 +1059,6 @@ def make_null_sampler(
             model_u,
             sort_indices=sort_indices,
             default_random_state=random_state,
-            memory_mb=memory_mb,
             debug_callback=debug_callback,
         )
 
@@ -1198,7 +1069,6 @@ def make_null_sampler(
             model_u,
             sort_indices=sort_indices,
             default_random_state=random_state,
-            memory_mb=memory_mb,
             debug_callback=debug_callback,
         )
 
@@ -1394,7 +1264,6 @@ def _worker_init_wrap(
     burn_q,
     burn_every: int,
     seed_q,
-    memory_mb: Optional[float],
 ) -> None:
     """
     Build the per-process null sampler and initialise statistic-function globals.
@@ -1433,7 +1302,6 @@ def _worker_init_wrap(
         sort_indices=bool(sort_indices),
         burn_q=_G_burn_q if model_u == "FF" else None,
         burn_every=_G_burn_every if model_u == "FF" else 0,
-        memory_mb=memory_mb,
     )
 
 
@@ -1567,7 +1435,6 @@ def parallel_null_reduce_vector(
     steps_per_rep: Optional[int] = None,
     mp_start: str = "fork",
     progress_every: int = 1,
-    memory_mb: Optional[float] = None,
     **init_kwargs,
 ) -> dict:
     """
@@ -1596,7 +1463,6 @@ def parallel_null_reduce_vector(
    
    
     model_u = str(model).upper()
-    memory_mb = _normalise_memory_mb(memory_mb)
     
     chunk_n = int(progress_every) if progress_every and progress_every > 0 else 50
     chunk_n = max(1, chunk_n)
@@ -1677,7 +1543,6 @@ def parallel_null_reduce_vector(
             burn_q,
             burn_every,
             seed_q,
-            memory_mb,
         ),
     ) as pool:
     
