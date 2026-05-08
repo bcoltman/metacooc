@@ -25,11 +25,11 @@ def _best_mp_start() -> str:
     methods = mp.get_all_start_methods()
     return "fork" if "fork" in methods else "spawn"
     
-def _rng_from_state(random_state: Optional[int | np.random.Generator]) -> np.random.Generator:
+def _rng_from_seed(seed: Optional[int | np.random.Generator]) -> np.random.Generator:
     """
     Return a NumPy Generator from an integer seed or an existing Generator.
     """
-    return random_state if isinstance(random_state, np.random.Generator) else np.random.default_rng(random_state)
+    return seed if isinstance(seed, np.random.Generator) else np.random.default_rng(seed)
 
 
 def _record_debug_event(_debug_callback, **event) -> None:
@@ -704,7 +704,7 @@ def _csr_from_linear_ids(
 def fe_fixed_rows_equiprob_cols(
     X_csr: sp.csr_matrix,
     n_reps: int,
-    random_state: Optional[int | np.random.Generator] = None,
+    seed: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
     _debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
@@ -720,7 +720,7 @@ def fe_fixed_rows_equiprob_cols(
     np.cumsum(row_deg, dtype=indptr.dtype, out=indptr[1:])
     
     data = np.ones(N, dtype=_OUT_DTYPE)
-    rng = _rng_from_state(random_state)
+    rng = _rng_from_seed(seed)
     
     for _ in range(int(n_reps)):
         indices = np.empty(N, dtype=_sparse_indices_dtype(n_cols))
@@ -743,7 +743,7 @@ def fe_fixed_rows_equiprob_cols(
 def ef_equiprob_rows_fixed_cols(
     X_csc: sp.csc_matrix,
     n_reps: int,
-    random_state: Optional[int | np.random.Generator] = None,
+    seed: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
     _debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
@@ -760,7 +760,7 @@ def ef_equiprob_rows_fixed_cols(
     np.cumsum(col_deg, dtype=indptr.dtype, out=indptr[1:])
     
     data = np.ones(N, dtype=_OUT_DTYPE)
-    rng = _rng_from_state(random_state)
+    rng = _rng_from_seed(seed)
     
     for _ in range(int(n_reps)):
         indices = np.empty(N, dtype=_sparse_indices_dtype(n_rows))
@@ -783,7 +783,7 @@ def ef_equiprob_rows_fixed_cols(
 def ee_equiprobable(
     X_csr: sp.csr_matrix,
     n_reps: int,
-    random_state: Optional[int | np.random.Generator] = None,
+    seed: Optional[int | np.random.Generator] = None,
     sort_indices: bool = False,
     _debug_callback=None,
 ) -> Iterable[sp.csr_matrix]:
@@ -794,7 +794,7 @@ def ee_equiprobable(
     N = int(X_csr.nnz)
     n_cells = int(n_rows) * int(n_cols)
     _check_linear_population_size(n_cells)
-    rng = _rng_from_state(random_state)
+    rng = _rng_from_seed(seed)
     
     if N == 0 or n_cells == 0:
         for _ in range(int(n_reps)):
@@ -839,7 +839,7 @@ class DirectNullSampler:
     Each call to sample() produces an independent replicate stream controlled by seed.
     """
 
-    __slots__ = ("X", "model", "sort_indices", "default_random_state", "_debug_callback")
+    __slots__ = ("X", "model", "sort_indices", "default_seed", "_debug_callback")
 
     def __init__(
         self,
@@ -847,13 +847,13 @@ class DirectNullSampler:
         model: str,
         *,
         sort_indices: bool,
-        default_random_state: Optional[int | np.random.Generator],
+        default_seed: Optional[int | np.random.Generator],
         _debug_callback=None,
     ):
         self.X = X
         self.model = str(model).upper()
         self.sort_indices = bool(sort_indices)
-        self.default_random_state = default_random_state
+        self.default_seed = default_seed
         self._debug_callback = _debug_callback
 
     def sample(self, n_reps: int, *, seed: Optional[int] = None) -> Iterable[sp.csr_matrix]:
@@ -861,13 +861,13 @@ class DirectNullSampler:
         if n_reps <= 0:
             return iter(())
 
-        eff_state = self.default_random_state if seed is None else int(seed)
+        eff_seed = self.default_seed if seed is None else int(seed)
 
         if self.model == "FE":
             return fe_fixed_rows_equiprob_cols(
                 self.X,
                 n_reps,
-                random_state=eff_state,
+                seed=eff_seed,
                 sort_indices=self.sort_indices,
                 _debug_callback=self._debug_callback,
             )
@@ -876,7 +876,7 @@ class DirectNullSampler:
             return ef_equiprob_rows_fixed_cols(
                 self.X,
                 n_reps,
-                random_state=eff_state,
+                seed=eff_seed,
                 sort_indices=self.sort_indices,
                 _debug_callback=self._debug_callback,
             )
@@ -885,7 +885,7 @@ class DirectNullSampler:
             return ee_equiprobable(
                 self.X,
                 n_reps,
-                random_state=eff_state,
+                seed=eff_seed,
                 sort_indices=self.sort_indices,
                 _debug_callback=self._debug_callback,
             )
@@ -1011,7 +1011,7 @@ def make_null_sampler(
     X: sp.spmatrix,
     model: SIMMODEL,
     *,
-    random_state: Optional[int | np.random.Generator] = None,
+    seed: Optional[int | np.random.Generator] = None,
     prepared: bool = False,
     copy: bool = True,
     burn_in_steps: Optional[int] = None,
@@ -1038,7 +1038,7 @@ def make_null_sampler(
             Xp = X.copy() if copy else X
 
         burn, steps = _ff_defaults(Xp.shape, burn_in_steps, steps_per_rep)
-        rng = _rng_from_state(random_state)
+        rng = _rng_from_seed(seed)
 
         return FFCurveballSampler(
             Xp,
@@ -1056,7 +1056,7 @@ def make_null_sampler(
             Xp,
             model_u,
             sort_indices=sort_indices,
-            default_random_state=random_state,
+            default_seed=seed,
             _debug_callback=_debug_callback,
         )
 
@@ -1066,7 +1066,7 @@ def make_null_sampler(
             Xp,
             model_u,
             sort_indices=sort_indices,
-            default_random_state=random_state,
+            default_seed=seed,
             _debug_callback=_debug_callback,
         )
 
@@ -1302,7 +1302,7 @@ def _worker_init_wrap(
     _G_sampler = make_null_sampler(
         X,
         model_u,
-        random_state=(chain_seed if model_u == "FF" else None),
+        seed=(chain_seed if model_u == "FF" else None),
         prepared=True,
         copy=False,
         burn_in_steps=burn_in_steps,

@@ -26,7 +26,7 @@ def _sample_one(X, model, seed=11):
     sampler = make_null_sampler(
         X,
         model,
-        random_state=seed,
+        seed=seed,
         burn_in_steps=2,
         steps_per_rep=2,
         sort_indices=True,
@@ -95,7 +95,7 @@ def test_direct_samplers_have_no_duplicate_support_when_unsorted(raw_ingredients
     X = raw_ingredients.presence_matrix
 
     for model in ("FE", "EF", "EE"):
-        sampler = make_null_sampler(X, model, random_state=123, sort_indices=False)
+        sampler = make_null_sampler(X, model, seed=123, sort_indices=False)
         Y = next(iter(sampler.sample(1, seed=123)))
         coo = Y.tocoo()
         support = np.column_stack((coo.row, coo.col))
@@ -122,7 +122,7 @@ def test_ee_small_matrix_support_frequencies_are_uniform():
         (np.ones(2, dtype=np.int8), ([0, 1], [0, 2])),
         shape=(2, 3),
     )
-    sampler = make_null_sampler(X, "EE", random_state=5, sort_indices=True)
+    sampler = make_null_sampler(X, "EE", seed=5, sort_indices=True)
     n_reps = 12_000
     counts = Counter()
 
@@ -184,7 +184,7 @@ def test_ff_sampler_streams_mutable_snapshots(raw_ingredients):
     sampler = make_null_sampler(
         raw_ingredients.presence_matrix,
         "FF",
-        random_state=123,
+        seed=123,
         burn_in_steps=0,
         steps_per_rep=1,
         sort_indices=True,
@@ -200,7 +200,7 @@ def test_direct_sampler_snapshots_do_not_alias(raw_ingredients):
     sampler = make_null_sampler(
         raw_ingredients.presence_matrix,
         "FE",
-        random_state=123,
+        seed=123,
         sort_indices=True,
     )
     stream = iter(sampler.sample(2))
