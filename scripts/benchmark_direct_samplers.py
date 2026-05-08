@@ -378,7 +378,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--ee-variant",
         action="append",
         choices=EE_VARIANTS,
-        default=["auto"],
+        default=None,
         help=(
             "EE implementation variant to benchmark. Repeat for multiple variants. "
             "Use with --model EE to compare EE variants directly."
@@ -396,6 +396,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.scenario is None:
         args.scenario = ["ingredients"] if args.ingredients else ["fixture"]
+    if args.ee_variant is None:
+        args.ee_variant = ["auto"]
     if "ingredients" in args.scenario and not args.ingredients:
         raise SystemExit("--scenario ingredients requires --ingredients PATH")
 

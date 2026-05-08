@@ -997,7 +997,7 @@ def _sample_ee_ids(
 
     effective_strategy = strategy
     if effective_strategy == "auto":
-        effective_strategy = "legacy"
+        effective_strategy = "numpy-choice" if density <= 0.01 else "legacy"
 
     if n_missing < n_draw and (missing_density <= 0.20 or n_missing <= small_population_entries):
         if effective_strategy == "numpy-choice":
