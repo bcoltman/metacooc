@@ -1,22 +1,113 @@
 #structure.py
+import os
+import warnings
+
 import numpy as np
 import scipy.sparse as sp
 import pandas as pd
 
-from metacooc.utils import stream_csr_upper_threshold
 from metacooc.null_models import (
+    _best_mp_start,
     parallel_null_reduce_vector,
     stat_fn_structure_metrics,
-    _best_mp_start
 )
 
-from metacooc.pantry import load_ingredients
-
-import os 
+from metacooc.pantry import load_ingredients, presence_for_counts
 
 
-def _nodf_sum_from_overlap(
-    O: sp.csr_matrix,
+_LARGE_STRUCTURE_PAIR_WARNING = 100_000_000
+
+
+def _warn_if_large_structure_matrix(X: sp.spmatrix, chunk_rows: int) -> None:
+    n_rows, n_cols = X.shape
+    row_pairs = n_rows * (n_rows - 1) // 2
+    col_pairs = n_cols * (n_cols - 1) // 2
+    if max(row_pairs, col_pairs) < _LARGE_STRUCTURE_PAIR_WARNING:
+        return
+
+    warnings.warn(
+        "Structure metrics use bounded-memory blocking controlled by "
+        f"chunk_rows={int(chunk_rows)}, but runtime may be substantial for "
+        f"{n_rows} taxa x {n_cols} samples.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+
+def _check_chunk_rows(chunk_rows: int) -> int:
+    chunk_rows = int(chunk_rows)
+    if chunk_rows <= 0:
+        raise ValueError("chunk_rows must be a positive integer")
+    return chunk_rows
+
+
+def _iter_upper_overlap_blocks(
+    X: sp.csr_matrix,
+    chunk_rows: int,
+):
+    """
+    Yield strict upper-triangle entries from X @ X.T one row block at a time.
+
+    The full overlap matrix is never materialized; each yielded block is backed
+    only by the sparse product for X[start:end] @ X.T.
+    """
+    chunk_rows = _check_chunk_rows(chunk_rows)
+    n_rows = X.shape[0]
+    if n_rows < 2:
+        return
+
+    XT = X.T.tocsr(copy=False)
+    index_dtype = np.result_type(X.indices.dtype, np.int64)
+
+    for r0 in range(0, n_rows, chunk_rows):
+        r1 = min(r0 + chunk_rows, n_rows)
+        block = (X[r0:r1, :] @ XT).tocsr(copy=False)
+        block.eliminate_zeros()
+
+        indptr = block.indptr
+        indices = block.indices
+        data = block.data
+
+        total_keep = 0
+        for local_i in range(r1 - r0):
+            global_i = r0 + local_i
+            start = indptr[local_i]
+            end = indptr[local_i + 1]
+            if start == end:
+                continue
+            total_keep += int(np.count_nonzero(indices[start:end] > global_i))
+
+        if total_keep == 0:
+            continue
+
+        rows = np.empty(total_keep, dtype=index_dtype)
+        cols = np.empty(total_keep, dtype=index_dtype)
+        vals = np.empty(total_keep, dtype=data.dtype)
+
+        pos = 0
+        for local_i in range(r1 - r0):
+            global_i = r0 + local_i
+            start = indptr[local_i]
+            end = indptr[local_i + 1]
+            if start == end:
+                continue
+
+            block_cols = indices[start:end]
+            keep = block_cols > global_i
+            k = int(np.count_nonzero(keep))
+            if k == 0:
+                continue
+
+            rows[pos:pos + k] = global_i
+            cols[pos:pos + k] = block_cols[keep]
+            vals[pos:pos + k] = data[start:end][keep]
+            pos += k
+
+        yield rows, cols, vals
+
+
+def _nodf_sum_from_blocks(
+    X: sp.csr_matrix,
     deg: np.ndarray,
     chunk_rows: int = 50_000,
 ) -> tuple[float, int]:
@@ -29,7 +120,7 @@ def _nodf_sum_from_overlap(
     total = 0.0
     pairs = 0
 
-    for i, j, ov in stream_csr_upper_threshold(O, threshold=0.0, chunk_rows=chunk_rows):
+    for i, j, ov in _iter_upper_overlap_blocks(X, chunk_rows=chunk_rows):
         ov = ov.astype(np.float64, copy=False)
         dj = deg[j]
         valid = (deg[i] > dj) & (dj > 0)
@@ -45,26 +136,30 @@ def compute_nodf_streamed(
     chunk_rows: int = 50_000,
 ) -> float:
     """
-    Exact NODF with streamed *processing* (no COO conversion).
-    Still requires forming overlap matrices (X@X.T and X.T@X).
+    Exact NODF with bounded-memory blocked overlap reductions.
     Returns 0..100 scale.
     """
 
+    X = presence_for_counts(X).tocsr(copy=True)
+    X.eliminate_zeros()
+    X.sum_duplicates()
+    X.sort_indices()
     n_rows, n_cols = X.shape
-    # if n_rows < 2 and n_cols < 2:
     if n_rows < 2 or n_cols < 2:
         return np.nan
         
     # row part
     row_deg = np.diff(X.indptr)
-    Or = (X @ X.T).tocsr(copy=False)
-    nodf_rows_sum, row_pairs = _nodf_sum_from_overlap(Or, row_deg, chunk_rows=chunk_rows)
+    nodf_rows_sum, row_pairs = _nodf_sum_from_blocks(X, row_deg, chunk_rows=chunk_rows)
     
     # col part
-    Xc = X.tocsc(copy=False)
-    col_deg = np.diff(Xc.indptr)
-    Oc = (Xc.T @ Xc).tocsr(copy=False)
-    nodf_cols_sum, col_pairs = _nodf_sum_from_overlap(Oc, col_deg, chunk_rows=chunk_rows)
+    X_by_col = X.T.tocsr(copy=False)
+    col_deg = np.diff(X_by_col.indptr)
+    nodf_cols_sum, col_pairs = _nodf_sum_from_blocks(
+        X_by_col,
+        col_deg,
+        chunk_rows=chunk_rows,
+    )
     
     total_pairs = row_pairs + col_pairs
     if total_pairs == 0:
@@ -84,6 +179,10 @@ def compute_c_score(X: sp.spmatrix, chunk_rows: int = 50_000) -> float:
     Returns mean C-score across all i<j taxa pairs, or np.nan if undefined.
     """
     
+    X = presence_for_counts(X).tocsr(copy=True)
+    X.eliminate_zeros()
+    X.sum_duplicates()
+    X.sort_indices()
     R = np.diff(X.indptr).astype(np.float64, copy=False)
     n_taxa = R.size
     if n_taxa < 2:
@@ -94,14 +193,11 @@ def compute_c_score(X: sp.spmatrix, chunk_rows: int = 50_000) -> float:
     sum_R2 = np.square(R).sum()
     total_RiRj = (sum_R * sum_R - sum_R2) / 2.0
     
-    # Overlap matrix among taxa
-    S = (X @ X.T).tocsr(copy=False)
-    
-    # We need sum_{i<j} S_ij*(R_i+R_j) and sum_{i<j} S_ij^2 over nonzero S_ij only
+    # We need sum_{i<j} S_ij*(R_i+R_j) and sum_{i<j} S_ij^2.
     Sij_Rsum = 0.0
     Sij_sqsum = 0.0
     
-    for i, j, sij in stream_csr_upper_threshold(S, threshold=0.0, chunk_rows=chunk_rows):
+    for i, j, sij in _iter_upper_overlap_blocks(X, chunk_rows=chunk_rows):
         sij = sij.astype(np.float64, copy=False)
         Sij_Rsum  += float(np.sum(sij * (R[i] + R[j])))
         Sij_sqsum += float(np.sum(sij * sij))
@@ -121,6 +217,10 @@ def mean_jaccard_dot(X: sp.spmatrix, chunk_rows: int = 50_000) -> float:
         mean_{i<j} |Ti∩Tj| / |Ti∪Tj|
     """
     
+    X = presence_for_counts(X).tocsr(copy=True)
+    X.eliminate_zeros()
+    X.sum_duplicates()
+    X.sort_indices()
     deg_all = np.diff(X.indptr).astype(np.int64, copy=False)
     nonempty = deg_all > 0
     n = int(nonempty.sum())
@@ -133,11 +233,8 @@ def mean_jaccard_dot(X: sp.spmatrix, chunk_rows: int = 50_000) -> float:
 
     total_pairs = n * (n - 1) / 2.0
 
-    # intersections
-    S = (X @ X.T).tocsr(copy=False)
-
     total = 0.0
-    for i, j, inter in stream_csr_upper_threshold(S, threshold=0.0, chunk_rows=chunk_rows):
+    for i, j, inter in _iter_upper_overlap_blocks(X, chunk_rows=chunk_rows):
         inter = inter.astype(np.float64, copy=False)
         union = deg[i] + deg[j] - inter
         m = union > 0
@@ -245,10 +342,11 @@ def _structure_core(
     pd.DataFrame with one row per metric. If compute_null, attaches null summary columns.
     """
     # --- observed matrix (CSR, normalised once) ---
-    X_obs = ingredients.presence_matrix.tocsr()
+    X_obs = presence_for_counts(ingredients).tocsr()
     X_obs.eliminate_zeros()
     X_obs.sum_duplicates()
     X_obs.sort_indices()
+    _warn_if_large_structure_matrix(X_obs, chunk_rows=int(chunk_rows))
     
     # ---- observed metrics ----
     rows: list[dict] = []

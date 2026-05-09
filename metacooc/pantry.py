@@ -23,6 +23,11 @@ from metacooc.utils import (
 )
 
 
+def presence_for_counts(obj):
+    X = obj.presence_matrix if hasattr(obj, "presence_matrix") else obj
+    return X.astype(np.int32, copy=False)
+
+
 class Ingredients:
     """
     Container for metagenomic data with sparse matrices.

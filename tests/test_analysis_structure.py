@@ -1,9 +1,75 @@
 from __future__ import annotations
 
 import numpy as np
+import scipy.sparse as sp
 
 from metacooc.analysis import association_obj, cooccurrence_obj
-from metacooc.structure import _structure_core, structure_obj
+from metacooc.structure import (
+    _structure_core,
+    compute_c_score,
+    compute_nodf_streamed,
+    mean_jaccard_dot,
+    structure_obj,
+)
+
+
+def _reference_c_score(X):
+    X = X.tocsr()
+    R = np.diff(X.indptr).astype(float)
+    n_taxa = R.size
+    if n_taxa < 2:
+        return np.nan
+
+    S = (X @ X.T).toarray()
+    vals = []
+    for i in range(n_taxa):
+        for j in range(i + 1, n_taxa):
+            vals.append((R[i] - S[i, j]) * (R[j] - S[i, j]))
+    return float(np.mean(vals))
+
+
+def _reference_mean_jaccard(X):
+    X = X.tocsr()
+    deg_all = np.diff(X.indptr)
+    keep = deg_all > 0
+    if int(keep.sum()) < 2:
+        return np.nan
+
+    X = X[keep, :].tocsr()
+    deg = np.diff(X.indptr).astype(float)
+    S = (X @ X.T).toarray()
+    vals = []
+    for i in range(X.shape[0]):
+        for j in range(i + 1, X.shape[0]):
+            union = deg[i] + deg[j] - S[i, j]
+            vals.append(0.0 if union <= 0 else S[i, j] / union)
+    return float(np.mean(vals))
+
+
+def _reference_nodf_for_orientation(X):
+    X = X.tocsr()
+    deg = np.diff(X.indptr).astype(float)
+    S = (X @ X.T).toarray()
+    total = 0.0
+    pairs = 0
+    for i in range(X.shape[0]):
+        for j in range(i + 1, X.shape[0]):
+            if S[i, j] > 0 and deg[i] > deg[j] > 0:
+                total += (S[i, j] / deg[j]) * 100.0
+                pairs += 1
+    return total, pairs
+
+
+def _reference_nodf(X):
+    X = X.tocsr()
+    if X.shape[0] < 2 or X.shape[1] < 2:
+        return np.nan
+    row_total, row_pairs = _reference_nodf_for_orientation(X)
+    col_total, col_pairs = _reference_nodf_for_orientation(X.T.tocsr())
+    pairs = row_pairs + col_pairs
+    if pairs == 0:
+        return np.nan
+    return float((row_total + col_total) / pairs)
 
 
 def test_association_obj_fe_and_ee(raw_ingredients):
@@ -143,6 +209,68 @@ def test_structure_obj_observed_only(raw_ingredients):
     out = structure_obj(raw_ingredients, compute_null=False)
     assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
     assert "obs" in out.columns
+
+
+def test_blocked_structure_metrics_match_full_reference():
+    X = sp.csr_matrix(
+        np.array(
+            [
+                [1, 1, 1, 0, 0],
+                [1, 1, 0, 0, 0],
+                [0, 0, 1, 1, 0],
+                [0, 0, 0, 0, 0],
+                [1, 0, 0, 1, 1],
+            ],
+            dtype=np.int32,
+        )
+    )
+
+    assert np.isclose(compute_c_score(X, chunk_rows=1), _reference_c_score(X))
+    assert np.isclose(mean_jaccard_dot(X, chunk_rows=1), _reference_mean_jaccard(X))
+    assert np.isclose(compute_nodf_streamed(X, chunk_rows=1), _reference_nodf(X))
+
+    assert np.isclose(compute_c_score(X, chunk_rows=2), _reference_c_score(X))
+    assert np.isclose(mean_jaccard_dot(X, chunk_rows=2), _reference_mean_jaccard(X))
+    assert np.isclose(compute_nodf_streamed(X, chunk_rows=2), _reference_nodf(X))
+
+
+def test_blocked_structure_metrics_degenerate_inputs():
+    assert np.isnan(
+        compute_c_score(sp.csr_matrix([[1, 0, 1]], dtype=np.int32), chunk_rows=1)
+    )
+    assert np.isnan(
+        mean_jaccard_dot(
+            sp.csr_matrix([[0, 0], [1, 0]], dtype=np.int32),
+            chunk_rows=1,
+        )
+    )
+    assert np.isnan(
+        compute_nodf_streamed(
+            sp.csr_matrix([[1], [0], [1]], dtype=np.int32),
+            chunk_rows=1,
+        )
+    )
+    assert np.isnan(
+        compute_nodf_streamed(
+            sp.csr_matrix((0, 3), dtype=np.int32),
+            chunk_rows=1,
+        )
+    )
+
+
+def test_structure_core_uses_blocked_metrics(raw_ingredients):
+    out = _structure_core(raw_ingredients, compute_null=False, chunk_rows=7)
+    X = raw_ingredients.presence_matrix
+    expected = {
+        "c_score": compute_c_score(X, chunk_rows=7),
+        "mean_jaccard": mean_jaccard_dot(X, chunk_rows=7),
+        "nodf": compute_nodf_streamed(X, chunk_rows=7),
+    }
+
+    assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
+    for metric, value in expected.items():
+        observed = out.loc[out["metric"] == metric, "obs"].item()
+        assert np.isclose(observed, value)
 
 
 def test_structure_core_all_null_models(raw_ingredients):
