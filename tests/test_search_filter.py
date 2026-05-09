@@ -4,13 +4,14 @@ import pytest
 
 from metacooc.filter import filter_data, filter_data_obj
 from metacooc.pantry import load_ingredients
-from metacooc.search import search_data_obj
+from metacooc.search import search_data_obj, search_in_metadata
 
 
 SOIL_SAMPLES = {f"S{i:03d}" for i in range(1, 51)}
 RHIZO_HITS = {f"S{i:03d}" for i in range(1, 61)}
 MICRO_HITS = {f"S{i:03d}" for i in range(25, 76)}
 RHIZO_MICRO_HITS = RHIZO_HITS & MICRO_HITS
+MARINE_SAMPLES = {f"S{i:03d}" for i in range(51, 101)}
 
 
 def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
@@ -50,6 +51,111 @@ def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
         column_names=["env_biome_sam"],
     )
     assert metadata_hits == SOIL_SAMPLES
+
+
+def test_metadata_search_python_backend(monkeypatch, metadata_file):
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "python")
+
+    assert search_in_metadata(
+        str(metadata_file),
+        "SOIL",
+        column_names=["env_biome_sam"],
+    ) == SOIL_SAMPLES
+    assert search_in_metadata(
+        str(metadata_file),
+        "soil",
+        column_names=["env_biome_sam"],
+        inverse=True,
+    ) == MARINE_SAMPLES
+
+
+def test_metadata_search_auto_falls_back_to_python(monkeypatch, metadata_file):
+    import metacooc.search as search
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "auto")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: None)
+
+    hits = search_data_obj(
+        search_mode="metadata",
+        search_string="soil",
+        metadata_file=str(metadata_file),
+        column_names=["env_biome_sam"],
+    )
+
+    assert hits == SOIL_SAMPLES
+
+
+def test_metadata_search_auto_falls_back_when_external_probe_fails(
+    monkeypatch, metadata_file
+):
+    import metacooc.search as search
+
+    class FailedProbe:
+        returncode = 2
+        stdout = ""
+        stderr = "probe failed"
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "auto")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(search.subprocess, "run", lambda *args, **kwargs: FailedProbe())
+    monkeypatch.setattr(search, "_EXTERNAL_METADATA_SEARCH_PROBE", {})
+
+    hits = search_data_obj(
+        search_mode="metadata",
+        search_string="soil",
+        metadata_file=str(metadata_file),
+        column_names=["env_biome_sam"],
+    )
+
+    assert hits == SOIL_SAMPLES
+
+
+def test_metadata_search_forced_external_missing_tools_raises(monkeypatch, metadata_file):
+    import metacooc.search as search
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "external")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: None)
+
+    with pytest.raises(RuntimeError, match="required tool"):
+        search_in_metadata(
+            str(metadata_file),
+            "soil",
+            column_names=["env_biome_sam"],
+        )
+
+
+def test_metadata_search_forced_external_probe_failure_raises(
+    monkeypatch, metadata_file
+):
+    import metacooc.search as search
+
+    class FailedProbe:
+        returncode = 2
+        stdout = ""
+        stderr = "probe failed"
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "external")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(search.subprocess, "run", lambda *args, **kwargs: FailedProbe())
+    monkeypatch.setattr(search, "_EXTERNAL_METADATA_SEARCH_PROBE", {})
+
+    with pytest.raises(RuntimeError, match="probe failed"):
+        search_in_metadata(
+            str(metadata_file),
+            "soil",
+            column_names=["env_biome_sam"],
+        )
+
+
+def test_metadata_search_invalid_backend_raises(monkeypatch, metadata_file):
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "bad")
+
+    with pytest.raises(ValueError, match="METACOOC_METADATA_SEARCH_BACKEND"):
+        search_in_metadata(
+            str(metadata_file),
+            "soil",
+            column_names=["env_biome_sam"],
+        )
 
 
 def test_focal_lhs_rhs_query_resolution(raw_ingredients):
