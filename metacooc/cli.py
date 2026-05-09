@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-from pathlib import Path
 
-# Constants
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA_DIR = BASE_DIR / "data"
-DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+from metacooc._paths import DATA_DIR_ENV_VAR, default_data_dir
 
 RANK_CHOICES = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 NULL_SCOPE_CHOICES = ["biome", "taxa", "metadata", "biome_taxa", "metadata_taxa"]
@@ -81,9 +77,13 @@ def check_required_args(args, required_args, subparser):
 
 # Argument group helpers
 def add_data_dir(parser, group=None):
+    default = str(default_data_dir())
     kwargs = {
-        "default": DEFAULT_DATA_DIR,
-        "help": "Directory containing data files (default: %(default)s)",
+        "default": default,
+        "help": (
+            "Directory containing data files (default: %(default)s; "
+            f"overridden by ${DATA_DIR_ENV_VAR})"
+        ),
     }
     (group or parser).add_argument("--data_dir", **kwargs)
 

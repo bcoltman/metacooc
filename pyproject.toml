@@ -20,6 +20,7 @@ dependencies = [
     "matplotlib",
 	"requests",
 	"pyarrow",
+    "platformdirs",
     "tqdm"
 ]
 keywords = ["metagenomics","co-occurrence","bioinformatics"]
