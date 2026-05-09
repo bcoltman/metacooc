@@ -49,7 +49,7 @@ pip install -e .
 
 ## Data and download
 
-MetaCoOc uses prebuilt datasets hosted on **Zenodo**. Currently, the data release is available as **two Sandpiper database variants**:
+MetaCoOc uses prebuilt datasets hosted on **Zenodo**. The current compatible data release is `2.0.0`, hosted in Zenodo record `20096010`, and is available as **two Sandpiper database variants**:
 
 * `gtdb` — SingleM generated taxonomic profiles based on **GTDB** genomes
 * `globdb` — SingleM generated taxonomic profiles based on **GlobDB** genomes
@@ -63,10 +63,12 @@ A complete version string must be:
 
 Examples:
 
-* `1.1.0_gtdb`
-* `1.1.0_globdb`
+* `2.0.0_gtdb`
+* `2.0.0_globdb`
 
 If no version is specified, MetaCoOc defaults to the latest available base release with the default variant (`gtdb`).
+The data-release version identifies the Zenodo-hosted Ingredients files and is separate from the MetaCoOc Python package version.
+Older data releases used earlier Ingredients storage formats and are not compatible with current MetaCoOc releases.
 
 ---
 
@@ -82,7 +84,7 @@ metacooc download
 
 MetaCoOc will:
 
-1. Use the **latest available version** (e.g. `1.1.0_gtdb`)
+1. Use the **latest available version** (e.g. `2.0.0_gtdb`)
 2. Download all required files
 3. Install them into the default user data directory for your operating system
 
@@ -106,17 +108,17 @@ After the files are downloaded, all subsequent analyses reuse the local copies.
 For a version such as:
 
 ```
-1.1.0_gtdb
+2.0.0_gtdb
 ```
 
-The following files are retrieved from Zenodo and decompressed locally:
+The following files are retrieved from Zenodo and installed locally:
 
 ##### Variant-specific
 
-* `ingredients_raw_1.1.0_gtdb.pkl`
-* `ingredients_aggregated_1.1.0_gtdb.pkl`
+* `ingredients_raw_2.0.0_gtdb/`
+* `ingredients_aggregated_2.0.0_gtdb/`
 
-These are prebuilt **Ingredients** objects containing presence/absence matrices and cached taxonomic lookups.
+These are prebuilt **Ingredients** directories containing sparse matrices, labels, manifests, biome annotations, and cached taxonomic lookups.
 
 ##### Ingredients: raw vs aggregated
 
@@ -132,14 +134,14 @@ In short:
 
 ##### Base-version shared files
 
-* `sra_metadata_1.1.0.tsv`
-* `sample_to_biome_1.1.0.tsv`
+* `sra_metadata_2.0.0.tsv`
 
-These are used for:
+This is used for:
 
 * metadata searches
-* biome classification
 * cohort construction
+
+Biome classification data are stored inside each Ingredients directory and referenced from its manifest, rather than downloaded as a separate shared file.
 
 ---
 
@@ -408,13 +410,13 @@ Most commands accept `--custom_ingredients` to bypass the default downloaded Ing
 metacooc association \
   --search_mode metadata \
   --search_string soil \
-  --custom_ingredients path/to/ingredients_raw_custom.pkl \
+  --custom_ingredients path/to/ingredients_raw_custom \
   --output_dir results/custom_assoc
 ```
 
 ### Notes on metadata
 
-MetaCoOc ships a parsed SRA metadata table (`sra_metadata_<base>.tsv`) and a `sample_to_biome_<base>.tsv` mapping for biome-level queries. If you build your own datasets, ensure these files are present (or adjust your workflow to use only taxon-based searches).
+MetaCoOc downloads a parsed SRA metadata table (`sra_metadata_<base>.tsv`) for metadata queries. Biome mappings are stored in Ingredients directories. If you build your own datasets, ensure the required metadata table and Ingredients biome mappings are present, or adjust your workflow to use only taxon-based searches.
 
 ---
 

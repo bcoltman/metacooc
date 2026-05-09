@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import importlib
 import subprocess
 import sys
 import multiprocessing as mp
@@ -33,11 +33,15 @@ def run_cli_no_check(*args, cwd=None):
 
 
 @pytest.mark.cli
-def test_cli_import_does_not_create_package_data_dir():
+def test_cli_import_does_not_create_package_data_dir(monkeypatch):
+    import pathlib
     import metacooc.cli as cli
 
-    package_data_dir = Path(cli.__file__).resolve().parent / "data"
-    assert not package_data_dir.exists()
+    def fail_mkdir(*args, **kwargs):
+        raise AssertionError("metacooc.cli should not create directories at import time")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", fail_mkdir)
+    importlib.reload(cli)
 
 
 @pytest.mark.cli
