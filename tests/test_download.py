@@ -67,7 +67,7 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w:gz") as tar:
         data = b'{"format_version": 1}\n'
-        info = tarfile.TarInfo("ingredients_raw_1.1.0_gtdb/manifest.json")
+        info = tarfile.TarInfo("ingredients_raw_2.0.0_gtdb/manifest.json")
         info.size = len(data)
         tar.addfile(info, io.BytesIO(data))
     archive_bytes = payload.getvalue()
@@ -76,8 +76,8 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
         download,
         "get_file_info",
         lambda version: (
-            {"ingredients_raw": "ingredients_raw_1.1.0_gtdb"},
-            {"ingredients_raw_1.1.0_gtdb.tar.gz": "https://example.test/raw.tar.gz"},
+            {"ingredients_raw": "ingredients_raw_2.0.0_gtdb"},
+            {"ingredients_raw_2.0.0_gtdb.tar.gz": "https://example.test/raw.tar.gz"},
         ),
     )
     monkeypatch.setattr(builtins, "input", lambda prompt: "y")
@@ -89,6 +89,7 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
 
     monkeypatch.setattr(download, "_download_stream", fake_download_stream)
 
-    download.download_data(tmp_path, data_version="1.1.0_gtdb")
+    download.download_data(tmp_path, data_version="2.0.0_gtdb")
 
-    assert (tmp_path / "ingredients_raw_1.1.0_gtdb" / "manifest.json").exists()
+    assert (tmp_path / "ingredients_raw_2.0.0_gtdb" / "manifest.json").exists()
+    assert not (tmp_path / "ingredients_raw_2.0.0_gtdb.tmp.tar.gz").exists()

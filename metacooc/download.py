@@ -7,10 +7,13 @@ Download initial data files for metacooc.
 This script downloads the following default files into the specified data directory:
     - ingredients_raw_<data_version>/
     - ingredients_aggregated_<data_version>/
-    - sra_metadata_<data_version>.tsv
+    - sra_metadata_<base_version>.tsv
 
-All download URLs point to gzip-compressed files. This script downloads each file
-to a temporary .gz file, unzips it, and then removes the temporary file.
+Ingredients are downloaded as .tar.gz archives, extracted to Ingredients
+directories, and the temporary archives are removed. Metadata files are
+downloaded as .gz files, decompressed, and the temporary files are removed.
+Biome annotations are stored inside each Ingredients directory manifest rather
+than downloaded as a separate file.
 Use the --force flag to re-download files even if they already exist.
 
 Usage (CLI):

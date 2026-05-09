@@ -9,10 +9,10 @@ DEFAULT_VARIANT = "gtdb"
 
 # Map *base* release -> Zenodo record id
 RELEASES = {
-    "1.1.0": "18245268",
+    "2.0.0": "20096010",
 }
 
-NO_LONGER_COMPATIBLE = ["1.0.1", "1.0.0", "0.3.0"]
+NO_LONGER_COMPATIBLE = ["1.1.0", "1.0.1", "1.0.0", "0.3.0"]
 
 
 def _semver_key(v: str) -> tuple[int, int, int]:
@@ -41,8 +41,6 @@ def describe_data_version(version: str) -> str:
     except ValueError:
         return str(version)
 
-    if variant == "globdb" and base == "1.1.0":
-        return f"{full_version} (GlobDB r226)"
     if variant == "globdb":
         return f"{full_version} (GlobDB)"
     if variant == "gtdb":
@@ -120,7 +118,7 @@ def missing_data_version_message(
 
 def _parse_version_strict(version: str) -> tuple[str, str, str]:
     """
-    Require a variant suffix: <base>_<variant>, e.g. 1.1.0_gtdb.
+    Require a variant suffix: <base>_<variant>, e.g. 2.0.0_gtdb.
     Returns (base_version, variant, full_version).
     """
     if "_" not in version:
@@ -163,14 +161,12 @@ def get_file_info(version: str):
         "ingredients_aggregated": f"ingredients_aggregated_{full_version}",
         # common (base only)
         "sra_metadata": f"sra_metadata_{base_version}.tsv",
-        "sample_to_biome": f"sample_to_biome_{base_version}.tsv",
     }
     
     download_urls = {
         filenames["ingredients_raw"] + ".tar.gz": f"{base_url}/{filenames['ingredients_raw']}.tar.gz?download=1",
         filenames["ingredients_aggregated"] + ".tar.gz": f"{base_url}/{filenames['ingredients_aggregated']}.tar.gz?download=1",
         filenames["sra_metadata"] + ".gz": f"{base_url}/{filenames['sra_metadata']}.gz?download=1",
-        filenames["sample_to_biome"] + ".gz": f"{base_url}/{filenames['sample_to_biome']}.gz?download=1",
     }
 
     return filenames, download_urls
