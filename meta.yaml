@@ -28,6 +28,7 @@ requirements:
     - matplotlib
     - requests
     - pyarrow
+    - platformdirs
 
 test:
   imports:

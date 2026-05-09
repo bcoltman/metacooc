@@ -63,6 +63,16 @@ def test_download_stream_writes_chunks_without_buffering_response(monkeypatch, t
     assert progress_updates == [3, 4, 1]
 
 
+def test_download_data_uses_default_data_dir(monkeypatch, tmp_path):
+    default_dir = tmp_path / "default-data"
+    monkeypatch.setattr(download, "default_data_dir", lambda: default_dir)
+    monkeypatch.setattr(download, "get_file_info", lambda version: ({}, {}))
+
+    download.download_data(data_dir=None, data_version="1.1.0_gtdb")
+
+    assert default_dir.exists()
+
+
 def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path):
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w:gz") as tar:
