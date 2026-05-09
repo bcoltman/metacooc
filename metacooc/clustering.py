@@ -2,6 +2,7 @@ import numpy as np
 from typing import Optional, Iterable, Tuple, List, Set
 from scipy.sparse.csgraph import connected_components
 
+from metacooc.pantry import presence_for_counts
 from metacooc.search import resolve_focal_taxa_queries
 
 def cluster_taxa(
@@ -50,7 +51,8 @@ def cluster_taxa(
         prior to clustering.
     """
     # 1) Sample × sample co-occurrence (shared taxa counts)
-    samp_coocc = ingredients._presence_matrix.T @ ingredients._presence_matrix
+    X = presence_for_counts(ingredients)
+    samp_coocc = X.T @ X
     samp_coocc.setdiag(0)
     
     # Count how many samples each sample overlaps with (shares ≥ threshold taxa)
@@ -68,7 +70,7 @@ def cluster_taxa(
         ingredients._clusters_cache = []
         ingredients._clusters_valid = True
         return []
-    matrix = ingredients._presence_matrix[: sample_mask]
+    matrix = X[:, sample_mask]
     
     # 3) Filter taxa by presence
     taxa_counts = np.array((matrix > 0).sum(axis=1)).flatten()
@@ -169,7 +171,7 @@ def determine_taxa_context(
     if min_shared_samples_between_taxa < 1:
         raise ValueError("min_shared_samples_between_taxa must be ≥ 1")
         
-    P = ingredients.presence_matrix  # CSR binary
+    P = presence_for_counts(ingredients)  # CSR binary counts-safe
     n_taxa, n_samples = P.shape
     
     focal_idx = _resolve_focal_taxa_indices(ingredients, focal_taxa)

@@ -57,11 +57,12 @@ def local_data_versions(data_dir: str | os.PathLike | None) -> list[str]:
     versions = set()
     prefixes = ("ingredients_raw_", "ingredients_aggregated_")
     for name in os.listdir(data_dir):
-        if not name.endswith(".pkl"):
+        path = os.path.join(data_dir, name)
+        if not os.path.isdir(path):
             continue
         for prefix in prefixes:
             if name.startswith(prefix):
-                version = name[len(prefix):-4]
+                version = name[len(prefix):]
                 try:
                     _parse_version_strict(version)
                 except ValueError:
@@ -158,16 +159,16 @@ def get_file_info(version: str):
     
     filenames = {
         # variant-specific
-        "ingredients_raw": f"ingredients_raw_{full_version}.pkl",
-        "ingredients_aggregated": f"ingredients_aggregated_{full_version}.pkl",
+        "ingredients_raw": f"ingredients_raw_{full_version}",
+        "ingredients_aggregated": f"ingredients_aggregated_{full_version}",
         # common (base only)
         "sra_metadata": f"sra_metadata_{base_version}.tsv",
         "sample_to_biome": f"sample_to_biome_{base_version}.tsv",
     }
     
     download_urls = {
-        filenames["ingredients_raw"]: f"{base_url}/{filenames['ingredients_raw']}.gz?download=1",
-        filenames["ingredients_aggregated"]: f"{base_url}/{filenames['ingredients_aggregated']}.gz?download=1",
+        filenames["ingredients_raw"] + ".tar.gz": f"{base_url}/{filenames['ingredients_raw']}.tar.gz?download=1",
+        filenames["ingredients_aggregated"] + ".tar.gz": f"{base_url}/{filenames['ingredients_aggregated']}.tar.gz?download=1",
         filenames["sra_metadata"] + ".gz": f"{base_url}/{filenames['sra_metadata']}.gz?download=1",
         filenames["sample_to_biome"] + ".gz": f"{base_url}/{filenames['sample_to_biome']}.gz?download=1",
     }

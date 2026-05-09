@@ -133,7 +133,15 @@ def add_tag_and_aggregated(parser, group=None):
 def add_custom_ingredients(parser, group=None):
     (group or parser).add_argument(
         "--custom_ingredients",
-        help="Path to an Ingredients file to use instead of default.",
+        help="Path to an Ingredients directory to use instead of default.",
+    )
+
+
+def add_archive_ingredients(parser, group=None):
+    (group or parser).add_argument(
+        "--archive_ingredients",
+        action="store_true",
+        help="Also write .tar.gz archives for generated Ingredients directories.",
     )
 
 
@@ -484,7 +492,7 @@ def add_filtered_file(parser, group=None):
     (group or parser).add_argument(
         "--filtered_file",
         required=True,
-        help="Path to the filtered Ingredients pickle file.",
+        help="Path to the filtered Ingredients directory.",
     )
 
 
@@ -492,7 +500,7 @@ def add_null_file(parser, group=None, required=True):
     (group or parser).add_argument(
         "--null_file",
         required=required,
-        help="Path to the null Ingredients pickle file. Not required for --analysis_type structure",
+        help="Path to the null Ingredients directory. Not required for --analysis_type structure",
     )
 
 
@@ -557,6 +565,7 @@ def format_command(args):
         aggregated=args.aggregated,
         tag=args.tag,
         data_version=args.data_version,
+        archive_ingredients=args.archive_ingredients,
     )
 
 
@@ -774,6 +783,7 @@ def build_parser():
     add_tag_and_aggregated(format_sub, group=opt)
     add_sample_to_biome_file(format_sub, group=opt)
     add_data_version(format_sub, group=opt, mode="format")
+    add_archive_ingredients(format_sub, group=opt)
 
     # Search
     search_sub = add_subcommand(

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import pickle
-
 import pytest
 
 from metacooc.filter import filter_data, filter_data_obj
+from metacooc.pantry import load_ingredients
 from metacooc.search import search_data_obj
 
 
@@ -198,11 +197,10 @@ def test_file_filter_writes_null_and_filtered(tmp_path, raw_ingredients_path):
         tag="test_",
     )
 
-    null_path = out / "test_ingredients_null.pkl"
-    filtered_path = out / "test_ingredients_filtered.pkl"
+    null_path = out / "test_ingredients_null"
+    filtered_path = out / "test_ingredients_filtered"
     assert null_path.exists()
     assert filtered_path.exists()
 
-    with filtered_path.open("rb") as f:
-        filtered = pickle.load(f)
+    filtered = load_ingredients(custom_ingredients=str(filtered_path))
     assert filtered.samples == [f"S{i:03d}" for i in range(1, 51)]

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import os
-import pickle
+import json
+import tarfile
 import warnings
 import re
 from collections import defaultdict
@@ -21,6 +22,30 @@ from metacooc.utils import (
     _terminal_rank_prefix, 
     _deepest_rank_token
 )
+
+INGREDIENTS_FORMAT_VERSION = 1
+
+
+def presence_for_counts(obj):
+    X = obj.presence_matrix if hasattr(obj, "presence_matrix") else obj
+    return X.astype(np.int32, copy=False)
+
+
+def _presence_csr(matrix: sp.spmatrix) -> sp.csr_matrix:
+    out = matrix.tocsr(copy=True).astype(np.uint8, copy=False)
+    out.data[:] = 1
+    out.eliminate_zeros()
+    out.sum_duplicates()
+    out.sort_indices()
+    return out
+
+
+def _csr(matrix: sp.spmatrix) -> sp.csr_matrix:
+    out = matrix.tocsr(copy=False)
+    out.eliminate_zeros()
+    out.sum_duplicates()
+    out.sort_indices()
+    return out
 
 
 def presence_for_counts(obj):
@@ -54,8 +79,12 @@ class Ingredients:
         self.taxa = taxa
         self.samples = samples
         
-        object.__setattr__(self, "_presence_matrix", presence_matrix)
-        object.__setattr__(self, "_coverage_matrix", coverage_matrix)
+        object.__setattr__(self, "_presence_matrix", _presence_csr(presence_matrix))
+        object.__setattr__(self, "_coverage_matrix", _csr(coverage_matrix))
+        object.__setattr__(self, "_presence_matrix_path", None)
+        object.__setattr__(self, "_coverage_matrix_path", None)
+        object.__setattr__(self, "_presence_matrix_shape", self._presence_matrix.shape)
+        object.__setattr__(self, "_coverage_matrix_shape", self._coverage_matrix.shape)
         
         self.total_counts = self._compute_total_counts()
         
@@ -72,8 +101,8 @@ class Ingredients:
         state = {
             "samples": self.samples,
             "taxa": self.taxa,
-            "_presence_matrix": self._presence_matrix,
-            "_coverage_matrix": self._coverage_matrix,
+            "_presence_matrix": self.presence_matrix,
+            "_coverage_matrix": self.coverage_matrix,
             "total_counts": self.total_counts,
             "sample_to_biome": self.sample_to_biome,
             "data_version": self.data_version,
@@ -83,10 +112,6 @@ class Ingredients:
             state["biomes_order"] = self.biomes_order
             state["sample_biome_indices"] = self.sample_biome_indices
             
-        if hasattr(self, "_rank_lookups") and self._rank_lookups is not None:
-            state["_rank_lookups"] = self._rank_lookups
-            state["_terminal_rank_prefixes"] = self._terminal_rank_prefixes
-            
         return state
     
     def __setstate__(self, state):
@@ -95,9 +120,13 @@ class Ingredients:
         
         object.__setattr__(self, "_presence_matrix", state.get("_presence_matrix"))
         object.__setattr__(self, "_coverage_matrix", state.get("_coverage_matrix"))
+        object.__setattr__(self, "_presence_matrix_path", None)
+        object.__setattr__(self, "_coverage_matrix_path", None)
+        object.__setattr__(self, "_presence_matrix_shape", self._presence_matrix.shape)
+        object.__setattr__(self, "_coverage_matrix_shape", self._coverage_matrix.shape)
         
-        self._rank_lookups = state.get("_rank_lookups", None)
-        self._terminal_rank_prefixes = state.get("_terminal_rank_prefixes", None)
+        self._rank_lookups = None
+        self._terminal_rank_prefixes = None
         
         # restore or compute total_counts
         # restore or compute total_counts
@@ -150,20 +179,30 @@ class Ingredients:
     
     @property
     def presence_matrix(self) -> sp.csr_matrix:
+        if self._presence_matrix is None:
+            self._presence_matrix = sp.load_npz(self._presence_matrix_path).tocsr()
+            self._presence_matrix_shape = self._presence_matrix.shape
         return self._presence_matrix
     
     @presence_matrix.setter
     def presence_matrix(self, mat: sp.csr_matrix):
-        self._presence_matrix = mat
+        self._presence_matrix = _presence_csr(mat)
+        self._presence_matrix_path = None
+        self._presence_matrix_shape = self._presence_matrix.shape
         self.total_counts = self._compute_total_counts()
     
     @property
     def coverage_matrix(self) -> sp.csr_matrix:
+        if self._coverage_matrix is None:
+            self._coverage_matrix = sp.load_npz(self._coverage_matrix_path).tocsr()
+            self._coverage_matrix_shape = self._coverage_matrix.shape
         return self._coverage_matrix
     
     @coverage_matrix.setter
     def coverage_matrix(self, mat: sp.csr_matrix):
-        self._coverage_matrix = mat
+        self._coverage_matrix = _csr(mat)
+        self._coverage_matrix_path = None
+        self._coverage_matrix_shape = self._coverage_matrix.shape
     
     def _compute_total_counts(self) -> np.ndarray:
         """
@@ -172,16 +211,22 @@ class Ingredients:
         Because presence_matrix is already binary / sparse-presence, use getnnz(axis=1)
         instead of (matrix > 0).sum(axis=1), which allocates a large temporary sparse matrix.
         """
-        return np.asarray(self._presence_matrix.getnnz(axis=1), dtype=np.int32).ravel()
+        return np.asarray(self.presence_matrix.getnnz(axis=1), dtype=np.int32).ravel()
 
         # return np.array((self._presence_matrix > 0).sum(axis=1)).flatten()
     
     def __repr__(self):
+        presence_shape = getattr(self, "_presence_matrix_shape", None)
+        if presence_shape is None:
+            presence_shape = self.presence_matrix.shape
+        coverage_shape = getattr(self, "_coverage_matrix_shape", None)
+        if coverage_shape is None:
+            coverage_shape = self.coverage_matrix.shape
         return (
             f"<Ingredients: {len(self.taxa)} taxa, "
             f"{len(self.samples)} samples, "
-            f"presence: {self.presence_matrix.shape}, "
-            f"coverage: {self.coverage_matrix.shape}>"
+            f"presence: {presence_shape}, "
+            f"coverage: {coverage_shape}>"
         )
     
     @staticmethod
@@ -217,6 +262,10 @@ class Ingredients:
         
         object.__setattr__(new, "_presence_matrix", self._presence_matrix)
         object.__setattr__(new, "_coverage_matrix", self._coverage_matrix)
+        object.__setattr__(new, "_presence_matrix_path", self._presence_matrix_path)
+        object.__setattr__(new, "_coverage_matrix_path", self._coverage_matrix_path)
+        object.__setattr__(new, "_presence_matrix_shape", self._presence_matrix_shape)
+        object.__setattr__(new, "_coverage_matrix_shape", self._coverage_matrix_shape)
         
         new.total_counts = self.total_counts
         new.sample_to_biome = self.sample_to_biome
@@ -243,8 +292,8 @@ class Ingredients:
         return Ingredients(
             samples=self.samples.copy(),
             taxa=self.taxa.copy(),
-            presence_matrix=self._presence_matrix.copy(),
-            coverage_matrix=self._coverage_matrix.copy(),
+            presence_matrix=self.presence_matrix.copy(),
+            coverage_matrix=self.coverage_matrix.copy(),
             sample_to_biome=self.sample_to_biome.copy() if self.sample_to_biome is not None else None,
             data_version=self.data_version,
         )
@@ -264,8 +313,12 @@ class Ingredients:
         samples_arr = np.asarray(self.samples, dtype=object)
         self.samples = samples_arr[idx].tolist()
         
-        self._presence_matrix = self._presence_matrix[:, idx]
-        self._coverage_matrix = self._coverage_matrix[:, idx]
+        self._presence_matrix = self.presence_matrix[:, idx]
+        self._coverage_matrix = self.coverage_matrix[:, idx]
+        self._presence_matrix_path = None
+        self._coverage_matrix_path = None
+        self._presence_matrix_shape = self._presence_matrix.shape
+        self._coverage_matrix_shape = self._coverage_matrix.shape
         
         # sample filtering changes row totals
         self.total_counts = self._compute_total_counts()
@@ -297,8 +350,12 @@ class Ingredients:
         taxa_arr = np.asarray(self.taxa, dtype=object)
         self.taxa = taxa_arr[idx].tolist()
         
-        self._presence_matrix = self._presence_matrix[idx, :]
-        self._coverage_matrix = self._coverage_matrix[idx, :]
+        self._presence_matrix = self.presence_matrix[idx, :]
+        self._coverage_matrix = self.coverage_matrix[idx, :]
+        self._presence_matrix_path = None
+        self._coverage_matrix_path = None
+        self._presence_matrix_shape = self._presence_matrix.shape
+        self._coverage_matrix_shape = self._coverage_matrix.shape
         
         # taxa filtering does not change per-row counts except subsetting them
         self.total_counts = self.total_counts[idx].astype(np.int32, copy=False)
@@ -396,10 +453,9 @@ class Ingredients:
             level (str): Biome level to use ("level_1" or "level_2").
             
         Returns:
-            Tuple[List[str], sp.csr_matrix, sp.csr_matrix, int]:
+            Tuple[List[str], sp.csr_matrix, int]:
                 - Unique biomes for the level.
                 - Presence matrix for the level.
-                - Coverage matrix for the level.
                 - Number of samples with missing biome assignments.
         """
         if level not in ("level_1", "level_2"):
@@ -418,22 +474,173 @@ class Ingredients:
         B = sp.csr_matrix((data, (rows, cols)), shape=(n_biomes, n_samples))
         
         # 2) Presence counts
-        Pbin = (self._presence_matrix > 0).astype(int)
+        Pbin = presence_for_counts(self)
         presence = B @ Pbin.T
-        
-        # 3) Coverage means
-        coverage_sums = B @ self._coverage_matrix.T
-        counts = np.array(B.sum(axis=1)).ravel()
-        # Make a copy for means
-        coverage = coverage_sums.tolil()
-        for b in range(n_biomes):
-            if counts[b] > 0:
-                coverage[b, :] = coverage_sums[b, :].toarray() / counts[b]
-        coverage = coverage.tocsr()
-        
-        n_dropped = int((idxs < 0).sum())
-        return biomes, presence, coverage, n_dropped
 
+        n_dropped = int((idxs < 0).sum())
+        return biomes, presence, n_dropped
+
+def _read_one_column_tsv(path: str, column: str) -> list[str]:
+    df = pd.read_csv(path, sep="\t", dtype=str, usecols=lambda c: c == column)
+    if column not in df.columns:
+        raise ValueError(f"{path} is missing required column '{column}'")
+    return df[column].fillna("").tolist()
+
+
+def _write_one_column_tsv(path: str, column: str, values: list[str]) -> None:
+    pd.DataFrame({column: values}).to_csv(path, sep="\t", index=False)
+
+
+def _read_sample_to_biome(path: str) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return {}
+    required = {"accession", "level_1", "level_2"}
+    df = pd.read_csv(path, sep="\t", dtype=str, usecols=lambda c: c in required)
+    missing = required.difference(df.columns)
+    if missing:
+        raise ValueError(f"{path} is missing required columns: {', '.join(sorted(missing))}")
+
+    accessions = df["accession"].fillna("").to_numpy(dtype=object)
+    level_1_series = df["level_1"].astype(object)
+    level_2_series = df["level_2"].astype(object)
+    level_1 = level_1_series.where(level_1_series.notna() & (level_1_series != ""), None).to_numpy(dtype=object)
+    level_2 = level_2_series.where(level_2_series.notna() & (level_2_series != ""), None).to_numpy(dtype=object)
+
+    return {
+        sample: (b1, b2)
+        for sample, b1, b2 in zip(accessions, level_1, level_2)
+    }
+
+
+def _write_sample_to_biome(path: str, sample_to_biome: Dict[str, Tuple[Optional[str], Optional[str]]]) -> None:
+    rows = [
+        {
+            "accession": sample,
+            "level_1": values[0] if values and values[0] is not None else "",
+            "level_2": values[1] if values and values[1] is not None else "",
+        }
+        for sample, values in sample_to_biome.items()
+    ]
+    pd.DataFrame(rows, columns=["accession", "level_1", "level_2"]).to_csv(path, sep="\t", index=False)
+
+
+def _ingredients_from_directory(directory: str) -> Ingredients:
+    manifest_path = os.path.join(directory, "manifest.json")
+    if not os.path.isdir(directory):
+        raise ValueError(f"Ingredients path must be a directory: {directory}")
+    if not os.path.exists(manifest_path):
+        raise FileNotFoundError(f"Ingredients manifest not found: {manifest_path}")
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    components = manifest.get("components", {})
+    matrix_shapes = manifest.get("matrix_shapes", {})
+    samples = _read_one_column_tsv(os.path.join(directory, components.get("samples", "samples.tsv")), "sample")
+    taxa = _read_one_column_tsv(os.path.join(directory, components.get("taxa", "taxa.tsv")), "taxon")
+    sample_to_biome = _read_sample_to_biome(
+        os.path.join(directory, components.get("sample_to_biome", "sample_to_biome.tsv"))
+    )
+    total_counts = np.load(os.path.join(directory, components.get("total_counts", "total_counts.npy")))
+
+    new = Ingredients.__new__(Ingredients)
+    new.samples = samples
+    new.taxa = taxa
+    object.__setattr__(new, "_presence_matrix", None)
+    object.__setattr__(
+        new,
+        "_presence_matrix_path",
+        os.path.join(directory, components.get("presence_matrix", "presence.npz")),
+    )
+    object.__setattr__(new, "_coverage_matrix", None)
+    object.__setattr__(
+        new,
+        "_coverage_matrix_path",
+        os.path.join(directory, components.get("coverage_matrix", "coverage.npz")),
+    )
+    object.__setattr__(new, "_presence_matrix_shape", tuple(matrix_shapes.get("presence", (len(taxa), len(samples)))))
+    object.__setattr__(new, "_coverage_matrix_shape", tuple(matrix_shapes.get("coverage", (len(taxa), len(samples)))))
+    new.total_counts = total_counts.astype(np.int32, copy=False)
+    new.sample_to_biome = sample_to_biome
+    if new.sample_to_biome:
+        new._allocate_biomes()
+    new._rank_lookups = None
+    new._terminal_rank_prefixes = None
+    new.data_version = manifest.get("data_version")
+    return new
+
+
+def _write_ingredients_directory(
+    ingredients: "Ingredients",
+    directory: str,
+    *,
+    aggregated: bool = False,
+) -> str:
+    os.makedirs(directory, exist_ok=True)
+
+    presence = _presence_csr(ingredients.presence_matrix)
+    coverage = _csr(ingredients.coverage_matrix)
+    total_counts = np.asarray(ingredients.total_counts, dtype=np.int32)
+
+    components = {
+        "samples": "samples.tsv",
+        "taxa": "taxa.tsv",
+        "sample_to_biome": "sample_to_biome.tsv",
+        "presence_matrix": "presence.npz",
+        "coverage_matrix": "coverage.npz",
+        "total_counts": "total_counts.npy",
+    }
+
+    _write_one_column_tsv(os.path.join(directory, components["samples"]), "sample", list(ingredients.samples))
+    _write_one_column_tsv(os.path.join(directory, components["taxa"]), "taxon", list(ingredients.taxa))
+    _write_sample_to_biome(
+        os.path.join(directory, components["sample_to_biome"]),
+        getattr(ingredients, "sample_to_biome", {}) or {},
+    )
+    sp.save_npz(os.path.join(directory, components["presence_matrix"]), presence)
+    sp.save_npz(os.path.join(directory, components["coverage_matrix"]), coverage)
+    np.save(os.path.join(directory, components["total_counts"]), total_counts)
+
+    manifest = {
+        "format_version": INGREDIENTS_FORMAT_VERSION,
+        "data_version": getattr(ingredients, "data_version", None),
+        "aggregated": bool(aggregated),
+        "matrix_shapes": {
+            "presence": list(presence.shape),
+            "coverage": list(coverage.shape),
+        },
+        "matrix_dtypes": {
+            "presence": str(presence.dtype),
+            "coverage": str(coverage.dtype),
+        },
+        "components": components,
+    }
+    with open(os.path.join(directory, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return directory
+
+
+def archive_ingredients_directory(directory: str, archive_path: Optional[str] = None) -> str:
+    archive_path = archive_path or f"{directory}.tar.gz"
+    base_name = os.path.basename(directory.rstrip(os.sep))
+    with tarfile.open(archive_path, "w:gz") as tar:
+        tar.add(directory, arcname=base_name)
+    return archive_path
+
+
+def save_ingredients_directory(
+    ingredients: "Ingredients",
+    directory: str,
+    *,
+    aggregated: bool = False,
+    archive: bool = False,
+) -> str:
+    path = _write_ingredients_directory(ingredients, directory, aggregated=aggregated)
+    if archive:
+        archive_ingredients_directory(path)
+    print(f"Saved Ingredients directory -> {path}")
+    return path
 
 
 def load_ingredients(
@@ -476,10 +683,7 @@ def load_ingredients(
                 defaulted=defaulted_data_version,
             )
         )
-    
-    # load ingredients object
-    with open(filepath, "rb") as f:
-        ingredients = pickle.load(f)
+    ingredients = _ingredients_from_directory(filepath)
     
     # version mismatch warning
     if not custom_ingredients:
@@ -497,18 +701,21 @@ def save_ingredients(ingredients: "Ingredients",
                      *, 
                      aggregated: bool = False,
                      tag: Optional[str] = None, 
-                     data_version: Optional[str] = None) -> str:
+                     data_version: Optional[str] = None,
+                     archive: bool = False) -> str:
     os.makedirs(output_dir, exist_ok=True)
     
     if data_version is not None:
         ingredients.data_version = data_version
         
     kind = "ingredients_aggregated" if aggregated else "ingredients_raw"
-    suffix = f"_{tag}" if tag else ""
-    filepath = os.path.join(output_dir, f"{kind}{suffix}.pkl")
+    label = tag or data_version
+    suffix = f"_{label}" if label else ""
+    dirpath = os.path.join(output_dir, f"{kind}{suffix}")
+    path = _write_ingredients_directory(ingredients, dirpath, aggregated=aggregated)
+    if archive:
+        archive_path = archive_ingredients_directory(path)
+        print(f"Archived Ingredients directory -> {archive_path}")
     
-    with open(filepath, "wb") as f:
-        pickle.dump(ingredients, f, protocol=pickle.HIGHEST_PROTOCOL)
-    
-    print(f"Saved Ingredients → {filepath}")
-    return filepath
+    print(f"Saved Ingredients directory -> {path}")
+    return path

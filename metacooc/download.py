@@ -5,8 +5,8 @@ download.py
 Download initial data files for metacooc.
 
 This script downloads the following default files into the specified data directory:
-    - ingredients_raw_<data_version>.pkl
-    - ingredients_aggregated_genus_<data_version>.pkl
+    - ingredients_raw_<data_version>/
+    - ingredients_aggregated_<data_version>/
     - sra_metadata_<data_version>.tsv
 
 All download URLs point to gzip-compressed files. This script downloads each file
@@ -22,6 +22,7 @@ import argparse
 import requests
 import gzip
 import shutil
+import tarfile
 from tqdm import tqdm
 
 
@@ -77,7 +78,9 @@ def download_data(data_dir, list_data_versions=False, data_version=None, force=F
     # Determine how many files need to be downloaded
     missing_files = 0
     for final_name, url in download_urls.items():
-        if final_name.endswith(".gz"):
+        if final_name.endswith(".tar.gz"):
+            target_name = final_name[:-7]
+        elif final_name.endswith(".gz"):
             target_name = final_name[:-3]
         else:
             target_name = final_name
@@ -100,14 +103,17 @@ def download_data(data_dir, list_data_versions=False, data_version=None, force=F
         return
         
     for final_name, url in download_urls.items():
-        # Decide whether to unzip the file based on extension
-        if final_name.endswith(".gz"):
+        if final_name.endswith(".tar.gz"):
+            target_name = final_name[:-7]
+            temp_path = os.path.join(data_dir, target_name + ".tmp.tar.gz")
+        elif final_name.endswith(".gz"):
             target_name = final_name[:-3]
+            temp_path = os.path.join(data_dir, target_name + ".tmp.gz")
         else:
             target_name = final_name
+            temp_path = os.path.join(data_dir, target_name + ".tmp")
             
         target_path = os.path.join(data_dir, target_name)
-        temp_path = os.path.join(data_dir, target_name + ".tmp.gz")
         
         if os.path.exists(target_path) and not force:
             print(f"{target_path} already exists; skipping download.")
@@ -117,10 +123,22 @@ def download_data(data_dir, list_data_versions=False, data_version=None, force=F
         _download_stream(url, temp_path)
         print(f"Downloaded {temp_path}")
         
-        print(f"Unzipping {temp_path} to {target_path} ...")
-        with gzip.open(temp_path, 'rb') as f_in, open(target_path, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        print(f"Unzipped to {target_path}")
+        if final_name.endswith(".tar.gz"):
+            print(f"Extracting {temp_path} to {data_dir} ...")
+            with tarfile.open(temp_path, "r:gz") as tar:
+                try:
+                    tar.extractall(path=data_dir, filter="data")
+                except TypeError:
+                    tar.extractall(path=data_dir)
+            print(f"Extracted to {target_path}")
+        elif final_name.endswith(".gz"):
+            print(f"Unzipping {temp_path} to {target_path} ...")
+            with gzip.open(temp_path, 'rb') as f_in, open(target_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            print(f"Unzipped to {target_path}")
+        else:
+            shutil.move(temp_path, target_path)
+            print(f"Moved to {target_path}")
         
         os.remove(temp_path)
         print(f"Removed temporary file {temp_path}")

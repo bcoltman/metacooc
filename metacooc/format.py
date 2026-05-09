@@ -11,13 +11,12 @@ Converts a raw sandpiper taxonomic profile (TSV file) into two sparse matrix rep
 import numpy as np
 import os
 import pandas as pd
-import pickle
 import re
 from scipy.sparse import csr_matrix, vstack
 import warnings
 from typing import Optional
 
-from metacooc.pantry import Ingredients, save_ingredients
+from metacooc.pantry import Ingredients, _read_sample_to_biome, save_ingredients
 
 
 def build_indices(tax_profile: str):
@@ -98,8 +97,9 @@ def create_sparse_matrices(tax_profile: str, sample_to_index: dict, taxon_to_ind
     presence_matrix = csr_matrix(
         (data_presence, (row_indices, col_indices)),
         shape=(num_taxa, num_samples),
-        dtype=int
+        dtype=np.uint8,
     )
+    presence_matrix.data[:] = 1
     coverage_matrix = csr_matrix(
         (data_coverage, (row_indices, col_indices)),
         shape=(num_taxa, num_samples),
@@ -127,6 +127,7 @@ def format_data(
     aggregated: bool = False,
     tag: str = "",
     data_version: Optional[str] = None,
+    archive_ingredients: bool = False,
 ):
     """
     Process the sandpiper TSV file and save Ingredients objects.
@@ -144,11 +145,7 @@ def format_data(
     sample_to_biome = {}
     if sample_to_biome_file:
         if os.path.exists(sample_to_biome_file):
-            df = pd.read_csv(sample_to_biome_file, dtype=str, sep="\t")
-            sample_to_biome = {
-                row["accession"]: (row["level_1"], row["level_2"])
-                for _, row in df.iterrows()
-            }
+            sample_to_biome = _read_sample_to_biome(sample_to_biome_file)
         else:
             warnings.warn(
                 f"Biome mapping file '{sample_to_biome_file}' not found",
@@ -169,6 +166,8 @@ def format_data(
         output_dir,
         aggregated=False,
         tag=tag,
+        data_version=data_version,
+        archive=archive_ingredients,
     )
     
     # aggregated
@@ -181,6 +180,8 @@ def format_data(
             output_dir,
             aggregated=True,
             tag=tag,
+            data_version=data_version,
+            archive=archive_ingredients,
         )
 
 

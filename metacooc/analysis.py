@@ -26,6 +26,7 @@ from metacooc.null_models import (
 
 
 _SMOOTH = 0.5
+_COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD = 1_000_000
 
 
 @dataclass
@@ -339,7 +340,7 @@ def _association_core(
         print("FE: association determined analytically - no need for shuffling null and probabilistic approach")
         return out
 
-    X_full = null_ingredients.presence_matrix.tocsr()
+    X_full = presence_for_counts(null_ingredients).tocsr()
     X_full.eliminate_zeros()
     X_full.sum_duplicates()
     X_full.sort_indices()
@@ -448,7 +449,7 @@ def association(
 def presence_submatrix_by_taxa(ingredients: Ingredients, taxa_subset: List[str]) -> sp.csr_matrix:
     row_map = {t: i for i, t in enumerate(ingredients.taxa)}
     rows = [row_map[t] for t in taxa_subset]
-    return ingredients.presence_matrix[rows, :].tocsr()
+    return presence_for_counts(ingredients)[rows, :].tocsr()
 
 
 def _cooccur_core(
@@ -1047,7 +1048,7 @@ def cooccurrence_obj(
         print("FE: cooccurrence determined analytically - no need for shuffling null and probabilistic approach")
         return edge_arrays, nodes_df
 
-    X_full = null_ingredients.presence_matrix.tocsr()
+    X_full = presence_for_counts(null_ingredients).tocsr()
     X_full.eliminate_zeros()
     X_full.sum_duplicates()
     X_full.sort_indices()
@@ -1060,6 +1061,15 @@ def cooccurrence_obj(
     iB_all = edge_arrays.cols["iB"].astype(np.int64, copy=False)
 
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
+
+    if edge_arrays.n_rows >= _COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD:
+        print(
+            "WARNING: Cooccurrence null simulation will evaluate "
+            f"{edge_arrays.n_rows:,} edge pairs per replicate across {n_reps:,} replicates. "
+            f"Estimated candidate pairs before filtering: {est_pairs:,}. "
+            "The statistic will use bounded dot-product batching to limit RAM, "
+            "but runtime and output size may be substantial."
+        )
 
     j_res = parallel_null_reduce_vector(
         X=X_full,
