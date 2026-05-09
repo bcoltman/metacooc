@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import subprocess
 import sys
 import multiprocessing as mp
@@ -29,6 +30,45 @@ def run_cli_no_check(*args, cwd=None):
         capture_output=True,
         text=True,
     )
+
+
+@pytest.mark.cli
+def test_cli_import_does_not_create_package_data_dir():
+    import metacooc.cli as cli
+
+    package_data_dir = Path(cli.__file__).resolve().parent / "data"
+    assert not package_data_dir.exists()
+
+
+@pytest.mark.cli
+def test_cli_data_dir_default_uses_env_var(monkeypatch, tmp_path):
+    from metacooc.cli import build_parser
+
+    expected = tmp_path / "metacooc-env-data"
+    monkeypatch.setenv("METACOOC_DATA_DIR", str(expected))
+
+    parser = build_parser()
+    args = parser.parse_args(["download", "--list_data_versions"])
+
+    assert args.data_dir == str(expected)
+
+
+@pytest.mark.cli
+def test_cli_data_dir_default_uses_platformdirs(monkeypatch, tmp_path):
+    from metacooc.cli import build_parser
+    import metacooc._paths as paths
+
+    monkeypatch.delenv("METACOOC_DATA_DIR", raising=False)
+    monkeypatch.setattr(
+        paths,
+        "user_data_dir",
+        lambda *args, **kwargs: str(tmp_path / "share" / "metacooc"),
+    )
+
+    parser = build_parser()
+    args = parser.parse_args(["download", "--list_data_versions"])
+
+    assert args.data_dir == str(tmp_path / "share" / "metacooc" / "data")
 
 
 @pytest.mark.cli

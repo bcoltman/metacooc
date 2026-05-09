@@ -30,6 +30,7 @@ from tqdm import tqdm
 
 
 from metacooc._data_config import *
+from metacooc._paths import default_data_dir
 
 CHUNK_SIZE = 8 * 1024 * 1024
 
@@ -56,7 +57,7 @@ def _download_stream(url, temp_path):
                 progress.update(len(chunk))
 
 
-def download_data(data_dir, list_data_versions=False, data_version=None, force=False):
+def download_data(data_dir=None, list_data_versions=False, data_version=None, force=False):
     """
     Download data files for a specific Sandpiper data_version into data_dir.
     
@@ -71,6 +72,7 @@ def download_data(data_dir, list_data_versions=False, data_version=None, force=F
         return
 
     data_version = data_version or LATEST_VERSION  # defaults to latest *_gtdb
+    data_dir = os.fspath(data_dir or default_data_dir())
 
     filenames, download_urls = get_file_info(data_version)
         
@@ -149,7 +151,12 @@ def download_data(data_dir, list_data_versions=False, data_version=None, force=F
 
 def main():
     parser = argparse.ArgumentParser(description="Download metacooc data files")
-    parser.add_argument("--data_dir", type=str, required=True, help="Target directory for data files")
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default=str(default_data_dir()),
+        help="Target directory for data files (default: %(default)s)",
+    )
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
     parser.add_argument("--data_version", default=None, help="Specify which data version to load (default: latest)")
     parser.add_argument("--list_data_versions", action="store_true", help="Specify which data version to load (default: latest)")

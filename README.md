@@ -86,13 +86,16 @@ MetaCoOc will:
 
 1. Use the **latest available version** (e.g. `2.0.0_gtdb`)
 2. Download all required files
-3. Install them into the **package data directory** (inside the installed metacooc environment)
+3. Install them into the default user data directory for your operating system
 
-You can override the location using:
+You can override the location using `--data_dir`:
 
 ```bash
 metacooc download --data_dir ./my_data
 ```
+
+You can also set `METACOOC_DATA_DIR` to choose a persistent default location
+for all MetaCoOc commands.
 
 The download command only needs to be run once per data version and data directory.
 
