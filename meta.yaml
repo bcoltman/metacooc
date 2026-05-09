@@ -13,15 +13,16 @@ source:
 build:
   noarch: python
   number: 0
-  skip: true  # [py<38]
-  script: {{ PYTHON }} -m pip install . -vv
+  skip: true  # [py<310]
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
 
 requirements:
   host:
-    - python >=3.8
+    - python >=3.10
     - pip
+    - setuptools >=61
   run:
-    - python >=3.8
+    - python >=3.10
     - numpy
     - pandas
     - scipy
@@ -29,6 +30,7 @@ requirements:
     - requests
     - pyarrow
     - platformdirs
+    - tqdm
 
 test:
   imports:
