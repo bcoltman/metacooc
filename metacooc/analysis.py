@@ -26,6 +26,7 @@ from metacooc.null_models import (
 
 
 _SMOOTH = 0.5
+_COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD = 1_000_000
 
 
 @dataclass
@@ -1060,6 +1061,15 @@ def cooccurrence_obj(
     iB_all = edge_arrays.cols["iB"].astype(np.int64, copy=False)
 
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
+
+    if edge_arrays.n_rows >= _COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD:
+        print(
+            "WARNING: Cooccurrence null simulation will evaluate "
+            f"{edge_arrays.n_rows:,} edge pairs per replicate across {n_reps:,} replicates. "
+            f"Estimated candidate pairs before filtering: {est_pairs:,}. "
+            "The statistic will use bounded dot-product batching to limit RAM, "
+            "but runtime and output size may be substantial."
+        )
 
     j_res = parallel_null_reduce_vector(
         X=X_full,

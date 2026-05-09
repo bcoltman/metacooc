@@ -260,7 +260,7 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "--threshold",
         "0",
         "--null_model",
-        "FE",
+        "EE",
         "--nm_n_reps",
         "1",
     )
@@ -322,7 +322,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "--threshold",
         "0",
         "--null_model",
-        "FE",
+        "EE",
         "--nm_n_reps",
         "1",
         "--tag",
@@ -449,7 +449,7 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
         "--threshold",
         "0",
         "--null_model",
-        "FE",
+        "EE",
         "--nm_n_reps",
         "1",
         "--tag",
@@ -477,6 +477,59 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
     assert micro_000["P_B_given_A"] == pytest.approx(36 / 60)
     assert micro_000["P_A_given_B"] == pytest.approx(36 / 51)
     assert 0 <= micro_000["q_bh"] <= 1
+    assert "jaccard_null_mean_EE" in edges.columns
+    assert "jaccard_p_EE" in edges.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.issubset(edges.columns)
+
+
+@pytest.mark.cli
+def test_cli_cooccurrence_warns_for_large_null_edge_request(
+    monkeypatch,
+    capsys,
+    tmp_path,
+    cli_formatted_dir,
+):
+    from metacooc.cli import build_parser
+    import metacooc.analysis as analysis
+
+    raw = cli_formatted_dir / "ingredients_raw_cli"
+    out = tmp_path / "workflow_warn_large_null"
+    mp_start = mp.get_all_start_methods()[0]
+    monkeypatch.setattr(analysis, "_COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD", 1)
+
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "cooccurrence",
+            "--search_mode",
+            "focal_taxa",
+            "--search_string",
+            "s__rhizo_000 -> g__Micro",
+            "--custom_ingredients",
+            str(raw),
+            "--output_dir",
+            str(out),
+            "--large",
+            "--threshold",
+            "0",
+            "--null_model",
+            "EE",
+            "--nm_n_reps",
+            "1",
+            "--nm_n_workers",
+            "1",
+            "--nm_mp_start",
+            mp_start,
+            "--tag",
+            "cli",
+        ]
+    )
+    args.func(args)
+
+    captured = capsys.readouterr()
+    assert "WARNING: Cooccurrence null simulation will evaluate" in captured.out
+    assert "bounded dot-product batching" in captured.out
+    assert (out / "cli_global_edges.tsv").exists()
 
 
 @pytest.mark.cli

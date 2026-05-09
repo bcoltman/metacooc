@@ -11,6 +11,9 @@ import scipy.sparse as sp
 SIMMODEL = Literal["FF", "FE", "EF", "EE"]
 _OUT_DTYPE = np.int8
 
+_COOCCURRENCE_JACCARD_MAX_SOURCE_ROWS = 256
+_COOCCURRENCE_JACCARD_MAX_EDGE_BLOCK = 100_000
+
 
 # -----------------------------------------------------------------------------
 # Utilities
@@ -1378,20 +1381,31 @@ def stat_fn_association_jaccard(X: sp.csr_matrix) -> np.ndarray:
 
 def stat_fn_cooccurrence_jaccard(X: sp.csr_matrix) -> np.ndarray:
     """
-    Compute pairwise Jaccard overlap for a subset of taxa.
+    Compute requested pairwise Jaccard overlaps for a subset of taxa.
+
+    The cooccurrence workflow supplies the final emitted edge list through
+    _G_iA/_G_iB.  Compute only those pairs with bounded sparse dot-product
+    blocks rather than materialising the full X_sub @ X_sub.T matrix.
     """
     from metacooc.pantry import presence_for_counts
 
+    if _G_subset_idx is None or _G_iA is None or _G_iB is None:
+        raise ValueError("Cooccurrence Jaccard statistic requires subset_idx, iA and iB.")
+
     X_sub = presence_for_counts(X)[_G_subset_idx, :].tocsr()
     totals = np.asarray(X_sub.sum(axis=1)).ravel().astype(np.float64, copy=False)
-    
-    co = (X_sub @ X_sub.T).tocsr()
-    inter = co[_G_iA, _G_iB].A1.astype(np.float64, copy=False)
-    
-    A = totals[_G_iA]
-    B = totals[_G_iB]
+
+    iA = np.asarray(_G_iA, dtype=np.int64)
+    iB = np.asarray(_G_iB, dtype=np.int64)
+    if iA.shape != iB.shape:
+        raise ValueError("Cooccurrence Jaccard statistic requires iA and iB with matching shape.")
+
+    inter = _cooccurrence_intersections_for_edges(X_sub, iA=iA, iB=iB)
+
+    A = totals[iA]
+    B = totals[iB]
     union = A + B - inter
-    
+
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.divide(
             inter,
@@ -1399,6 +1413,65 @@ def stat_fn_cooccurrence_jaccard(X: sp.csr_matrix) -> np.ndarray:
             out=np.zeros_like(inter, dtype=float),
             where=union > 0,
         )
+
+
+def _cooccurrence_intersections_for_edges(
+    X_sub: sp.csr_matrix,
+    *,
+    iA: np.ndarray,
+    iB: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute row-pair intersections for requested edges using bounded dot blocks.
+    """
+    n_edges = int(iA.size)
+    if n_edges == 0:
+        return np.empty(0, dtype=np.float64)
+
+    order = np.argsort(iA, kind="stable")
+    iA_sorted = iA[order]
+    iB_sorted = iB[order]
+    unique_iA, starts, counts = np.unique(
+        iA_sorted,
+        return_index=True,
+        return_counts=True,
+    )
+
+    max_source_rows = max(1, int(_COOCCURRENCE_JACCARD_MAX_SOURCE_ROWS))
+    max_edge_block = max(1, int(_COOCCURRENCE_JACCARD_MAX_EDGE_BLOCK))
+
+    inter = np.empty(n_edges, dtype=np.float64)
+    n_unique = int(unique_iA.size)
+    u_pos = 0
+
+    while u_pos < n_unique:
+        edge_start = int(starts[u_pos])
+        edge_count = 0
+        u_end = u_pos
+
+        while u_end < n_unique and (u_end - u_pos) < max_source_rows:
+            next_count = int(counts[u_end])
+            if edge_count > 0 and edge_count + next_count > max_edge_block:
+                break
+            edge_count += next_count
+            u_end += 1
+
+        edge_end = edge_start + edge_count
+        source_rows = unique_iA[u_pos:u_end]
+        target_rows = np.unique(iB_sorted[edge_start:edge_end])
+
+        co_block = (X_sub[source_rows, :] @ X_sub[target_rows, :].T).tocsr()
+        local_source = np.repeat(np.arange(source_rows.size, dtype=np.int64), counts[u_pos:u_end])
+        local_target = np.searchsorted(target_rows, iB_sorted[edge_start:edge_end])
+
+        inter[order[edge_start:edge_end]] = co_block[local_source, local_target].A1.astype(
+            np.float64,
+            copy=False,
+        )
+
+        u_pos = u_end
+
+    return inter
 
 
 def stat_fn_structure_metrics(X: sp.csr_matrix) -> np.ndarray | None:

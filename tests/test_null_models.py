@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
+import metacooc.null_models as null_models
 from metacooc.null_models import (
     _seed_seq_spawn,
     make_null_sampler,
@@ -32,6 +33,28 @@ def _sample_one(X, model, seed=11):
         sort_indices=True,
     )
     return next(iter(sampler.sample(1, seed=seed)))
+
+
+def _reference_cooccurrence_jaccard(X, subset_idx, iA, iB):
+    X_sub = X[subset_idx, :].astype(np.int32, copy=False).tocsr()
+    totals = np.asarray(X_sub.sum(axis=1)).ravel().astype(np.float64, copy=False)
+    co = (X_sub @ X_sub.T).tocsr()
+    inter = co[iA, iB].A1.astype(np.float64, copy=False)
+    union = totals[iA] + totals[iB] - inter
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.divide(
+            inter,
+            union,
+            out=np.zeros_like(inter, dtype=float),
+            where=union > 0,
+        )
+
+
+def _adaptive_cooccurrence_jaccard(monkeypatch, X, subset_idx, iA, iB):
+    monkeypatch.setattr(null_models, "_G_subset_idx", subset_idx)
+    monkeypatch.setattr(null_models, "_G_iA", iA)
+    monkeypatch.setattr(null_models, "_G_iB", iB)
+    return null_models.stat_fn_cooccurrence_jaccard(X)
 
 
 def test_fe_preserves_row_sums(raw_ingredients):
@@ -137,6 +160,50 @@ def test_ee_small_matrix_support_frequencies_are_uniform():
     assert set(counts) == set(supports)
     for support in supports:
         assert abs(counts[support] - expected) < expected * 0.20
+
+
+def test_cooccurrence_jaccard_matches_full_matrix_reference(monkeypatch):
+    X = sp.csr_matrix(
+        (
+            np.ones(14, dtype=np.int8),
+            (
+                [0, 0, 0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4],
+                [0, 1, 4, 1, 2, 0, 2, 5, 0, 3, 5, 1, 3, 4],
+            ),
+        ),
+        shape=(6, 6),
+    )
+    subset_idx = np.array([3, 0, 4, 1, 5], dtype=np.int64)
+    iA = np.array([0, 0, 1, 2, 3, 3, 4], dtype=np.int64)
+    iB = np.array([1, 3, 2, 0, 0, 3, 4], dtype=np.int64)
+
+    observed = _adaptive_cooccurrence_jaccard(monkeypatch, X, subset_idx, iA, iB)
+    expected = _reference_cooccurrence_jaccard(X, subset_idx, iA, iB)
+
+    assert np.allclose(observed, expected)
+
+
+def test_cooccurrence_jaccard_matches_reference_when_batched(monkeypatch):
+    X = sp.csr_matrix(
+        (
+            np.ones(18, dtype=np.int8),
+            (
+                [0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 6, 7],
+                [0, 2, 1, 2, 5, 0, 5, 1, 3, 4, 0, 4, 2, 3, 5, 1, 5, 4],
+            ),
+        ),
+        shape=(8, 6),
+    )
+    subset_idx = np.array([7, 0, 5, 2, 6, 3, 1], dtype=np.int64)
+    iA = np.array([0, 1, 1, 2, 3, 4, 5, 5, 6], dtype=np.int64)
+    iB = np.array([1, 2, 5, 0, 4, 6, 1, 3, 0], dtype=np.int64)
+    monkeypatch.setattr(null_models, "_COOCCURRENCE_JACCARD_MAX_SOURCE_ROWS", 1)
+    monkeypatch.setattr(null_models, "_COOCCURRENCE_JACCARD_MAX_EDGE_BLOCK", 2)
+
+    observed = _adaptive_cooccurrence_jaccard(monkeypatch, X, subset_idx, iA, iB)
+    expected = _reference_cooccurrence_jaccard(X, subset_idx, iA, iB)
+
+    assert np.allclose(observed, expected)
 
 
 def test_generated_null_seed_reproduces_when_reused():
