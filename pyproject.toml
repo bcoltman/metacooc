@@ -12,7 +12,7 @@ authors = [
     {name = "Benjamin Coltman", email = "benjamin.coltman@univie.ac.at"},
 	{name = "Daan Speth", email = "daan.speth@univie.ac.at"}
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "pandas",
@@ -29,6 +29,9 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
 
