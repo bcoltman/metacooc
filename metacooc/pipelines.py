@@ -416,7 +416,7 @@ def run_association(args):
     single_df = association_obj(
         null_ing,
         filt_ing,
-        threshold=args.threshold,
+        min_conditional_probability=args.min_conditional_probability,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         compute_fisher=args.compute_fisher,
@@ -468,7 +468,7 @@ def run_cooccurrence(args):
         taxa_universe,
         large=args.large,
         max_pairs=args.max_pairs,
-        threshold=args.threshold,
+        min_conditional_probability=args.min_conditional_probability,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         nm_seed=args.nm_seed,

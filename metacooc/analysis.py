@@ -181,7 +181,7 @@ def select_taxa_universe(
 def association_obj(
     null_ingredients: "Ingredients",
     filtered_ingredients: "Ingredients",
-    threshold: float = 0.0,
+    min_conditional_probability: float = 0.0,
     null_model: str = "FE",
     nm_n_reps: int = 1000,
     nm_seed: int | None = None,
@@ -209,8 +209,8 @@ def association_obj(
         nm_progress_every=nm_progress_every,
     )
 
-    if threshold is not None:
-        out = out[out["p_T_given_X"] > threshold].copy()
+    if min_conditional_probability is not None:
+        out = out[out["p_T_given_X"] > min_conditional_probability].copy()
 
     return out
 
@@ -405,7 +405,7 @@ def association(
     filtered_ingredients: "Ingredients",
     output_dir: str,
     tag: str | None = None,
-    threshold: float = 0.0,
+    min_conditional_probability: float = 0.0,
     null_model: str = "FE",
     nm_n_reps: int = 1000,
     nm_seed: int | None = None,
@@ -427,7 +427,7 @@ def association(
     association_df = association_obj(
         null_ingredients=null,
         filtered_ingredients=filtered,
-        threshold=threshold,
+        min_conditional_probability=min_conditional_probability,
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_seed=nm_seed,
@@ -455,7 +455,7 @@ def presence_submatrix_by_taxa(ingredients: Ingredients, taxa_subset: List[str])
 def _cooccur_core(
     ing: Ingredients,
     taxa_universe: List[str],
-    threshold: float = 0.1,
+    min_conditional_probability: float = 0.1,
     m_total: Optional[int] = None,
     compute_fisher: bool = False,
 ) -> Tuple[Optional[CooccurrenceArrays], pd.DataFrame]:
@@ -474,8 +474,8 @@ def _cooccur_core(
     for iA, iB, inter in stream_edge_values(co_mat, min_value=0):
         A_totals = totals[iA]
 
-        if threshold > 0:
-            keep = inter > (threshold * A_totals)
+        if min_conditional_probability > 0:
+            keep = inter > (min_conditional_probability * A_totals)
             if not np.any(keep):
                 continue
             iA = iA[keep]
@@ -495,7 +495,7 @@ def _cooccur_core(
     nodes_df = pd.DataFrame({
         "taxon": taxa_universe,
         "total_count": totals.astype(int, copy=False),
-        f"degree_PBA_gt_{threshold}": deg_fwd.astype(int, copy=False),
+        f"degree_PBA_gt_{min_conditional_probability}": deg_fwd.astype(int, copy=False),
     })
 
     if n_keep == 0:
@@ -511,8 +511,8 @@ def _cooccur_core(
     for iA, iB, inter in stream_edge_values(co_mat, min_value=0):
         A_totals = totals[iA]
 
-        if threshold > 0:
-            keep = inter > (threshold * A_totals)
+        if min_conditional_probability > 0:
+            keep = inter > (min_conditional_probability * A_totals)
             if not np.any(keep):
                 continue
             iA = iA[keep]
@@ -573,7 +573,7 @@ def _cooccur_core_focal(
     ing: Ingredients,
     taxa_universe: List[str],
     focal_local_idx: np.ndarray,
-    threshold: float = 0.1,
+    min_conditional_probability: float = 0.1,
     m_total: Optional[int] = None,
     compute_fisher: bool = False,
 ) -> Tuple[Optional[CooccurrenceArrays], pd.DataFrame]:
@@ -593,7 +593,7 @@ def _cooccur_core_focal(
     nodes_df = pd.DataFrame({
         "taxon": taxa_universe,
         "total_count": totals.astype(int, copy=False),
-        f"degree_PBA_gt_{threshold}": np.zeros(len(taxa_universe), dtype=int),
+        f"degree_PBA_gt_{min_conditional_probability}": np.zeros(len(taxa_universe), dtype=int),
     })
 
     if focal_local_idx.size == 0:
@@ -618,8 +618,8 @@ def _cooccur_core_focal(
         inter = inter[nonself]
         A_totals = A_totals[nonself]
 
-        if threshold > 0:
-            keep = inter > (threshold * A_totals)
+        if min_conditional_probability > 0:
+            keep = inter > (min_conditional_probability * A_totals)
             if not np.any(keep):
                 continue
             iA = iA[keep]
@@ -646,7 +646,7 @@ def _cooccur_core_focal(
         n_keep += int(iA.size)
         deg_fwd += np.bincount(iA, minlength=n_taxa)
 
-    nodes_df[f"degree_PBA_gt_{threshold}"] = deg_fwd.astype(int, copy=False)
+    nodes_df[f"degree_PBA_gt_{min_conditional_probability}"] = deg_fwd.astype(int, copy=False)
 
     if n_keep == 0:
         return None, nodes_df
@@ -670,8 +670,8 @@ def _cooccur_core_focal(
         inter = inter[nonself]
         A_totals = A_totals[nonself]
 
-        if threshold > 0:
-            keep = inter > (threshold * A_totals)
+        if min_conditional_probability > 0:
+            keep = inter > (min_conditional_probability * A_totals)
             if not np.any(keep):
                 continue
             iA = iA[keep]
@@ -928,7 +928,7 @@ def cooccurrence_obj(
     rhs_query_to_taxa: dict[str, List[str]] | None = None,
     large: bool = False,
     max_pairs: int = 100_000,
-    threshold: float = 0.1,
+    min_conditional_probability: float = 0.1,
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_seed: int | None = None,
@@ -980,7 +980,7 @@ def cooccurrence_obj(
                 "  • Increase the --max_pairs parameter, or\n"
                 "  • Use --large to override (note: memory usage may exceed 100 GB, and large output files will be generated).\n\n"
                 "To reduce memory usage, you can:\n"
-                "  • Increase the --threshold value [0, 1],\n"
+                "  • Increase the --min_conditional_probability value [0, 1],\n"
                 "  • Lower the --filter_rank (e.g. to 'species'),\n"
                 "  • Adjust the input ingredients by:\n"
                 "    - Raising the --min_taxa_count, or\n"
@@ -992,7 +992,7 @@ def cooccurrence_obj(
         edge_arrays, nodes_df = _cooccur_core(
             null_ingredients,
             taxa_universe,
-            threshold=threshold,
+            min_conditional_probability=min_conditional_probability,
             m_total=est_pairs,
             compute_fisher=False,
         )
@@ -1001,7 +1001,7 @@ def cooccurrence_obj(
             null_ingredients,
             taxa_universe,
             focal_local_idx=focal_local_idx,
-            threshold=threshold,
+            min_conditional_probability=min_conditional_probability,
             m_total=est_pairs,
             compute_fisher=False,
         )
@@ -1031,7 +1031,7 @@ def cooccurrence_obj(
                     "No focal->RHS co-occurrence edges survived after RHS restriction. "
                     "This means the RHS taxa were valid targets, but no edges to those "
                     "B-side taxa survived under the current focal cohort, taxa universe, "
-                    "and threshold settings."
+                    "and min_conditional_probability settings."
                 )
                 return None, nodes_df
 
@@ -1135,7 +1135,7 @@ def export_cooccurrence_outputs(
         print(f"Taxon nodes analysis saved to {nodes_path}")
 
     if edge_arrays is None or edge_arrays.n_rows == 0:
-        print("No co-occurrence edges above threshold; no edge file written.")
+        print("No co-occurrence edges above min_conditional_probability; no edge file written.")
         return
 
     n_rows = edge_arrays.n_rows
@@ -1197,7 +1197,7 @@ def cooccurrence(
     filter_rank: Optional[str] = None,
     large: bool = False,
     max_pairs: int = 100_000,
-    threshold: float = 0.1,
+    min_conditional_probability: float = 0.1,
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_seed: int | None = None,
@@ -1225,7 +1225,7 @@ def cooccurrence(
         taxa_universe,
         large=large,
         max_pairs=max_pairs,
-        threshold=threshold,
+        min_conditional_probability=min_conditional_probability,
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_seed=nm_seed,

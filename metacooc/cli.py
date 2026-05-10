@@ -417,12 +417,25 @@ def add_large_and_max_pairs_args(parser, group=None):
     )
 
 
-def add_threshold_arg(parser, group=None):
+def add_min_conditional_probability_arg(parser, group=None, default=0.0):
     (group or parser).add_argument(
-        "--threshold",
+        "--min_conditional_probability",
         type=validate_threshold,
-        default=0,
-        help="Minimum threshold value required to output an entry (default: %(default)s).",
+        default=default,
+        help=(
+            "Minimum conditional probability required to output an association "
+            "entry or co-occurrence edge "
+            "(default: %(default)s)."
+        ),
+    )
+
+
+def add_q_threshold_arg(parser, group=None):
+    (group or parser).add_argument(
+        "--q_threshold",
+        type=validate_threshold,
+        default=0.0,
+        help="Maximum q-value to highlight in plots (default: %(default)s).",
     )
 
 
@@ -664,7 +677,11 @@ def analysis_command(args):
             filter_rank=args.filter_rank,
             large=args.large,
             max_pairs=args.max_pairs,
-            threshold=args.threshold,
+            min_conditional_probability=(
+                0.0
+                if args.min_conditional_probability is None
+                else args.min_conditional_probability
+            ),
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             nm_seed=args.nm_seed,
@@ -677,6 +694,8 @@ def analysis_command(args):
         )
 
     elif args.analysis_type == "structure":
+        if args.min_conditional_probability is not None:
+            subparser.error("--min_conditional_probability is only valid for --analysis_type cooccurrence and association")
         from metacooc.structure import structure
         structure(
             ingredients=args.filtered_file,
@@ -701,7 +720,11 @@ def analysis_command(args):
             filtered_ingredients=args.filtered_file,
             output_dir=args.output_dir,
             tag=args.tag,
-            threshold=args.threshold,
+            min_conditional_probability=(
+                0.0
+                if args.min_conditional_probability is None
+                else args.min_conditional_probability
+            ),
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             nm_seed=args.nm_seed,
@@ -722,7 +745,7 @@ def plot_command(args):
         df_file=args.analysis_file,
         output_dir=args.output_dir,
         tag=args.tag,
-        q_thresh=args.threshold,
+        q_thresh=args.q_threshold,
     )
 
 
@@ -838,7 +861,7 @@ def build_parser():
     add_filtered_file(analysis_sub, group=req)
     add_null_file(analysis_sub, group=req, required=False)
     add_tag_and_aggregated(analysis_sub, group=opt)
-    add_threshold_arg(analysis_sub, group=opt)
+    add_min_conditional_probability_arg(analysis_sub, group=opt, default=None)
     add_large_and_max_pairs_args(analysis_sub, group=opt)
     analysis_sub.add_argument(
         "--filter_rank",
@@ -859,7 +882,7 @@ def build_parser():
     opt = plot_sub.add_argument_group("optional arguments")
     add_output_dir(plot_sub, group=req)
     add_analysis_file(plot_sub, group=req)
-    add_threshold_arg(plot_sub, group=opt)
+    add_q_threshold_arg(plot_sub, group=opt)
     add_tag_and_aggregated(plot_sub, group=opt)
 
     # Cooccurrence
@@ -884,7 +907,7 @@ def build_parser():
     add_null_model_args(cooc_sub, group=opt)
     add_fisher_args(cooc_sub, group=opt)
     add_large_and_max_pairs_args(cooc_sub, group=opt)
-    add_threshold_arg(cooc_sub, group=opt)
+    add_min_conditional_probability_arg(cooc_sub, group=opt)
 
     # Association
     assoc_sub = add_subcommand(
@@ -907,7 +930,7 @@ def build_parser():
     add_filter_args(assoc_sub, group=opt)
     add_null_model_args(assoc_sub, group=opt)
     add_fisher_args(assoc_sub, group=opt)
-    add_threshold_arg(assoc_sub, group=opt)
+    add_min_conditional_probability_arg(assoc_sub, group=opt)
 
     # Structure
     structure_sub = add_subcommand(

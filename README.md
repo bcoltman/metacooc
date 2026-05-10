@@ -23,7 +23,7 @@
   - [Biome distribution](#biome-distribution)
 - [Key concepts](#key-concepts)
   - [Cohort vs null/background](#cohort-vs-nullbackground)
-  - [Threshold semantics](#threshold-semantics)
+  - [Output cutoff semantics](#output-cutoff-semantics)
   - [Null scopes](#null-scopes)
   - [Null models](#null-models)
 - [Command reference](#command-reference)
@@ -191,7 +191,7 @@ All pipelines follow the same high-level pattern:
 
 ### Co-occurrence
 
-**Purpose:** build a directed taxon–taxon network where edges represent conditional co-occurrence above a threshold.
+**Purpose:** build a directed taxon–taxon network where edges represent conditional co-occurrence above `--min_conditional_probability`.
 
 ```bash
 metacooc cooccurrence \
@@ -297,16 +297,16 @@ Association requires the cohort to be a **strict subset** of the null (i.e. ther
 
 ---
 
-### Threshold semantics
+### Output cutoff semantics
 
-The flag name is the same across pipelines, but the meaning depends on the analysis:
+MetaCoOc uses metric-specific cutoff names:
 
-* **association**: `--threshold` filters taxa by **specificity**
-  `p(T | X) > threshold`
-* **cooccurrence**: `--threshold` is the minimum **conditional probability** for an edge
-  include edges where `P(B | A) > threshold`
+* **association**: `--min_conditional_probability` filters taxa by cohort conditional probability
+  `p(T | X) > min_conditional_probability`
+* **cooccurrence**: `--min_conditional_probability` is the minimum **conditional probability** for an edge
+  include edges where `P(B | A) > min_conditional_probability`
 
-For large datasets, increasing `--threshold` can dramatically reduce runtime and output size.
+For large datasets, increasing `--min_conditional_probability` can dramatically reduce runtime and output size.
 
 ---
 

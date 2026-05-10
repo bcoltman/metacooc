@@ -171,7 +171,11 @@ def test_count_operations_do_not_overflow_uint8_presence():
         coverage_matrix=matrix.astype(float),
     )
 
-    edge_arrays, _ = _cooccur_core(ingredients, ingredients.taxa, threshold=0.0)
+    edge_arrays, _ = _cooccur_core(
+        ingredients,
+        ingredients.taxa,
+        min_conditional_probability=0.0,
+    )
     assert edge_arrays.cols["inter"][0] == 299
 
 

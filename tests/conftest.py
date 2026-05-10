@@ -89,7 +89,7 @@ def pipeline_args(**overrides):
         nm_steps_per_rep=None,
         nm_progress_every=25,
         compute_fisher=False,
-        threshold=0.0,
+        min_conditional_probability=0.0,
         large=True,
         max_pairs=100_000,
         return_all_taxa=True,

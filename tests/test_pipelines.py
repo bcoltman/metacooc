@@ -29,7 +29,7 @@ def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
         search_mode="taxa_context",
         search_string="g__Rhizo",
         null_model="FE",
-        threshold=0.0,
+        min_conditional_probability=0.0,
     )
     pipelines.run_cooccurrence(args)
     assert (tmp_path / "test_global_nodes.tsv").exists()
