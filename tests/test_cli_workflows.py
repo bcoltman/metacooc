@@ -169,6 +169,114 @@ def test_cli_conditional_probability_flags_parse_and_reject_old_names(tmp_path):
 
 
 @pytest.mark.cli
+def test_cli_presence_threshold_flags_parse_and_validate(tmp_path):
+    from metacooc.cli import build_parser
+
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "association",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            str(tmp_path / "assoc"),
+            "--min_coverage",
+            "1.5",
+            "--min_coverage_by_rank",
+            "species=0.2",
+            "genus=0.1",
+            "--min_relative_abundance",
+            "0.02",
+            "--min_relative_abundance_by_rank",
+            "species=0.03",
+        ]
+    )
+
+    assert args.min_coverage == 1.5
+    assert args.min_coverage_by_rank == [("species", 0.2), ("genus", 0.1)]
+    assert args.min_relative_abundance == 0.02
+    assert args.min_relative_abundance_by_rank == [("species", 0.03)]
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "association",
+                "--search_mode",
+                "taxa_context",
+                "--search_string",
+                "g__Rhizo",
+                "--output_dir",
+                str(tmp_path / "bad_rank"),
+                "--min_coverage_by_rank",
+                "strain=1",
+            ]
+        )
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "association",
+                "--search_mode",
+                "taxa_context",
+                "--search_string",
+                "g__Rhizo",
+                "--output_dir",
+                str(tmp_path / "bad_cov"),
+                "--min_coverage",
+                "-1",
+            ]
+        )
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "association",
+                "--search_mode",
+                "taxa_context",
+                "--search_string",
+                "g__Rhizo",
+                "--output_dir",
+                str(tmp_path / "bad_rel"),
+                "--min_relative_abundance",
+                "1.1",
+            ]
+        )
+
+
+@pytest.mark.cli
+def test_cli_filter_accepts_presence_threshold_as_filter(monkeypatch, tmp_path):
+    from metacooc.cli import build_parser
+    import metacooc.filter as filter_module
+
+    captured = {}
+
+    def fake_filter_data(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(filter_module, "filter_data", fake_filter_data)
+
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "filter",
+            "--custom_ingredients",
+            str(tmp_path / "ingredients"),
+            "--output_dir",
+            str(tmp_path / "filter"),
+            "--min_coverage",
+            "1.0",
+        ]
+    )
+    args.func(args)
+
+    assert captured["min_coverage"] == 1.0
+    assert captured["min_relative_abundance"] is None
+
+
+@pytest.mark.cli
 def test_cli_analysis_cutoff_flag_parses_and_is_rejected_for_structure(tmp_path):
     from metacooc.cli import build_parser
 

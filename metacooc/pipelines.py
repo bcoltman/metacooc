@@ -28,7 +28,7 @@ import pandas as pd
 
 from metacooc.search import resolve_focal_taxa_queries, search_data_obj
 from metacooc.filter import filter_data_obj
-from metacooc.pantry import load_ingredients
+from metacooc.pantry import load_ingredients, threshold_ingredients_presence
 from metacooc.analysis import (
     association_obj,
     cooccurrence_obj,
@@ -100,6 +100,20 @@ def _biome_distribution_taxa_frame(presence, biomes, taxa, indices):
     ).T
 
 
+def _threshold_ingredients_from_args(ingredients, args):
+    return threshold_ingredients_presence(
+        ingredients,
+        min_coverage=getattr(args, "min_coverage", None),
+        min_coverage_by_rank=getattr(args, "min_coverage_by_rank", None),
+        min_relative_abundance=getattr(args, "min_relative_abundance", None),
+        min_relative_abundance_by_rank=getattr(
+            args,
+            "min_relative_abundance_by_rank",
+            None,
+        ),
+    )
+
+
 def run_shared_pipeline_setup(args):
     """
     Shared setup for cooccurrence, association, and structure pipelines.
@@ -132,6 +146,7 @@ def run_shared_pipeline_setup(args):
         args.custom_ingredients,
         args.data_version,
     )
+    ingredients = _threshold_ingredients_from_args(ingredients, args)
 
     focal_query_to_taxa = None
     rhs_query_to_taxa = None
@@ -503,6 +518,7 @@ def run_biome_distribution(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
+    ingredients = _threshold_ingredients_from_args(ingredients, args)
     if _biome_distribution_filter_requested(args):
         ingredients, is_successful = filter_data_obj(
             ingredients,

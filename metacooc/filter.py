@@ -222,7 +222,11 @@ def filter_data(accessions_file,
                 min_shared_samples_between_taxa=1,
                 custom_ingredients=None,
                 data_version=None,
-                metadata_file=None):
+                metadata_file=None,
+                min_coverage=None,
+                min_coverage_by_rank=None,
+                min_relative_abundance=None,
+                min_relative_abundance_by_rank=None):
                 
     
     os.makedirs(output_dir, exist_ok=True)
@@ -232,6 +236,13 @@ def filter_data(accessions_file,
                                    aggregated, 
                                    custom_ingredients, 
                                    data_version)
+    ingredients = threshold_ingredients_presence(
+        ingredients,
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
+    )
     
     if null_scope is None:
         

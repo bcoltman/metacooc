@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
+import scipy.sparse as sp
 
 from metacooc.filter import filter_data, filter_data_obj
-from metacooc.pantry import load_ingredients
+from metacooc.pantry import Ingredients, load_ingredients
 from metacooc.search import search_data_obj, search_in_metadata
 
 
@@ -156,6 +158,24 @@ def test_metadata_search_invalid_backend_raises(monkeypatch, metadata_file):
             "soil",
             column_names=["env_biome_sam"],
         )
+
+
+def test_taxa_search_uses_coverage_threshold():
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=["d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a"],
+        presence_matrix=sp.csr_matrix(np.ones((1, 2), dtype=np.uint8)),
+        coverage_matrix=sp.csr_matrix([[0.5, 2.0]], dtype=float),
+    )
+
+    hits = search_data_obj(
+        search_mode="taxa_context",
+        search_string="s__a",
+        custom_ingredients=ingredients,
+        min_coverage=1.0,
+    )
+
+    assert hits == {"S2"}
 
 
 def test_focal_lhs_rhs_query_resolution(raw_ingredients):

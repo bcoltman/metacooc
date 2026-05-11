@@ -56,6 +56,46 @@ def validate_threshold(value):
     return value
 
 
+def validate_nonnegative_float(value):
+    try:
+        value = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not a valid float.")
+    if value < 0.0:
+        raise argparse.ArgumentTypeError("Value must be non-negative.")
+    return value
+
+
+def _rank_threshold_pair(value, value_parser, flag_name):
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(
+            f"{flag_name} values must have the form rank=value"
+        )
+    rank, raw = value.split("=", 1)
+    rank = rank.strip().lower()
+    if rank not in RANK_CHOICES:
+        raise argparse.ArgumentTypeError(
+            f"Unknown rank '{rank}'. Expected one of: {', '.join(RANK_CHOICES)}"
+        )
+    return rank, value_parser(raw)
+
+
+def validate_coverage_rank_threshold(value):
+    return _rank_threshold_pair(
+        value,
+        validate_nonnegative_float,
+        "--min_coverage_by_rank",
+    )
+
+
+def validate_relative_abundance_rank_threshold(value):
+    return _rank_threshold_pair(
+        value,
+        validate_threshold,
+        "--min_relative_abundance_by_rank",
+    )
+
+
 def format_tag(tag, aggregated):
     if aggregated:
         return f"{tag}_aggregated_" if tag else "aggregated_"
@@ -327,6 +367,50 @@ def add_filter_args(parser, group=None):
         type=positive_int,
         default=1,
         help="Sets the k-degree neighbourhood returned from taxa neighbourhood expansion (default: %(default)s).",
+    )
+
+
+def add_presence_threshold_args(parser, group=None):
+    target = group or parser
+    target.add_argument(
+        "--min_coverage",
+        type=validate_nonnegative_float,
+        default=None,
+        help=(
+            "Minimum raw coverage required for a taxon-sample cell to count as "
+            "present. Applied before binary workflows."
+        ),
+    )
+    target.add_argument(
+        "--min_coverage_by_rank",
+        nargs="+",
+        type=validate_coverage_rank_threshold,
+        default=None,
+        metavar="rank=value",
+        help=(
+            "Rank-specific raw coverage thresholds, for example "
+            "--min_coverage_by_rank species=0.02 genus=0.01."
+        ),
+    )
+    target.add_argument(
+        "--min_relative_abundance",
+        type=validate_threshold,
+        default=None,
+        help=(
+            "Minimum relative abundance fraction required for a taxon-sample "
+            "cell to count as present, e.g. 0.02 for 2%%."
+        ),
+    )
+    target.add_argument(
+        "--min_relative_abundance_by_rank",
+        nargs="+",
+        type=validate_relative_abundance_rank_threshold,
+        default=None,
+        metavar="rank=value",
+        help=(
+            "Rank-specific relative abundance thresholds as fractions, for example "
+            "--min_relative_abundance_by_rank species=0.02 genus=0.01."
+        ),
     )
 
 
@@ -617,6 +701,10 @@ def search_command(args, subparser):
         list_biomes=args.list_biomes,
         aggregated=args.aggregated,
         metadata_file=args.metadata_file,
+        min_coverage=args.min_coverage,
+        min_coverage_by_rank=args.min_coverage_by_rank,
+        min_relative_abundance=args.min_relative_abundance,
+        min_relative_abundance_by_rank=args.min_relative_abundance_by_rank,
     )
 
 
@@ -628,11 +716,17 @@ def filter_command(args, subparser):
         and args.min_sample_count == 1
         and args.accessions_file is None
         and args.filter_rank is None
+        and args.min_coverage is None
+        and not args.min_coverage_by_rank
+        and args.min_relative_abundance is None
+        and not args.min_relative_abundance_by_rank
     ):
         subparser.error(
             "At least one of the following must be provided: "
             "--min_taxa_count (not 1), --min_sample_count (not 1), "
-            "--accessions_file, or --filter_rank"
+            "--accessions_file, --filter_rank, --min_coverage, "
+            "--min_coverage_by_rank, --min_relative_abundance, or "
+            "--min_relative_abundance_by_rank"
         )
 
     args.tag = format_tag(args.tag, args.aggregated)
@@ -657,6 +751,10 @@ def filter_command(args, subparser):
         custom_ingredients=args.custom_ingredients,
         data_version=args.data_version,
         metadata_file=args.metadata_file,
+        min_coverage=args.min_coverage,
+        min_coverage_by_rank=args.min_coverage_by_rank,
+        min_relative_abundance=args.min_relative_abundance,
+        min_relative_abundance_by_rank=args.min_relative_abundance_by_rank,
     )
 
 
@@ -825,6 +923,7 @@ def build_parser():
     add_custom_ingredients(search_sub, group=opt)
     add_metadata_file(search_sub, group=opt)
     add_search_args(search_sub, group=opt)
+    add_presence_threshold_args(search_sub, group=opt)
     add_list_column_names(search_sub, group=opt)
     add_list_biomes(search_sub, group=opt)
 
@@ -844,6 +943,7 @@ def build_parser():
     add_custom_ingredients(filter_sub, group=opt)
     add_metadata_file(filter_sub, group=opt)
     add_filter_args(filter_sub, group=opt)
+    add_presence_threshold_args(filter_sub, group=opt)
     add_null_scope_args(filter_sub, group=opt)
     add_accessions_file(filter_sub, group=opt)
 
@@ -904,6 +1004,7 @@ def build_parser():
     add_search_args(cooc_sub, group=opt)
     add_null_scope_args(cooc_sub, group=opt)
     add_filter_args(cooc_sub, group=opt)
+    add_presence_threshold_args(cooc_sub, group=opt)
     add_null_model_args(cooc_sub, group=opt)
     add_fisher_args(cooc_sub, group=opt)
     add_large_and_max_pairs_args(cooc_sub, group=opt)
@@ -928,6 +1029,7 @@ def build_parser():
     add_search_args(assoc_sub, group=opt)
     add_null_scope_args(assoc_sub, group=opt)
     add_filter_args(assoc_sub, group=opt)
+    add_presence_threshold_args(assoc_sub, group=opt)
     add_null_model_args(assoc_sub, group=opt)
     add_fisher_args(assoc_sub, group=opt)
     add_min_conditional_probability_arg(assoc_sub, group=opt)
@@ -951,6 +1053,7 @@ def build_parser():
     add_search_args(structure_sub, group=opt)
     add_null_scope_args(structure_sub, group=opt)
     add_filter_args(structure_sub, group=opt)
+    add_presence_threshold_args(structure_sub, group=opt)
     add_null_model_args(structure_sub, group=opt)
 
     # Biome distribution
@@ -974,6 +1077,7 @@ def build_parser():
         min_taxa_count_default=None,
         min_sample_count_default=None,
     )
+    add_presence_threshold_args(biome_sub, group=opt)
     add_biome_distribution_args(biome_sub, group=opt)
 
     return parser
