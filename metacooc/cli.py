@@ -13,6 +13,27 @@ COHORT_SEARCH_MODE_CHOICES = ["taxa_context", "metadata", "biome"]
 SEARCH_SUBCOMMAND_MODE_CHOICES = ["focal_taxa", "taxa_context", "metadata", "biome"]
 
 
+class StackedHelpFormatter(argparse.HelpFormatter):
+    """Place each help description below the option invocation."""
+
+    def _format_action(self, action):
+        help_position = min(self._action_max_length + 2, self._max_help_position)
+        help_width = max(self._width - help_position, 11)
+        action_header = self._format_action_invocation(action)
+        parts = ["%*s%s\n" % (self._current_indent, "", action_header)]
+
+        if action.help and action.help.strip():
+            help_text = self._expand_help(action)
+            if help_text:
+                for line in self._split_lines(help_text, help_width):
+                    parts.append("%*s%s\n" % (help_position, "", line))
+
+        for subaction in self._iter_indented_subactions(action):
+            parts.append(self._format_action(subaction))
+
+        return self._join_parts(parts)
+
+
 # Helper functions
 def positive_int(value):
     try:
@@ -103,7 +124,12 @@ def format_tag(tag, aggregated):
 
 
 def add_subcommand(subparsers, name, help_text, func):
-    sub = subparsers.add_parser(name, help=help_text)
+    sub = subparsers.add_parser(
+        name,
+        help=help_text,
+        add_help=False,
+        formatter_class=StackedHelpFormatter,
+    )
     sub.set_defaults(func=func)
     func.__subparser__ = sub
     return sub
@@ -116,6 +142,24 @@ def check_required_args(args, required_args, subparser):
 
 
 # Argument group helpers
+def add_help(parser, group=None):
+    (group or parser).add_argument(
+        "-h",
+        "--help",
+        action="help",
+        default=argparse.SUPPRESS,
+        help="show this help message and exit",
+    )
+
+
+def required_group(parser, description=None):
+    return parser.add_argument_group("REQUIRED ARGUMENTS", description)
+
+
+def argument_group(parser, title, description):
+    return parser.add_argument_group(f"{title} ARGUMENTS", description)
+
+
 def add_data_dir(parser, group=None):
     default = str(default_data_dir())
     kwargs = {
@@ -158,11 +202,19 @@ def add_data_version(parser, group=None, mode: str = "load"):
 
 
 def add_tag_and_aggregated(parser, group=None):
+    add_tag(parser, group=group)
+    add_aggregated(parser, group=group)
+
+
+def add_tag(parser, group=None):
     (group or parser).add_argument(
         "--tag",
         default="",
         help="Optional tag to prepend to output filenames for distinction.",
     )
+
+
+def add_aggregated(parser, group=None):
     (group or parser).add_argument(
         "--aggregated",
         action="store_true",
@@ -597,7 +649,10 @@ def add_null_file(parser, group=None, required=True):
     (group or parser).add_argument(
         "--null_file",
         required=required,
-        help="Path to the null Ingredients directory. Not required for --analysis_type structure",
+        help=(
+            "Null Ingredients directory required for cooccurrence and association "
+            "analyses; not used for structure."
+        ),
     )
 
 
@@ -763,7 +818,7 @@ def analysis_command(args):
     subparser = analysis_command.__subparser__
 
     if args.analysis_type in {"cooccurrence", "association"} and not args.null_file:
-        subparser.error("--null_file is required for --analysis_type cooccurrence and association")
+        subparser.error("--null_file is required when --analysis_type is cooccurrence or association")
 
     if args.analysis_type == "cooccurrence":
         from metacooc.analysis import cooccurrence
@@ -873,7 +928,8 @@ def biome_distribution_command(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Co-occurrence data of microorganisms based on metagenome detection"
+        description="Co-occurrence data of microorganisms based on metagenome detection",
+        formatter_class=StackedHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -884,11 +940,22 @@ def build_parser():
         "Download initial files.",
         download_command,
     )
-    opt = download_sub.add_argument_group("optional arguments")
-    add_data_dir(download_sub, group=opt)
-    add_data_version(download_sub, group=opt)
-    add_list_data_versions(download_sub, group=opt)
-    add_force(download_sub, group=opt)
+    general = argument_group(download_sub, "GENERAL", None)
+    data = argument_group(
+        download_sub,
+        "DATA SOURCE",
+        "Choose where MetaCoOc data are stored and which data version to use.",
+    )
+    download_opts = argument_group(
+        download_sub,
+        "DOWNLOAD",
+        "List available versions or force a fresh download.",
+    )
+    add_help(download_sub, group=general)
+    add_data_dir(download_sub, group=data)
+    add_data_version(download_sub, group=data)
+    add_list_data_versions(download_sub, group=download_opts)
+    add_force(download_sub, group=download_opts)
 
     # Format
     format_sub = add_subcommand(
@@ -897,14 +964,25 @@ def build_parser():
         "Format data to generate Ingredients objects.",
         format_command,
     )
-    req = format_sub.add_argument_group("required arguments")
-    opt = format_sub.add_argument_group("optional arguments")
+    req = required_group(format_sub, "Inputs that must be provided to format Ingredients.")
+    general = argument_group(format_sub, "GENERAL", None)
+    output = argument_group(
+        format_sub,
+        "OUTPUT",
+        "Set output labels, generated Ingredients variants, and archive behavior.",
+    )
+    metadata = argument_group(
+        format_sub,
+        "METADATA",
+        "Provide biome labels or metadata inputs to include in formatted Ingredients.",
+    )
     add_output_dir(format_sub, group=req)
     add_tax_profile(format_sub, group=req)
-    add_tag_and_aggregated(format_sub, group=opt)
-    add_sample_to_biome_file(format_sub, group=opt)
-    add_data_version(format_sub, group=opt, mode="format")
-    add_archive_ingredients(format_sub, group=opt)
+    add_help(format_sub, group=general)
+    add_tag_and_aggregated(format_sub, group=output)
+    add_data_version(format_sub, group=output, mode="format")
+    add_archive_ingredients(format_sub, group=output)
+    add_sample_to_biome_file(format_sub, group=metadata)
 
     # Search
     search_sub = add_subcommand(
@@ -913,19 +991,45 @@ def build_parser():
         "Perform a file-based search.",
         lambda args: search_command(args, search_sub),
     )
-    req = search_sub.add_argument_group("required arguments (unless --list_column_names or --list_biomes is used)")
-    opt = search_sub.add_argument_group("optional arguments")
+    req = required_group(
+        search_sub,
+        "Required unless --list_column_names or --list_biomes is used.",
+    )
+    general = argument_group(search_sub, "GENERAL", None)
+    data = argument_group(
+        search_sub,
+        "DATA SOURCE",
+        "Choose the Ingredients and metadata sources used for searching.",
+    )
+    output = argument_group(search_sub, "OUTPUT", "Set output filename labels.")
+    search_opts = argument_group(
+        search_sub,
+        "SEARCH",
+        "Refine how taxa, metadata, and biome searches are interpreted.",
+    )
+    presence = argument_group(
+        search_sub,
+        "PRESENCE THRESHOLD",
+        "Convert abundance or coverage values to presence before searching.",
+    )
+    listing = argument_group(
+        search_sub,
+        "LISTING",
+        "List metadata columns or available biome terms instead of running a search.",
+    )
     add_search_mode_and_string(search_sub, group=req, choices=SEARCH_SUBCOMMAND_MODE_CHOICES)
     add_output_dir(search_sub, required=False, group=req)
-    add_data_dir(search_sub, group=opt)
-    add_data_version(search_sub, group=opt)
-    add_tag_and_aggregated(search_sub, group=opt)
-    add_custom_ingredients(search_sub, group=opt)
-    add_metadata_file(search_sub, group=opt)
-    add_search_args(search_sub, group=opt)
-    add_presence_threshold_args(search_sub, group=opt)
-    add_list_column_names(search_sub, group=opt)
-    add_list_biomes(search_sub, group=opt)
+    add_help(search_sub, group=general)
+    add_data_dir(search_sub, group=data)
+    add_data_version(search_sub, group=data)
+    add_aggregated(search_sub, group=data)
+    add_custom_ingredients(search_sub, group=data)
+    add_metadata_file(search_sub, group=data)
+    add_tag(search_sub, group=output)
+    add_search_args(search_sub, group=search_opts)
+    add_presence_threshold_args(search_sub, group=presence)
+    add_list_column_names(search_sub, group=listing)
+    add_list_biomes(search_sub, group=listing)
 
     # Filter
     filter_sub = add_subcommand(
@@ -934,18 +1038,46 @@ def build_parser():
         "Filter data by accession numbers or other criteria.",
         lambda args: filter_command(args, filter_sub),
     )
-    req = filter_sub.add_argument_group("required arguments")
-    opt = filter_sub.add_argument_group("optional arguments")
+    req = required_group(filter_sub, "Output location for filtered Ingredients.")
+    general = argument_group(filter_sub, "GENERAL", None)
+    data = argument_group(
+        filter_sub,
+        "DATA SOURCE",
+        "Choose the Ingredients and metadata sources to filter.",
+    )
+    output = argument_group(filter_sub, "OUTPUT", "Set output filename labels.")
+    selection = argument_group(
+        filter_sub,
+        "SAMPLE SELECTION",
+        "Provide explicit accession inputs for sample filtering.",
+    )
+    matrix = argument_group(
+        filter_sub,
+        "MATRIX FILTER",
+        "Filter samples and taxa by counts, rank, and taxa neighbourhood settings.",
+    )
+    presence = argument_group(
+        filter_sub,
+        "PRESENCE THRESHOLD",
+        "Convert abundance or coverage values to presence before filtering.",
+    )
+    null_scope = argument_group(
+        filter_sub,
+        "NULL SCOPE",
+        "Restrict the background sample set used for null model generation.",
+    )
     add_output_dir(filter_sub, group=req)
-    add_data_dir(filter_sub, group=opt)
-    add_data_version(filter_sub, group=opt)
-    add_tag_and_aggregated(filter_sub, group=opt)
-    add_custom_ingredients(filter_sub, group=opt)
-    add_metadata_file(filter_sub, group=opt)
-    add_filter_args(filter_sub, group=opt)
-    add_presence_threshold_args(filter_sub, group=opt)
-    add_null_scope_args(filter_sub, group=opt)
-    add_accessions_file(filter_sub, group=opt)
+    add_help(filter_sub, group=general)
+    add_data_dir(filter_sub, group=data)
+    add_data_version(filter_sub, group=data)
+    add_aggregated(filter_sub, group=data)
+    add_custom_ingredients(filter_sub, group=data)
+    add_metadata_file(filter_sub, group=data)
+    add_tag(filter_sub, group=output)
+    add_accessions_file(filter_sub, group=selection)
+    add_filter_args(filter_sub, group=matrix)
+    add_presence_threshold_args(filter_sub, group=presence)
+    add_null_scope_args(filter_sub, group=null_scope)
 
     # Analysis
     analysis_sub = add_subcommand(
@@ -954,22 +1086,39 @@ def build_parser():
         "Perform co-occurrence, association or structure analysis.",
         analysis_command,
     )
-    req = analysis_sub.add_argument_group("required arguments")
-    opt = analysis_sub.add_argument_group("optional arguments")
+    req = required_group(analysis_sub, "Inputs that define the analysis to run.")
+    general = argument_group(analysis_sub, "GENERAL", None)
+    mode_inputs = argument_group(
+        analysis_sub,
+        "ANALYSIS TYPE SPECIFIC",
+        "Inputs required only by selected --analysis_type values.",
+    )
+    output = argument_group(analysis_sub, "OUTPUT", "Set output filename labels and Ingredients variant labels.")
+    analysis_opts = argument_group(
+        analysis_sub,
+        "ANALYSIS",
+        "Control statistical tests, reporting thresholds, and co-occurrence limits.",
+    )
+    null_model = argument_group(
+        analysis_sub,
+        "NULL MODEL",
+        "Configure null model selection, replicates, seeds, and multiprocessing.",
+    )
     add_analysis_type(analysis_sub, group=req)
     add_output_dir(analysis_sub, group=req)
     add_filtered_file(analysis_sub, group=req)
-    add_null_file(analysis_sub, group=req, required=False)
-    add_tag_and_aggregated(analysis_sub, group=opt)
-    add_min_conditional_probability_arg(analysis_sub, group=opt, default=None)
-    add_large_and_max_pairs_args(analysis_sub, group=opt)
-    analysis_sub.add_argument(
+    add_null_file(analysis_sub, group=mode_inputs, required=False)
+    add_help(analysis_sub, group=general)
+    add_tag_and_aggregated(analysis_sub, group=output)
+    add_min_conditional_probability_arg(analysis_sub, group=analysis_opts, default=None)
+    add_large_and_max_pairs_args(analysis_sub, group=analysis_opts)
+    analysis_opts.add_argument(
         "--filter_rank",
         choices=RANK_CHOICES,
         help="Taxa identified at a rank higher than this rank are filtered out of results.",
     )
-    add_null_model_args(analysis_sub, group=opt)
-    add_fisher_args(analysis_sub, group=opt)
+    add_fisher_args(analysis_sub, group=analysis_opts)
+    add_null_model_args(analysis_sub, group=null_model)
 
     # Plot
     plot_sub = add_subcommand(
@@ -978,12 +1127,15 @@ def build_parser():
         "Plot analysis.",
         plot_command,
     )
-    req = plot_sub.add_argument_group("required arguments")
-    opt = plot_sub.add_argument_group("optional arguments")
+    req = required_group(plot_sub, "Inputs and output location for plotting.")
+    general = argument_group(plot_sub, "GENERAL", None)
+    output = argument_group(plot_sub, "OUTPUT", "Set output filename labels and Ingredients variant labels.")
+    plot_opts = argument_group(plot_sub, "PLOT", "Control plot highlighting thresholds.")
     add_output_dir(plot_sub, group=req)
     add_analysis_file(plot_sub, group=req)
-    add_q_threshold_arg(plot_sub, group=opt)
-    add_tag_and_aggregated(plot_sub, group=opt)
+    add_help(plot_sub, group=general)
+    add_tag_and_aggregated(plot_sub, group=output)
+    add_q_threshold_arg(plot_sub, group=plot_opts)
 
     # Cooccurrence
     cooc_sub = add_subcommand(
@@ -992,23 +1144,61 @@ def build_parser():
         "Run the full co-occurrence workflow (in-memory).",
         cooccurrence_command,
     )
-    req = cooc_sub.add_argument_group("required arguments")
-    opt = cooc_sub.add_argument_group("optional arguments")
+    req = required_group(cooc_sub, "Query and output settings required for the full workflow.")
+    general = argument_group(cooc_sub, "GENERAL", None)
+    data = argument_group(
+        cooc_sub,
+        "DATA SOURCE",
+        "Choose the Ingredients and metadata sources used by the workflow.",
+    )
+    output = argument_group(cooc_sub, "OUTPUT", "Set output filename labels.")
+    search_opts = argument_group(
+        cooc_sub,
+        "SEARCH",
+        "Refine how taxa, metadata, biome, and focal-taxa searches are interpreted.",
+    )
+    matrix = argument_group(
+        cooc_sub,
+        "MATRIX FILTER",
+        "Filter samples and taxa by counts, rank, and taxa neighbourhood settings.",
+    )
+    presence = argument_group(
+        cooc_sub,
+        "PRESENCE THRESHOLD",
+        "Convert abundance or coverage values to presence before binary analysis.",
+    )
+    null_scope = argument_group(
+        cooc_sub,
+        "NULL SCOPE",
+        "Restrict the background sample set used for null model generation.",
+    )
+    null_model = argument_group(
+        cooc_sub,
+        "NULL MODEL",
+        "Configure null model selection, replicates, seeds, and multiprocessing.",
+    )
+    analysis_opts = argument_group(
+        cooc_sub,
+        "ANALYSIS",
+        "Control statistical tests, reporting thresholds, and co-occurrence limits.",
+    )
     add_search_mode_and_string(cooc_sub, required=True, group=req, choices=COOCCURRENCE_SEARCH_MODE_CHOICES)
     add_output_dir(cooc_sub, group=req)
-    add_data_dir(cooc_sub, group=opt)
-    add_data_version(cooc_sub, group=opt)
-    add_tag_and_aggregated(cooc_sub, group=opt)
-    add_custom_ingredients(cooc_sub, group=opt)
-    add_metadata_file(cooc_sub, group=opt)
-    add_search_args(cooc_sub, group=opt)
-    add_null_scope_args(cooc_sub, group=opt)
-    add_filter_args(cooc_sub, group=opt)
-    add_presence_threshold_args(cooc_sub, group=opt)
-    add_null_model_args(cooc_sub, group=opt)
-    add_fisher_args(cooc_sub, group=opt)
-    add_large_and_max_pairs_args(cooc_sub, group=opt)
-    add_min_conditional_probability_arg(cooc_sub, group=opt)
+    add_help(cooc_sub, group=general)
+    add_data_dir(cooc_sub, group=data)
+    add_data_version(cooc_sub, group=data)
+    add_aggregated(cooc_sub, group=data)
+    add_custom_ingredients(cooc_sub, group=data)
+    add_metadata_file(cooc_sub, group=data)
+    add_tag(cooc_sub, group=output)
+    add_search_args(cooc_sub, group=search_opts)
+    add_filter_args(cooc_sub, group=matrix)
+    add_presence_threshold_args(cooc_sub, group=presence)
+    add_null_scope_args(cooc_sub, group=null_scope)
+    add_null_model_args(cooc_sub, group=null_model)
+    add_fisher_args(cooc_sub, group=analysis_opts)
+    add_large_and_max_pairs_args(cooc_sub, group=analysis_opts)
+    add_min_conditional_probability_arg(cooc_sub, group=analysis_opts)
 
     # Association
     assoc_sub = add_subcommand(
@@ -1017,22 +1207,60 @@ def build_parser():
         "Run the full association workflow (in-memory).",
         association_command,
     )
-    req = assoc_sub.add_argument_group("required arguments")
-    opt = assoc_sub.add_argument_group("optional arguments")
+    req = required_group(assoc_sub, "Query and output settings required for the full workflow.")
+    general = argument_group(assoc_sub, "GENERAL", None)
+    data = argument_group(
+        assoc_sub,
+        "DATA SOURCE",
+        "Choose the Ingredients and metadata sources used by the workflow.",
+    )
+    output = argument_group(assoc_sub, "OUTPUT", "Set output filename labels.")
+    search_opts = argument_group(
+        assoc_sub,
+        "SEARCH",
+        "Refine how taxa, metadata, and biome searches are interpreted.",
+    )
+    matrix = argument_group(
+        assoc_sub,
+        "MATRIX FILTER",
+        "Filter samples and taxa by counts, rank, and taxa neighbourhood settings.",
+    )
+    presence = argument_group(
+        assoc_sub,
+        "PRESENCE THRESHOLD",
+        "Convert abundance or coverage values to presence before binary analysis.",
+    )
+    null_scope = argument_group(
+        assoc_sub,
+        "NULL SCOPE",
+        "Restrict the background sample set used for null model generation.",
+    )
+    null_model = argument_group(
+        assoc_sub,
+        "NULL MODEL",
+        "Configure null model selection, replicates, seeds, and multiprocessing.",
+    )
+    analysis_opts = argument_group(
+        assoc_sub,
+        "ANALYSIS",
+        "Control statistical tests and reporting thresholds.",
+    )
     add_search_mode_and_string(assoc_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(assoc_sub, group=req)
-    add_data_dir(assoc_sub, group=opt)
-    add_data_version(assoc_sub, group=opt)
-    add_tag_and_aggregated(assoc_sub, group=opt)
-    add_custom_ingredients(assoc_sub, group=opt)
-    add_metadata_file(assoc_sub, group=opt)
-    add_search_args(assoc_sub, group=opt)
-    add_null_scope_args(assoc_sub, group=opt)
-    add_filter_args(assoc_sub, group=opt)
-    add_presence_threshold_args(assoc_sub, group=opt)
-    add_null_model_args(assoc_sub, group=opt)
-    add_fisher_args(assoc_sub, group=opt)
-    add_min_conditional_probability_arg(assoc_sub, group=opt)
+    add_help(assoc_sub, group=general)
+    add_data_dir(assoc_sub, group=data)
+    add_data_version(assoc_sub, group=data)
+    add_aggregated(assoc_sub, group=data)
+    add_custom_ingredients(assoc_sub, group=data)
+    add_metadata_file(assoc_sub, group=data)
+    add_tag(assoc_sub, group=output)
+    add_search_args(assoc_sub, group=search_opts)
+    add_filter_args(assoc_sub, group=matrix)
+    add_presence_threshold_args(assoc_sub, group=presence)
+    add_null_scope_args(assoc_sub, group=null_scope)
+    add_null_model_args(assoc_sub, group=null_model)
+    add_fisher_args(assoc_sub, group=analysis_opts)
+    add_min_conditional_probability_arg(assoc_sub, group=analysis_opts)
 
     # Structure
     structure_sub = add_subcommand(
@@ -1041,20 +1269,53 @@ def build_parser():
         "Run the structure analysis workflow (in-memory).",
         structure_command,
     )
-    req = structure_sub.add_argument_group("required arguments")
-    opt = structure_sub.add_argument_group("optional arguments")
+    req = required_group(structure_sub, "Query and output settings required for the full workflow.")
+    general = argument_group(structure_sub, "GENERAL", None)
+    data = argument_group(
+        structure_sub,
+        "DATA SOURCE",
+        "Choose the Ingredients and metadata sources used by the workflow.",
+    )
+    output = argument_group(structure_sub, "OUTPUT", "Set output filename labels.")
+    search_opts = argument_group(
+        structure_sub,
+        "SEARCH",
+        "Refine how taxa, metadata, and biome searches are interpreted.",
+    )
+    matrix = argument_group(
+        structure_sub,
+        "MATRIX FILTER",
+        "Filter samples and taxa by counts, rank, and taxa neighbourhood settings.",
+    )
+    presence = argument_group(
+        structure_sub,
+        "PRESENCE THRESHOLD",
+        "Convert abundance or coverage values to presence before structure metrics.",
+    )
+    null_scope = argument_group(
+        structure_sub,
+        "NULL SCOPE",
+        "Restrict the background sample set used for null model generation.",
+    )
+    null_model = argument_group(
+        structure_sub,
+        "NULL MODEL",
+        "Configure null model selection, replicates, seeds, and multiprocessing.",
+    )
     add_search_mode_and_string(structure_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(structure_sub, group=req)
-    add_data_dir(structure_sub, group=opt)
-    add_data_version(structure_sub, group=opt)
-    add_tag_and_aggregated(structure_sub, group=opt)
-    add_custom_ingredients(structure_sub, group=opt)
-    add_metadata_file(structure_sub, group=opt)
-    add_search_args(structure_sub, group=opt)
-    add_null_scope_args(structure_sub, group=opt)
-    add_filter_args(structure_sub, group=opt)
-    add_presence_threshold_args(structure_sub, group=opt)
-    add_null_model_args(structure_sub, group=opt)
+    add_help(structure_sub, group=general)
+    add_data_dir(structure_sub, group=data)
+    add_data_version(structure_sub, group=data)
+    add_aggregated(structure_sub, group=data)
+    add_custom_ingredients(structure_sub, group=data)
+    add_metadata_file(structure_sub, group=data)
+    add_tag(structure_sub, group=output)
+    add_search_args(structure_sub, group=search_opts)
+    add_filter_args(structure_sub, group=matrix)
+    add_presence_threshold_args(structure_sub, group=presence)
+    add_null_scope_args(structure_sub, group=null_scope)
+    add_null_model_args(structure_sub, group=null_model)
 
     # Biome distribution
     biome_sub = add_subcommand(
@@ -1063,22 +1324,45 @@ def build_parser():
         "Return the biome distribution of Ingredients.",
         biome_distribution_command,
     )
-    req = biome_sub.add_argument_group("required arguments")
-    opt = biome_sub.add_argument_group("optional arguments")
+    req = required_group(biome_sub, "Output location for biome distribution tables.")
+    general = argument_group(biome_sub, "GENERAL", None)
+    data = argument_group(
+        biome_sub,
+        "DATA SOURCE",
+        "Choose the Ingredients source used for biome summaries.",
+    )
+    output = argument_group(biome_sub, "OUTPUT", "Set output filename labels.")
+    matrix = argument_group(
+        biome_sub,
+        "MATRIX FILTER",
+        "Filter samples and taxa by counts and rank before reporting.",
+    )
+    presence = argument_group(
+        biome_sub,
+        "PRESENCE THRESHOLD",
+        "Convert abundance or coverage values to presence before reporting.",
+    )
+    biome_opts = argument_group(
+        biome_sub,
+        "BIOME DISTRIBUTION",
+        "Control taxa selection and biome level reporting.",
+    )
     add_output_dir(biome_sub, group=req)
-    add_data_dir(biome_sub, group=opt)
-    add_data_version(biome_sub, group=opt)
-    add_tag_and_aggregated(biome_sub, group=opt)
-    add_custom_ingredients(biome_sub, group=opt)
-    add_return_all_taxa(biome_sub, group=opt)
+    add_help(biome_sub, group=general)
+    add_data_dir(biome_sub, group=data)
+    add_data_version(biome_sub, group=data)
+    add_aggregated(biome_sub, group=data)
+    add_custom_ingredients(biome_sub, group=data)
+    add_tag(biome_sub, group=output)
     add_count_filter_args(
         biome_sub,
-        group=opt,
+        group=matrix,
         min_taxa_count_default=None,
         min_sample_count_default=None,
     )
-    add_presence_threshold_args(biome_sub, group=opt)
-    add_biome_distribution_args(biome_sub, group=opt)
+    add_presence_threshold_args(biome_sub, group=presence)
+    add_return_all_taxa(biome_sub, group=biome_opts)
+    add_biome_distribution_args(biome_sub, group=biome_opts)
 
     return parser
 
