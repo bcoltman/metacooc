@@ -76,6 +76,139 @@ def test_cli_data_dir_default_uses_platformdirs(monkeypatch, tmp_path):
 
 
 @pytest.mark.cli
+def test_cli_conditional_probability_flags_parse_and_reject_old_names(tmp_path):
+    from metacooc.cli import build_parser
+
+    parser = build_parser()
+
+    assoc_args = parser.parse_args(
+        [
+            "association",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            str(tmp_path / "assoc"),
+            "--min_conditional_probability",
+            "0.2",
+        ]
+    )
+    assert assoc_args.min_conditional_probability == 0.2
+
+    cooc_args = parser.parse_args(
+        [
+            "cooccurrence",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            str(tmp_path / "cooc"),
+            "--min_conditional_probability",
+            "0.3",
+        ]
+    )
+    assert cooc_args.min_conditional_probability == 0.3
+
+    plot_args = parser.parse_args(
+        [
+            "plot",
+            "--analysis_file",
+            str(tmp_path / "analysis.tsv"),
+            "--output_dir",
+            str(tmp_path / "plot"),
+            "--q_threshold",
+            "0.4",
+        ]
+    )
+    assert plot_args.q_threshold == 0.4
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "association",
+                "--search_mode",
+                "taxa_context",
+                "--search_string",
+                "g__Rhizo",
+                "--output_dir",
+                str(tmp_path / "old"),
+                "--threshold",
+                "0.1",
+            ]
+        )
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "cooccurrence",
+                "--search_mode",
+                "taxa_context",
+                "--search_string",
+                "g__Rhizo",
+                "--output_dir",
+                str(tmp_path / "old_cooc"),
+                "--threshold",
+                "0.1",
+            ]
+        )
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "plot",
+                "--analysis_file",
+                str(tmp_path / "analysis.tsv"),
+                "--output_dir",
+                str(tmp_path / "old_plot"),
+                "--threshold",
+                "0.1",
+            ]
+        )
+
+
+@pytest.mark.cli
+def test_cli_analysis_cutoff_flag_parses_and_is_rejected_for_structure(tmp_path):
+    from metacooc.cli import build_parser
+
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "analysis",
+            "--analysis_type",
+            "association",
+            "--null_file",
+            str(tmp_path / "null"),
+            "--filtered_file",
+            str(tmp_path / "filtered"),
+            "--output_dir",
+            str(tmp_path / "assoc"),
+            "--min_conditional_probability",
+            "0.1",
+        ]
+    )
+    assert args.min_conditional_probability == 0.1
+
+    structure_args = parser.parse_args(
+        [
+            "analysis",
+            "--analysis_type",
+            "structure",
+            "--filtered_file",
+            str(tmp_path / "filtered"),
+            "--output_dir",
+            str(tmp_path / "structure"),
+            "--min_conditional_probability",
+            "0.1",
+        ]
+    )
+    with pytest.raises(SystemExit):
+        structure_args.func(structure_args)
+
+
+@pytest.mark.cli
 def test_cli_null_hpc_options_parse_and_forward(monkeypatch, tmp_path):
     from metacooc.cli import build_parser
     import metacooc.pipelines as pipelines
@@ -286,6 +419,8 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "FE",
         "--nm_n_reps",
         "1",
+        "--min_conditional_probability",
+        "0",
     )
     assert not pd.read_csv(assoc_out / "association.tsv", sep="\t").empty
 
@@ -301,7 +436,7 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "--output_dir",
         cooc_out,
         "--large",
-        "--threshold",
+        "--min_conditional_probability",
         "0",
         "--null_model",
         "EE",
@@ -346,6 +481,8 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "FE",
         "--nm_n_reps",
         "1",
+        "--min_conditional_probability",
+        "0",
         "--tag",
         "cli",
     )
@@ -363,7 +500,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "--output_dir",
         cooc_out,
         "--large",
-        "--threshold",
+        "--min_conditional_probability",
         "0",
         "--null_model",
         "EE",
@@ -490,7 +627,7 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
         "--output_dir",
         out,
         "--large",
-        "--threshold",
+        "--min_conditional_probability",
         "0",
         "--null_model",
         "EE",
@@ -554,7 +691,7 @@ def test_cli_cooccurrence_warns_for_large_null_edge_request(
             "--output_dir",
             str(out),
             "--large",
-            "--threshold",
+            "--min_conditional_probability",
             "0",
             "--null_model",
             "EE",
