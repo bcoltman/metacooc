@@ -503,12 +503,6 @@ def add_null_model_args(parser, group=None):
     )
 
     (group or parser).add_argument(
-        "--nm_sort_indices",
-        action="store_true",
-        help="Sort sparse indices on generated null matrices.",
-    )
-
-    (group or parser).add_argument(
         "--nm_burn_in_steps",
         type=nonnegative_int,
         default=None,
@@ -840,7 +834,6 @@ def analysis_command(args):
             nm_seed=args.nm_seed,
             nm_n_workers=args.nm_n_workers,
             nm_mp_start=args.nm_mp_start,
-            nm_sort_indices=args.nm_sort_indices,
             nm_burn_in_steps=args.nm_burn_in_steps,
             nm_steps_per_rep=args.nm_steps_per_rep,
             nm_progress_every=args.nm_progress_every,
@@ -860,7 +853,6 @@ def analysis_command(args):
             nm_seed=args.nm_seed,
             nm_n_workers=args.nm_n_workers,
             nm_mp_start=args.nm_mp_start,
-            nm_sort_indices=args.nm_sort_indices,
             nm_burn_in_steps=args.nm_burn_in_steps,
             nm_steps_per_rep=args.nm_steps_per_rep,
             nm_progress_every=args.nm_progress_every,
@@ -884,7 +876,6 @@ def analysis_command(args):
             compute_fisher=args.compute_fisher,
             nm_n_workers=args.nm_n_workers,
             nm_mp_start=args.nm_mp_start,
-            nm_sort_indices=args.nm_sort_indices,
             nm_burn_in_steps=args.nm_burn_in_steps,
             nm_steps_per_rep=args.nm_steps_per_rep,
             nm_progress_every=args.nm_progress_every,

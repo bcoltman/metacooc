@@ -253,7 +253,6 @@ def structure_obj(
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
-    nm_sort_indices: bool = False,
     nm_burn_in_steps: int | None = None,
     nm_steps_per_rep: int | None = None,
     nm_progress_every: int = 25,
@@ -296,7 +295,6 @@ def structure_obj(
         compute_null=compute_null,
         nm_n_workers=nm_n_workers,
         nm_mp_start=nm_mp_start,
-        nm_sort_indices=nm_sort_indices,
         nm_burn_in_steps=nm_burn_in_steps,
         nm_steps_per_rep=nm_steps_per_rep,
         nm_progress_every=nm_progress_every,
@@ -312,7 +310,6 @@ def _structure_core(
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
-    nm_sort_indices: bool = False,
     nm_burn_in_steps: int | None = None,   # FF only
     nm_steps_per_rep: int | None = None,   # FF only
     nm_progress_every: int = 25,           # tqdm granularity inside workers
@@ -424,7 +421,6 @@ def _structure_core(
         seed=nm_seed,
         n_workers=nm_n_workers,
         mp_start=mp_start,
-        sort_indices=nm_sort_indices,
         burn_in_steps=nm_burn_in_steps,
         steps_per_rep=nm_steps_per_rep,
         progress_every=int(nm_progress_every),
@@ -469,7 +465,6 @@ def structure(
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
-    nm_sort_indices: bool = False,
     nm_burn_in_steps: int | None = None,
     nm_steps_per_rep: int | None = None,
     nm_progress_every: int = 25,
@@ -514,7 +509,6 @@ def structure(
         nm_seed=nm_seed,
         nm_n_workers=nm_n_workers,
         nm_mp_start=nm_mp_start,
-        nm_sort_indices=nm_sort_indices,
         nm_burn_in_steps=nm_burn_in_steps,
         nm_steps_per_rep=nm_steps_per_rep,
         nm_progress_every=nm_progress_every,

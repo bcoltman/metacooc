@@ -345,7 +345,6 @@ def test_cli_null_hpc_options_parse_and_forward(monkeypatch, tmp_path):
             "2",
             "--nm_mp_start",
             mp_start,
-            "--nm_sort_indices",
             "--nm_burn_in_steps",
             "3",
             "--nm_steps_per_rep",
@@ -359,7 +358,6 @@ def test_cli_null_hpc_options_parse_and_forward(monkeypatch, tmp_path):
     assert captured["nm_seed"] == 123
     assert captured["nm_n_workers"] == 2
     assert captured["nm_mp_start"] == mp_start
-    assert captured["nm_sort_indices"] is True
     assert captured["nm_burn_in_steps"] == 3
     assert captured["nm_steps_per_rep"] == 4
     assert captured["nm_progress_every"] == 5

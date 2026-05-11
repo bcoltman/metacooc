@@ -84,7 +84,6 @@ def pipeline_args(**overrides):
         nm_seed=7,
         nm_n_workers=None,
         nm_mp_start=None,
-        nm_sort_indices=False,
         nm_burn_in_steps=None,
         nm_steps_per_rep=None,
         nm_progress_every=25,
