@@ -24,6 +24,7 @@ from metacooc.utils import (
 )
 
 INGREDIENTS_FORMAT_VERSION = 1
+AGGREGATED_SUFFIX = " AGGREGATED"
 
 
 def presence_for_counts(obj):
@@ -51,6 +52,314 @@ def _csr(matrix: sp.spmatrix) -> sp.csr_matrix:
 def presence_for_counts(obj):
     X = obj.presence_matrix if hasattr(obj, "presence_matrix") else obj
     return X.astype(np.int32, copy=False)
+
+
+def _rank_thresholds_dict(thresholds, name: str) -> dict[str, float]:
+    if thresholds is None:
+        return {}
+
+    items = thresholds.items() if isinstance(thresholds, dict) else thresholds
+    out: dict[str, float] = {}
+    for rank, value in items:
+        rank = str(rank).strip().lower()
+        if rank not in _RANK_PREFIXES:
+            raise ValueError(
+                f"Unknown rank '{rank}' in {name}. Expected one of: "
+                f"{', '.join(_RANK_PREFIXES.keys())}"
+            )
+        out[rank] = float(value)
+    return out
+
+
+def _presence_threshold_active(
+    min_coverage=None,
+    min_coverage_by_rank=None,
+    min_relative_abundance=None,
+    min_relative_abundance_by_rank=None,
+) -> bool:
+    return any(
+        value is not None
+        for value in (min_coverage, min_relative_abundance)
+    ) or bool(min_coverage_by_rank) or bool(min_relative_abundance_by_rank)
+
+
+def _taxon_for_rank(taxon: str) -> str:
+    if taxon.endswith(AGGREGATED_SUFFIX):
+        return taxon[: -len(AGGREGATED_SUFFIX)]
+    return taxon
+
+
+def _terminal_rank_name(taxon: str) -> Optional[str]:
+    pref = _terminal_rank_prefix(_parse_tokens(_taxon_for_rank(taxon)))
+    if pref is None:
+        return None
+    return _PREFIX_TO_RANK.get(pref)
+
+
+def _row_cutoffs(
+    taxa: list[str],
+    *,
+    global_threshold,
+    by_rank,
+) -> np.ndarray:
+    default = 0.0 if global_threshold is None else float(global_threshold)
+    cutoffs = np.full(len(taxa), default, dtype=float)
+    if not by_rank:
+        return cutoffs
+
+    for i, taxon in enumerate(taxa):
+        rank = _terminal_rank_name(taxon)
+        if rank in by_rank:
+            cutoffs[i] = float(by_rank[rank])
+    return cutoffs
+
+
+def _pass_matrix_from_values(matrix: sp.spmatrix, row_cutoffs: np.ndarray) -> sp.csr_matrix:
+    mat = matrix.tocsr(copy=True)
+    mat.eliminate_zeros()
+    if mat.nnz == 0:
+        return mat.astype(np.uint8, copy=False)
+
+    row_nnz = np.diff(mat.indptr)
+    thresholds = np.repeat(row_cutoffs.astype(float, copy=False), row_nnz)
+    keep = mat.data >= thresholds
+    mat.data = keep.astype(np.uint8, copy=False)
+    mat.eliminate_zeros()
+    mat.sum_duplicates()
+    mat.sort_indices()
+    return mat.astype(np.uint8, copy=False)
+
+
+def _ancestor_map_for_base_taxa(base_taxa: list[str]) -> dict[str, list[int]]:
+    ancestors: dict[str, list[int]] = defaultdict(list)
+    for local_idx, taxon in enumerate(base_taxa):
+        tokens = _parse_tokens(taxon)
+        for i, token in enumerate(tokens):
+            if _token_rank(token) in _RANK_PREFIXES:
+                ancestors["; ".join(tokens[: i + 1])].append(local_idx)
+    return ancestors
+
+
+def _aggregated_descendant_matrix(
+    taxa: list[str],
+    base_rows: np.ndarray,
+    aggregated_rows: np.ndarray,
+) -> sp.csr_matrix:
+    if aggregated_rows.size == 0 or base_rows.size == 0:
+        return sp.csr_matrix((aggregated_rows.size, base_rows.size), dtype=np.uint8)
+
+    base_taxa = [taxa[i] for i in base_rows]
+    ancestor_map = _ancestor_map_for_base_taxa(base_taxa)
+
+    rows = []
+    cols = []
+    for agg_local_idx, row_idx in enumerate(aggregated_rows):
+        ancestor = _taxon_for_rank(taxa[row_idx])
+        descendants = ancestor_map.get(ancestor, [])
+        rows.extend([agg_local_idx] * len(descendants))
+        cols.extend(descendants)
+
+    data = np.ones(len(rows), dtype=np.uint8)
+    return sp.csr_matrix(
+        (data, (rows, cols)),
+        shape=(aggregated_rows.size, base_rows.size),
+        dtype=np.uint8,
+    )
+
+
+def _relative_abundance_base_matrix(coverage_base: sp.csr_matrix) -> sp.csr_matrix:
+    denom = np.asarray(coverage_base.sum(axis=0), dtype=float).ravel()
+    rel = coverage_base.tocsr(copy=True).astype(float, copy=False)
+    rel.eliminate_zeros()
+    if rel.nnz == 0:
+        return rel
+
+    denom_for_data = denom[rel.indices]
+    rel.data = np.divide(
+        rel.data,
+        denom_for_data,
+        out=np.zeros_like(rel.data, dtype=float),
+        where=denom_for_data > 0,
+    )
+    rel.eliminate_zeros()
+    rel.sum_duplicates()
+    rel.sort_indices()
+    return rel
+
+
+def _relative_abundance_pass_matrix(
+    ingredients: "Ingredients",
+    coverage: sp.csr_matrix,
+    row_cutoffs: np.ndarray,
+) -> sp.csr_matrix:
+    taxa = list(ingredients.taxa)
+    base_mask = np.fromiter(
+        (not taxon.endswith(AGGREGATED_SUFFIX) for taxon in taxa),
+        dtype=bool,
+        count=len(taxa),
+    )
+    base_rows = np.flatnonzero(base_mask).astype(np.int64, copy=False)
+    aggregated_rows = np.flatnonzero(~base_mask).astype(np.int64, copy=False)
+
+    if base_rows.size == 0:
+        return sp.csr_matrix(coverage.shape, dtype=np.uint8)
+
+    rel_base = _relative_abundance_base_matrix(coverage[base_rows, :].tocsr())
+    base_pass = _pass_matrix_from_values(rel_base, row_cutoffs[base_rows])
+
+    row_parts = []
+    col_parts = []
+    data_parts = []
+
+    if base_pass.nnz:
+        coo = base_pass.tocoo()
+        row_parts.append(base_rows[coo.row])
+        col_parts.append(coo.col)
+        data_parts.append(np.ones(coo.nnz, dtype=np.uint8))
+
+    if aggregated_rows.size:
+        descendant_map = _aggregated_descendant_matrix(taxa, base_rows, aggregated_rows)
+        rel_agg = descendant_map @ rel_base
+        rel_agg.eliminate_zeros()
+        agg_pass = _pass_matrix_from_values(rel_agg, row_cutoffs[aggregated_rows])
+        if agg_pass.nnz:
+            coo = agg_pass.tocoo()
+            row_parts.append(aggregated_rows[coo.row])
+            col_parts.append(coo.col)
+            data_parts.append(np.ones(coo.nnz, dtype=np.uint8))
+
+    if not data_parts:
+        return sp.csr_matrix(coverage.shape, dtype=np.uint8)
+
+    rows = np.concatenate(row_parts)
+    cols = np.concatenate(col_parts)
+    data = np.concatenate(data_parts)
+    out = sp.csr_matrix((data, (rows, cols)), shape=coverage.shape, dtype=np.uint8)
+    out.eliminate_zeros()
+    out.sum_duplicates()
+    out.data[:] = 1
+    out.sort_indices()
+    return out
+
+
+def _presence_threshold_provenance(
+    *,
+    min_coverage,
+    min_coverage_by_rank,
+    min_relative_abundance,
+    min_relative_abundance_by_rank,
+) -> dict[str, object]:
+    provenance = {
+        "comparison": ">=",
+        "masked_coverage": "original values retained for passing cells; failed cells zeroed",
+    }
+    if min_coverage is not None:
+        provenance["min_coverage"] = float(min_coverage)
+    if min_coverage_by_rank:
+        provenance["min_coverage_by_rank"] = {
+            rank: float(value) for rank, value in sorted(min_coverage_by_rank.items())
+        }
+    if min_relative_abundance is not None:
+        provenance["min_relative_abundance"] = float(min_relative_abundance)
+    if min_relative_abundance_by_rank:
+        provenance["min_relative_abundance_by_rank"] = {
+            rank: float(value)
+            for rank, value in sorted(min_relative_abundance_by_rank.items())
+        }
+    if min_relative_abundance is not None or min_relative_abundance_by_rank:
+        provenance["relative_abundance"] = {
+            "units": "fraction",
+            "base_denominator": "non-AGGREGATED rows per sample",
+            "aggregated_rows": "sum of descendant non-AGGREGATED relative abundances",
+        }
+    return provenance
+
+
+def threshold_ingredients_presence(
+    ingredients: "Ingredients",
+    *,
+    min_coverage=None,
+    min_coverage_by_rank=None,
+    min_relative_abundance=None,
+    min_relative_abundance_by_rank=None,
+) -> "Ingredients":
+    """
+    Derive binary presence from coverage/relative-abundance thresholds.
+
+    The returned Ingredients object keeps the original coverage values for
+    passing cells and zeroes coverage where the derived presence is absent.
+    """
+    min_coverage_by_rank = _rank_thresholds_dict(
+        min_coverage_by_rank,
+        "min_coverage_by_rank",
+    )
+    min_relative_abundance_by_rank = _rank_thresholds_dict(
+        min_relative_abundance_by_rank,
+        "min_relative_abundance_by_rank",
+    )
+
+    if not _presence_threshold_active(
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
+    ):
+        return ingredients
+
+    if (
+        min_coverage is not None or min_coverage_by_rank
+    ) and (
+        min_relative_abundance is not None or min_relative_abundance_by_rank
+    ):
+        warnings.warn(
+            "Both coverage and relative-abundance presence thresholds were supplied; "
+            "a taxon-sample cell must pass both to count as present.",
+            UserWarning,
+        )
+
+    coverage = ingredients.coverage_matrix.tocsr(copy=True)
+    coverage.eliminate_zeros()
+    coverage.sum_duplicates()
+    coverage.sort_indices()
+
+    pass_matrix = coverage.copy()
+    pass_matrix.data = np.ones(pass_matrix.nnz, dtype=np.uint8)
+    pass_matrix = pass_matrix.astype(np.uint8, copy=False)
+
+    if min_coverage is not None or min_coverage_by_rank:
+        coverage_cutoffs = _row_cutoffs(
+            list(ingredients.taxa),
+            global_threshold=min_coverage,
+            by_rank=min_coverage_by_rank,
+        )
+        coverage_pass = _pass_matrix_from_values(coverage, coverage_cutoffs)
+        pass_matrix = pass_matrix.multiply(coverage_pass).tocsr()
+
+    if min_relative_abundance is not None or min_relative_abundance_by_rank:
+        rel_cutoffs = _row_cutoffs(
+            list(ingredients.taxa),
+            global_threshold=min_relative_abundance,
+            by_rank=min_relative_abundance_by_rank,
+        )
+        rel_pass = _relative_abundance_pass_matrix(ingredients, coverage, rel_cutoffs)
+        pass_matrix = pass_matrix.multiply(rel_pass).tocsr()
+
+    presence = _presence_csr(pass_matrix)
+    masked_coverage = coverage.multiply(presence).tocsr()
+    masked_coverage.eliminate_zeros()
+    masked_coverage.sum_duplicates()
+    masked_coverage.sort_indices()
+
+    out = ingredients.copy_shallow()
+    out.presence_matrix = presence
+    out.coverage_matrix = masked_coverage
+    out.presence_thresholds = _presence_threshold_provenance(
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
+    )
+    return out
 
 
 class Ingredients:
@@ -96,6 +405,7 @@ class Ingredients:
         self._rank_lookups = None
         self._terminal_rank_prefixes = None
         self.data_version = data_version
+        self.presence_thresholds = None
     
     def __getstate__(self):
         state = {
@@ -106,6 +416,7 @@ class Ingredients:
             "total_counts": self.total_counts,
             "sample_to_biome": self.sample_to_biome,
             "data_version": self.data_version,
+            "presence_thresholds": getattr(self, "presence_thresholds", None),
         }
         
         if hasattr(self, "biomes_order"):
@@ -144,6 +455,7 @@ class Ingredients:
             self._allocate_biomes()
         
         self.data_version = state.get("data_version", None)
+        self.presence_thresholds = state.get("presence_thresholds", None)
     
     def _invalidate_taxa_caches(self):
         self._rank_lookups = None
@@ -270,6 +582,7 @@ class Ingredients:
         new.total_counts = self.total_counts
         new.sample_to_biome = self.sample_to_biome
         new.data_version = self.data_version
+        new.presence_thresholds = getattr(self, "presence_thresholds", None)
         
         new._rank_lookups = self._rank_lookups
         new._terminal_rank_prefixes = self._terminal_rank_prefixes
@@ -289,7 +602,7 @@ class Ingredients:
         if not deep:
             return self.copy_shallow()
             
-        return Ingredients(
+        copied = Ingredients(
             samples=self.samples.copy(),
             taxa=self.taxa.copy(),
             presence_matrix=self.presence_matrix.copy(),
@@ -297,6 +610,8 @@ class Ingredients:
             sample_to_biome=self.sample_to_biome.copy() if self.sample_to_biome is not None else None,
             data_version=self.data_version,
         )
+        copied.presence_thresholds = getattr(self, "presence_thresholds", None)
+        return copied
     
     def filter_samples(self, mask) -> None:
         """
@@ -567,6 +882,7 @@ def _ingredients_from_directory(directory: str) -> Ingredients:
     new._rank_lookups = None
     new._terminal_rank_prefixes = None
     new.data_version = manifest.get("data_version")
+    new.presence_thresholds = manifest.get("presence_thresholds")
     return new
 
 
@@ -615,6 +931,10 @@ def _write_ingredients_directory(
         },
         "components": components,
     }
+    presence_thresholds = getattr(ingredients, "presence_thresholds", None)
+    if presence_thresholds:
+        manifest["presence_thresholds"] = presence_thresholds
+
     with open(os.path.join(directory, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
         f.write("\n")

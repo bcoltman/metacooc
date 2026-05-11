@@ -58,7 +58,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
-from metacooc.pantry import load_ingredients
+from metacooc.pantry import load_ingredients, threshold_ingredients_presence
 from metacooc.utils import (
     _RANK_PREFIXES,
     _PREFIX_TO_RANK,
@@ -769,6 +769,10 @@ def search_data_obj(
     aggregated: bool = False,
     metadata_file=None,
     return_details: bool = False,
+    min_coverage=None,
+    min_coverage_by_rank=None,
+    min_relative_abundance=None,
+    min_relative_abundance_by_rank=None,
 ):
     """
     Object-based search interface.
@@ -851,6 +855,13 @@ def search_data_obj(
         custom_ingredients=custom_ingredients,
         data_version=data_version,
     )
+    ingredients = threshold_ingredients_presence(
+        ingredients,
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
+    )
 
     if search_mode == "focal_taxa":
         resolved = resolve_focal_taxa_search(ingredients, search_string)
@@ -913,6 +924,10 @@ def search_data(
     list_biomes=False,
     aggregated=False,
     metadata_file=None,
+    min_coverage=None,
+    min_coverage_by_rank=None,
+    min_relative_abundance=None,
+    min_relative_abundance_by_rank=None,
 ):
     """
     File-based search wrapper for metacooc.
@@ -980,6 +995,10 @@ def search_data(
         data_version=data_version,
         aggregated=aggregated,
         metadata_file=metadata_file,
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
     )
 
     if not os.path.isdir(output_dir):

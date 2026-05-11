@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import numpy as np
 import os
+import pytest
 import scipy.sparse as sp
 
 from metacooc.format import format_data
-from metacooc.pantry import Ingredients, _read_sample_to_biome, load_ingredients, presence_for_counts
+from metacooc.pantry import (
+    Ingredients,
+    _read_sample_to_biome,
+    load_ingredients,
+    presence_for_counts,
+    save_ingredients_directory,
+    threshold_ingredients_presence,
+)
 from metacooc.analysis import _cooccur_core
 
 def test_format_data_writes_raw_and_aggregated(raw_ingredients_path, aggregated_ingredients_path):
@@ -189,6 +197,125 @@ def test_presence_for_counts_prevents_uint8_sparse_product_overflow():
     assert direct[0, 0] == 44
     assert safe.dtype == np.int32
     assert safe[0, 0] == 300
+
+
+def test_coverage_threshold_updates_presence_and_masks_coverage():
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=[
+            "d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a",
+            "d__Bacteria; p__P; c__C; o__O; f__F; g__G",
+        ],
+        presence_matrix=sp.csr_matrix([[1, 1], [1, 1]], dtype=np.uint8),
+        coverage_matrix=sp.csr_matrix([[0.5, 1.5], [0.1, 0.8]], dtype=float),
+    )
+
+    thresholded = threshold_ingredients_presence(
+        ingredients,
+        min_coverage=1.0,
+        min_coverage_by_rank={"genus": 0.5},
+    )
+
+    assert thresholded.presence_matrix.toarray().tolist() == [[0, 1], [0, 1]]
+    assert thresholded.coverage_matrix.toarray().tolist() == [[0.0, 1.5], [0.0, 0.8]]
+    assert thresholded.total_counts.tolist() == [1, 1]
+    assert ingredients.presence_matrix.toarray().tolist() == [[1, 1], [1, 1]]
+
+
+def test_relative_abundance_threshold_uses_sample_fractions():
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=[
+            "d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a",
+            "d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__b",
+        ],
+        presence_matrix=sp.csr_matrix([[1, 1], [1, 1]], dtype=np.uint8),
+        coverage_matrix=sp.csr_matrix([[3.0, 1.0], [1.0, 9.0]], dtype=float),
+    )
+
+    thresholded = threshold_ingredients_presence(
+        ingredients,
+        min_relative_abundance=0.5,
+    )
+
+    assert thresholded.presence_matrix.toarray().tolist() == [[1, 0], [0, 1]]
+    assert thresholded.coverage_matrix.toarray().tolist() == [[3.0, 0.0], [0.0, 9.0]]
+    assert thresholded.presence_thresholds["min_relative_abundance"] == 0.5
+
+
+def test_combined_coverage_and_relative_threshold_warns():
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=[
+            "d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a",
+            "d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__b",
+        ],
+        presence_matrix=sp.csr_matrix([[1, 1], [1, 1]], dtype=np.uint8),
+        coverage_matrix=sp.csr_matrix([[3.0, 1.0], [1.0, 9.0]], dtype=float),
+    )
+
+    with pytest.warns(UserWarning, match="Both coverage and relative-abundance"):
+        thresholded = threshold_ingredients_presence(
+            ingredients,
+            min_coverage=2.0,
+            min_relative_abundance=0.5,
+        )
+
+    assert thresholded.presence_matrix.toarray().tolist() == [[1, 0], [0, 1]]
+
+
+def test_aggregated_relative_abundance_recomputed_from_descendants():
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=[
+            "Root; d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a",
+            "Root; d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__b",
+            "Root; d__Bacteria; p__P; c__C; o__O; f__F; g__G AGGREGATED",
+        ],
+        presence_matrix=sp.csr_matrix([[1, 1], [1, 1], [1, 1]], dtype=np.uint8),
+        coverage_matrix=sp.csr_matrix(
+            [[3.0, 1.0], [1.0, 9.0], [4.0, 10.0]],
+            dtype=float,
+        ),
+    )
+
+    thresholded = threshold_ingredients_presence(
+        ingredients,
+        min_relative_abundance_by_rank={
+            "species": 0.5,
+            "genus": 0.9,
+        },
+    )
+
+    assert thresholded.presence_matrix.toarray().tolist() == [
+        [1, 0],
+        [0, 1],
+        [1, 1],
+    ]
+    assert thresholded.coverage_matrix.toarray().tolist() == [
+        [3.0, 0.0],
+        [0.0, 9.0],
+        [4.0, 10.0],
+    ]
+
+
+def test_thresholded_ingredients_manifest_provenance_roundtrip(tmp_path):
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=["d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a"],
+        presence_matrix=sp.csr_matrix([[1, 1]], dtype=np.uint8),
+        coverage_matrix=sp.csr_matrix([[0.5, 2.0]], dtype=float),
+    )
+    thresholded = threshold_ingredients_presence(ingredients, min_coverage=1.0)
+
+    out = tmp_path / "ingredients_thresholded"
+    save_ingredients_directory(thresholded, str(out))
+
+    loaded = load_ingredients(custom_ingredients=str(out))
+    assert loaded.presence_matrix.toarray().tolist() == [[0, 1]]
+    assert loaded.coverage_matrix.toarray().tolist() == [[0.0, 2.0]]
+    assert loaded.presence_thresholds["min_coverage"] == 1.0
+    assert loaded.presence_thresholds["comparison"] == ">="
 
 
 def test_ingredients_filter_and_copy_consistency(raw_ingredients):
