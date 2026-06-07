@@ -94,11 +94,13 @@ def _biome_distribution_filter_requested(args):
 
 def _biome_distribution_taxa_frame(presence, biomes, taxa, indices):
     selected_taxa = [taxa[i] for i in indices]
-    return pd.DataFrame(
+    out = pd.DataFrame(
         data=presence[:, indices].toarray(),
         columns=selected_taxa,
         index=biomes,
     ).T
+    out.index.name = "taxon"
+    return out.reset_index()
 
 
 def _threshold_ingredients_from_args(ingredients, args):
@@ -549,12 +551,13 @@ def run_biome_distribution(args):
         indices = _taxa_indices_from_query(ingredients, taxa_query)
         biome_by_query_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        biome_by_query_df.to_csv(output_path, sep="\t")
+        biome_by_query_df.to_csv(output_path, sep="\t", index=False)
 
     elif getattr(args, "return_all_taxa", False):
-        biome_by_taxa_df = pd.DataFrame(data=presence.toarray(), columns=ingredients.taxa, index=biomes)
+        indices = list(range(len(ingredients.taxa)))
+        biome_by_taxa_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        biome_by_taxa_df.to_csv(output_path, sep="\t")
+        biome_by_taxa_df.to_csv(output_path, sep="\t", index=False)
 
     elif args.aggregated:
         if not [i for i in ingredients.taxa if "AGGREGATED" in i]:
@@ -562,10 +565,10 @@ def run_biome_distribution(args):
         indices = [i for i, v in enumerate(ingredients.taxa) if "s__" in v or "AGGREGATED" in v]
         biome_by_agg_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        biome_by_agg_df.to_csv(output_path, sep="\t")
+        biome_by_agg_df.to_csv(output_path, sep="\t", index=False)
 
     else:
         indices = [i for i, v in enumerate(ingredients.taxa) if "s__" in v]
         biome_by_species_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution_species.tsv")
-        biome_by_species_df.to_csv(output_path, sep="\t")
+        biome_by_species_df.to_csv(output_path, sep="\t", index=False)

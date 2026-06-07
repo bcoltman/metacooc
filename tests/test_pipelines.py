@@ -169,7 +169,54 @@ def test_run_biome_distribution_pipeline(tmp_path, raw_ingredients_path):
         filter_rank=None,
     )
     pipelines.run_biome_distribution(args)
-    assert (tmp_path / "test_taxa_biome_distribution.tsv").exists()
+    out_path = tmp_path / "test_taxa_biome_distribution.tsv"
+    out = pd.read_csv(out_path, sep="\t")
+    assert out.columns.tolist() == ["taxon", "terrestrial", "aquatic"]
+    assert len(out) == 300
+    assert not (tmp_path / "test_taxa_biome_distribution_metadata.tsv").exists()
+
+
+def test_run_biome_distribution_species_fallback_schema(tmp_path, raw_ingredients_path):
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        return_all_taxa=False,
+        taxa_query=None,
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
+    )
+
+    pipelines.run_biome_distribution(args)
+
+    out_path = tmp_path / "test_taxa_biome_distribution_species.tsv"
+    out = pd.read_csv(out_path, sep="\t")
+    assert out.columns.tolist() == ["taxon", "terrestrial", "aquatic"]
+    assert len(out) == 300
+    assert out["taxon"].str.contains("s__").all()
+    assert not (tmp_path / "test_taxa_biome_distribution_species_metadata.tsv").exists()
+
+
+def test_run_biome_distribution_aggregated_schema(tmp_path, aggregated_ingredients_path):
+    args = pipeline_args(
+        custom_ingredients=str(aggregated_ingredients_path),
+        output_dir=str(tmp_path),
+        aggregated=True,
+        return_all_taxa=False,
+        taxa_query=None,
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
+    )
+
+    pipelines.run_biome_distribution(args)
+
+    out_path = tmp_path / "test_taxa_biome_distribution.tsv"
+    out = pd.read_csv(out_path, sep="\t")
+    assert out.columns.tolist() == ["taxon", "terrestrial", "aquatic"]
+    assert out["taxon"].str.contains("s__").any()
+    assert out["taxon"].str.contains("AGGREGATED").any()
+    assert not (tmp_path / "test_taxa_biome_distribution_metadata.tsv").exists()
 
 
 def test_run_biome_distribution_skips_filtering_by_default(
@@ -207,11 +254,11 @@ def test_run_biome_distribution_taxa_query_and_biome_level(tmp_path, raw_ingredi
     )
     pipelines.run_biome_distribution(args)
 
-    out = pd.read_csv(tmp_path / "test_taxa_biome_distribution.tsv", sep="\t", index_col=0)
-    assert out.columns.tolist() == ["soil", "marine"]
+    out = pd.read_csv(tmp_path / "test_taxa_biome_distribution.tsv", sep="\t")
+    assert out.columns.tolist() == ["taxon", "soil", "marine"]
     assert len(out) == 2
-    assert any(row.endswith("g__Rhizo; s__rhizo_000") for row in out.index)
-    assert any(row.endswith("g__Micro; s__micro_000") for row in out.index)
+    assert out["taxon"].str.endswith("g__Rhizo; s__rhizo_000").any()
+    assert out["taxon"].str.endswith("g__Micro; s__micro_000").any()
 
 
 def test_run_biome_distribution_applies_count_filter_before_distribution(
@@ -230,8 +277,9 @@ def test_run_biome_distribution_applies_count_filter_before_distribution(
     )
     pipelines.run_biome_distribution(args)
 
-    out = pd.read_csv(tmp_path / "test_taxa_biome_distribution.tsv", sep="\t", index_col=0)
+    out = pd.read_csv(tmp_path / "test_taxa_biome_distribution.tsv", sep="\t")
     row = out.iloc[0]
+    assert row["taxon"].endswith("g__Rhizo; s__rhizo_000")
     assert row["terrestrial"] == 7
     assert row["aquatic"] == 10
 
