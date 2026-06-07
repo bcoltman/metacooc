@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from metacooc.analysis import association, association_obj, cooccurrence_obj
+from metacooc.analysis import (
+    association,
+    association_obj,
+    cooccurrence_obj,
+    export_cooccurrence_outputs,
+)
 from metacooc.structure import (
     _structure_core,
     compute_c_score,
@@ -216,6 +221,73 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
     assert edge_arrays_ee.meta["null_seed"] == 4
     assert edge_arrays_ee.meta["null_seed_source"] == "user"
     assert edge_arrays_ee.meta["null_model"] == "EE"
+
+
+def test_cooccurrence_large_export_writes_metadata_sidecars(tmp_path, raw_ingredients):
+    taxa_universe = list(raw_ingredients.taxa)
+    edge_arrays, nodes_df = cooccurrence_obj(
+        raw_ingredients,
+        taxa_universe,
+        large=True,
+        min_conditional_probability=0.0,
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=4,
+    )
+    assert edge_arrays is not None
+    assert edge_arrays.n_rows > 1
+
+    export_cooccurrence_outputs(
+        edge_arrays=edge_arrays,
+        nodes_df=nodes_df,
+        taxa_universe=taxa_universe,
+        output_dir=str(tmp_path),
+        edges_base="large_edges",
+        nodes_base="large_nodes",
+        null_model="EE",
+        summary_n=1,
+    )
+
+    assert (tmp_path / "large_nodes.tsv").exists()
+    assert (tmp_path / "large_edges.parquet").exists()
+    assert (tmp_path / "large_edges_taxa.parquet").exists()
+    assert (tmp_path / "large_edges_metadata.tsv").exists()
+    assert (tmp_path / "large_edges_summary.tsv").exists()
+    assert (tmp_path / "large_edges_summary_metadata.tsv").exists()
+
+    full_edges = pd.read_parquet(tmp_path / "large_edges.parquet")
+    summary_edges = pd.read_csv(tmp_path / "large_edges_summary.tsv", sep="\t")
+    metadata = pd.read_csv(tmp_path / "large_edges_metadata.tsv", sep="\t")
+    summary_metadata = pd.read_csv(tmp_path / "large_edges_summary_metadata.tsv", sep="\t")
+
+    assert {
+        "source_taxon_index",
+        "target_taxon_index",
+        "shared_sample_count",
+        "jaccard_taxon_pair",
+        "jaccard_null_mean",
+    }.issubset(full_edges.columns)
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(full_edges.columns)
+    assert {"source_taxon", "target_taxon", "jaccard_null_mean"}.issubset(summary_edges.columns)
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(summary_edges.columns)
+    assert dict(zip(metadata["key"], metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "4",
+        "null_seed_source": "user",
+    }
+    assert dict(zip(summary_metadata["key"], summary_metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "4",
+        "null_seed_source": "user",
+    }
 
 
 def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):

@@ -1154,6 +1154,7 @@ def cooccurrence_obj(
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_seed: int | None = None,
+    compute_fisher: bool = False,
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
@@ -1215,7 +1216,7 @@ def cooccurrence_obj(
             taxa_universe,
             min_conditional_probability=min_conditional_probability,
             m_total=est_pairs,
-            compute_fisher=False,
+            compute_fisher=compute_fisher,
         )
     else:
         edge_arrays, nodes_df = _cooccur_core_focal(
@@ -1224,7 +1225,7 @@ def cooccurrence_obj(
             focal_local_idx=focal_local_idx,
             min_conditional_probability=min_conditional_probability,
             m_total=est_pairs,
-            compute_fisher=False,
+            compute_fisher=compute_fisher,
         )
 
     if edge_arrays is None or edge_arrays.n_rows == 0:
@@ -1435,6 +1436,7 @@ def cooccurrence(
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_seed: int | None = None,
+    compute_fisher: bool = False,
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
@@ -1462,6 +1464,7 @@ def cooccurrence(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_seed=nm_seed,
+        compute_fisher=compute_fisher,
         nm_n_workers=nm_n_workers,
         nm_mp_start=nm_mp_start,
         nm_burn_in_steps=nm_burn_in_steps,

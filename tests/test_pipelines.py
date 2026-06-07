@@ -105,6 +105,30 @@ def test_run_cooccurrence_pipeline_writes_null_metadata_sidecar(tmp_path, raw_in
     }
 
 
+def test_run_cooccurrence_pipeline_compute_fisher_outputs_readable_columns(
+    tmp_path,
+    raw_ingredients_path,
+):
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        search_mode="taxa_context",
+        search_string="g__Rhizo",
+        null_model="FE",
+        min_conditional_probability=0.0,
+        compute_fisher=True,
+    )
+    pipelines.run_cooccurrence(args)
+
+    edges = pd.read_csv(tmp_path / "test_global_edges.tsv", sep="\t")
+    assert {
+        "fisher_odds_ratio",
+        "fisher_p_value",
+        "fisher_log_p_value",
+    }.issubset(edges.columns)
+    assert {"fisher_odds", "fisher_p", "log_fisher_p"}.isdisjoint(edges.columns)
+
+
 def test_run_structure_pipeline(tmp_path, raw_ingredients_path):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
