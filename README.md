@@ -21,6 +21,7 @@
   - [Association](#association)
   - [Structure](#structure)
   - [Biome distribution](#biome-distribution)
+  - [Output schemas and metadata sidecars](#output-schemas-and-metadata-sidecars)
 - [Key concepts](#key-concepts)
   - [Cohort vs null/background](#cohort-vs-nullbackground)
   - [Output cutoff semantics](#output-cutoff-semantics)
@@ -171,17 +172,20 @@ This writes:
 * `global_association.tsv`
 * `global_plot.png`
 
+With the default `FE` association null, no metadata sidecar is normally written because the association Jaccard null is handled analytically rather than by storing empirical null-run metadata.
+
 ---
 
 ## Core pipelines
 
-MetaCoOc is designed around three “normal use” pipelines:
+MetaCoOc is designed around three analysis pipelines plus a biome summary export:
 
 * `cooccurrence` — taxon–taxon edges/nodes
 * `association` — taxon enrichment/specificity for a cohort vs a null/background
 * `structure` — matrix-level structure metrics
+* `biome_distribution` — taxon counts across annotated biome labels
 
-All pipelines follow the same high-level pattern:
+The three analysis pipelines (`association`, `cooccurrence`, and `structure`) follow the same high-level pattern:
 
 1. load Ingredients (raw or aggregated)
 2. build a **cohort** of samples via `--search_mode` + `--search_string`
@@ -208,12 +212,15 @@ Outputs:
 
 * `global_edges.tsv`
 * `global_nodes.tsv`
+* for large edge tables: `global_edges.parquet`, `global_edges_taxa.parquet`, and `global_edges_summary.tsv`
+* if an empirical null was run: `global_edges_metadata.tsv` and, for large edge tables, `global_edges_summary_metadata.tsv`
 
 Notes:
 
 * The **taxa universe** is determined from the cohort (after filtering), optionally restricted by `--filter_rank`.
 * The co-occurrence statistics are computed on the chosen null/background Ingredients matrix, restricted to that taxa universe.
 * Large universes can exceed pair limits; use `--max_pairs` or override with `--large`.
+* Edge rows are directed: `source_taxon -> target_taxon`. The primary ranking metric is `p_target_given_source`.
 
 ---
 
@@ -235,6 +242,9 @@ Outputs:
 
 * `global_association.tsv`
 * `global_plot.png`
+* if an empirical null was run: `global_association_metadata.tsv`
+
+The primary ranking columns are `p_cohort_given_taxon` (specificity: among samples containing the taxon, how often is the cohort present?) and `p_taxon_given_cohort` (sensitivity: among cohort samples, how often is the taxon present?).
 
 ---
 
@@ -257,6 +267,7 @@ metacooc structure \
 Output:
 
 * `global_structure.tsv`
+* if null computation is enabled: `global_structure_metadata.tsv`
 
 Metrics include:
 
@@ -280,7 +291,190 @@ metacooc biome_distribution \
 Outputs a TSV, with behaviour depending on flags:
 
 * `--return_all_taxa` → export all taxa
-* otherwise → export species
+* `--taxa_query` → export only taxa matching the comma-separated query terms
+* `--aggregated` → export species and aggregated taxa
+* otherwise → export species to `taxa_biome_distribution_species.tsv`
+
+Biome distribution does not run a null model, so it does not write a metadata sidecar.
+
+---
+
+### Output schemas and metadata sidecars
+
+Result columns are ordered so that the most useful fields are near the left: identifiers first, then primary ranking metrics, supporting counts, effect-size/statistical metrics, optional Fisher tests, and optional empirical null summaries. The old run-level null columns are no longer repeated on every result row. When null-run metadata exists, it is written once to a sidecar TSV with columns `key` and `value`.
+
+Null metadata sidecars use the same basename as the result file:
+
+* `global_association.tsv` → `global_association_metadata.tsv`
+* `global_edges.tsv` → `global_edges_metadata.tsv`
+* `global_structure.tsv` → `global_structure_metadata.tsv`
+* `global_edges_summary.tsv` → `global_edges_summary_metadata.tsv`
+
+Sidecar keys are:
+
+```text
+null_model
+null_replicates_requested
+null_replicates_completed
+null_replicates_ok
+null_replicates_error
+null_seed
+null_seed_source
+```
+
+#### Association TSV
+
+`global_association.tsv` contains one row per reported taxon. Base columns, in order:
+
+```text
+taxon
+p_cohort_given_taxon
+p_taxon_given_cohort
+log2_rr_cohort_taxon_vs_not_taxon
+rr_cohort_taxon_vs_not_taxon
+log2_rr_taxon_cohort_vs_not_cohort
+rr_taxon_cohort_vs_not_cohort
+delta_p_taxon_cohort_vs_not_cohort
+lift_taxon_cohort
+jaccard_taxon_cohort
+phi_coefficient
+chi2_statistic
+chi2_p_value
+chi2_q_value_bh
+chi2_log_p_value
+chi2_log_q_value_bh
+taxon_in_cohort_count
+taxon_in_background_not_cohort_count
+cohort_without_taxon_count
+neither_taxon_nor_cohort_count
+cohort_sample_count
+background_not_cohort_sample_count
+background_sample_count
+p_taxon_given_not_cohort
+p_cohort_given_not_taxon
+```
+
+With `--compute_fisher`, these columns are appended:
+
+```text
+fisher_odds_ratio
+fisher_p_value
+fisher_log_p_value
+```
+
+With simulated null models for association Jaccard summaries, these row-level null statistics are appended:
+
+```text
+jaccard_null_mean
+jaccard_null_sd
+jaccard_null_ses
+jaccard_null_p_empirical
+```
+
+#### Co-occurrence TSV
+
+`global_edges.tsv` contains one row per reported directed edge. For focal workflows, `focal_query` and `focal_taxon` appear first. Base edge columns, in order:
+
+```text
+source_taxon
+target_taxon
+p_target_given_source
+p_source_given_target
+shared_sample_count
+source_taxon_sample_count
+target_taxon_sample_count
+source_only_sample_count
+target_only_sample_count
+neither_source_nor_target_sample_count
+background_sample_count
+source_taxon_prevalence
+target_taxon_prevalence
+cooccurrence_prevalence
+lift_taxon_pair
+jaccard_taxon_pair
+phi_coefficient
+chi2_statistic
+chi2_p_value
+chi2_q_value_bh
+chi2_log_p_value
+chi2_log_q_value_bh
+rr_target_given_source_vs_without_source
+rr_source_given_target_vs_without_target
+ln_rr_target_given_source_vs_without_source
+ln_rr_source_given_target_vs_without_target
+```
+
+With `--compute_fisher`, Fisher columns are appended:
+
+```text
+fisher_odds_ratio
+fisher_p_value
+fisher_log_p_value
+```
+
+With simulated null models for pairwise Jaccard summaries, these columns are appended:
+
+```text
+jaccard_null_mean
+jaccard_null_sd
+jaccard_null_ses
+jaccard_null_p_empirical
+jaccard_null_q_value_bh
+jaccard_null_log_q_value_bh
+```
+
+`global_nodes.tsv` contains:
+
+```text
+taxon
+taxon_sample_count
+out_degree_p_target_given_source_gt_<threshold>
+```
+
+For very large edge tables, the full output is written compactly as `global_edges.parquet` with integer taxon IDs:
+
+```text
+source_taxon_index
+target_taxon_index
+shared_sample_count
+jaccard_taxon_pair
+chi2_log_p_value
+chi2_log_q_value_bh
+```
+
+When simulated nulls are computed, compact parquet also stores the row-level null columns held in the edge arrays, including `jaccard_null_mean`, `jaccard_null_sd`, `jaccard_null_ses`, `jaccard_null_p_empirical`, and `jaccard_null_log_q_value_bh`. Fisher columns and derived `jaccard_null_q_value_bh` are reconstructed in readable TSV outputs rather than stored in the compact parquet edge table. `global_edges_taxa.parquet` maps `taxon_id` to `taxon` and `total_count`; `global_edges_summary.tsv` contains the highest-priority readable subset using the normal co-occurrence TSV schema.
+
+#### Structure TSV
+
+`global_structure.tsv` contains one row for each structure metric:
+
+```text
+metric
+observed_value
+observed_error
+```
+
+With null computation enabled, these columns are appended:
+
+```text
+null_mean
+null_sd
+null_standardized_effect_size
+null_p_empirical
+```
+
+#### Biome Distribution TSV
+
+Biome distribution output is a taxon-by-biome table with no hidden index column:
+
+```text
+taxon
+<biome_label_1>
+<biome_label_2>
+...
+```
+
+Each biome column contains the number of samples in that biome where the taxon is present.
 
 ---
 
@@ -302,9 +496,9 @@ Association requires the cohort to be a **strict subset** of the null (i.e. ther
 MetaCoOc uses metric-specific cutoff names:
 
 * **association**: `--min_conditional_probability` filters taxa by cohort conditional probability
-  `p(T | X) > min_conditional_probability`
+  `p_cohort_given_taxon > min_conditional_probability`, i.e. `P(cohort | taxon)`
 * **cooccurrence**: `--min_conditional_probability` is the minimum **conditional probability** for an edge
-  include edges where `P(B | A) > min_conditional_probability`
+  include directed edges where `p_target_given_source > min_conditional_probability`, i.e. `P(target | source)`
 
 For large datasets, increasing `--min_conditional_probability` can dramatically reduce runtime and output size.
 
