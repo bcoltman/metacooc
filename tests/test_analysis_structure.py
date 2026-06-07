@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from metacooc.analysis import association, association_obj, cooccurrence_obj
+from metacooc.analysis import (
+    association,
+    association_obj,
+    cooccurrence_obj,
+    export_cooccurrence_outputs,
+)
 from metacooc.structure import (
     _structure_core,
     compute_c_score,
@@ -189,7 +194,7 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
     assert not nodes_df.empty
     assert edge_arrays is not None
     assert edge_arrays.n_rows > 0
-    assert "jaccard" in edge_arrays.cols
+    assert "jaccard_taxon_pair" in edge_arrays.cols
 
     edge_arrays_ee, _ = cooccurrence_obj(
         raw_ingredients,
@@ -201,11 +206,88 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
         nm_seed=4,
     )
     assert edge_arrays_ee is not None
-    assert "jaccard_null_mean_EE" in edge_arrays_ee.cols
-    assert "jaccard_p_EE" in edge_arrays_ee.cols
+    assert "jaccard_null_mean" in edge_arrays_ee.cols
+    assert "jaccard_null_p_empirical" in edge_arrays_ee.cols
+    assert "jaccard_null_log_q_value_bh" in edge_arrays_ee.cols
+    assert edge_arrays_ee.meta["null_metadata"] == {
+        "null_model": "EE",
+        "null_replicates_requested": 1,
+        "null_replicates_completed": 1,
+        "null_replicates_ok": 1,
+        "null_replicates_error": 0,
+        "null_seed": 4,
+        "null_seed_source": "user",
+    }
     assert edge_arrays_ee.meta["null_seed"] == 4
     assert edge_arrays_ee.meta["null_seed_source"] == "user"
     assert edge_arrays_ee.meta["null_model"] == "EE"
+
+
+def test_cooccurrence_large_export_writes_metadata_sidecars(tmp_path, raw_ingredients):
+    taxa_universe = list(raw_ingredients.taxa)
+    edge_arrays, nodes_df = cooccurrence_obj(
+        raw_ingredients,
+        taxa_universe,
+        large=True,
+        min_conditional_probability=0.0,
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=4,
+    )
+    assert edge_arrays is not None
+    assert edge_arrays.n_rows > 1
+
+    export_cooccurrence_outputs(
+        edge_arrays=edge_arrays,
+        nodes_df=nodes_df,
+        taxa_universe=taxa_universe,
+        output_dir=str(tmp_path),
+        edges_base="large_edges",
+        nodes_base="large_nodes",
+        null_model="EE",
+        summary_n=1,
+    )
+
+    assert (tmp_path / "large_nodes.tsv").exists()
+    assert (tmp_path / "large_edges.parquet").exists()
+    assert (tmp_path / "large_edges_taxa.parquet").exists()
+    assert (tmp_path / "large_edges_metadata.tsv").exists()
+    assert (tmp_path / "large_edges_summary.tsv").exists()
+    assert (tmp_path / "large_edges_summary_metadata.tsv").exists()
+
+    full_edges = pd.read_parquet(tmp_path / "large_edges.parquet")
+    summary_edges = pd.read_csv(tmp_path / "large_edges_summary.tsv", sep="\t")
+    metadata = pd.read_csv(tmp_path / "large_edges_metadata.tsv", sep="\t")
+    summary_metadata = pd.read_csv(tmp_path / "large_edges_summary_metadata.tsv", sep="\t")
+
+    assert {
+        "source_taxon_index",
+        "target_taxon_index",
+        "shared_sample_count",
+        "jaccard_taxon_pair",
+        "jaccard_null_mean",
+    }.issubset(full_edges.columns)
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(full_edges.columns)
+    assert {"source_taxon", "target_taxon", "jaccard_null_mean"}.issubset(summary_edges.columns)
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(summary_edges.columns)
+    assert dict(zip(metadata["key"], metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "4",
+        "null_seed_source": "user",
+    }
+    assert dict(zip(summary_metadata["key"], summary_metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "4",
+        "null_seed_source": "user",
+    }
 
 
 def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
@@ -234,26 +316,32 @@ def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):
     assert {"focal_query", "focal_taxon"}.issubset(edge_arrays.cols)
     assert set(edge_arrays.cols["focal_query"]) == {"s__rhizo_000"}
     assert set(edge_arrays.cols["focal_taxon"]) == {focal_taxon}
-    assert np.all(edge_arrays.cols["iA"] == taxa_by_name[focal_taxon])
-    assert all("g__Micro; s__micro_" in taxon for taxon in taxa_arr[edge_arrays.cols["iB"]])
+    assert np.all(edge_arrays.cols["source_taxon_index"] == taxa_by_name[focal_taxon])
+    assert all(
+        "g__Micro; s__micro_" in taxon
+        for taxon in taxa_arr[edge_arrays.cols["target_taxon_index"]]
+    )
 
     focal_samples = set(raw_ingredients.presence_matrix[taxa_by_name[focal_taxon]].indices)
     for row_idx in range(min(5, edge_arrays.n_rows)):
-        b_taxon = taxa_arr[edge_arrays.cols["iB"][row_idx]]
-        b_samples = set(raw_ingredients.presence_matrix[taxa_by_name[b_taxon]].indices)
-        inter = len(focal_samples & b_samples)
-        union = len(focal_samples | b_samples)
-        assert edge_arrays.cols["inter"][row_idx] == inter
-        assert np.isclose(edge_arrays.cols["jaccard"][row_idx], inter / union)
+        target_taxon = taxa_arr[edge_arrays.cols["target_taxon_index"][row_idx]]
+        target_samples = set(raw_ingredients.presence_matrix[taxa_by_name[target_taxon]].indices)
+        shared_sample_count = len(focal_samples & target_samples)
+        union = len(focal_samples | target_samples)
+        assert edge_arrays.cols["shared_sample_count"][row_idx] == shared_sample_count
+        assert np.isclose(
+            edge_arrays.cols["jaccard_taxon_pair"][row_idx],
+            shared_sample_count / union,
+        )
 
-    row_idx = np.flatnonzero(taxa_arr[edge_arrays.cols["iB"]] == micro_000)
+    row_idx = np.flatnonzero(taxa_arr[edge_arrays.cols["target_taxon_index"]] == micro_000)
     assert row_idx.size == 1
     row_idx = int(row_idx[0])
 
-    assert edge_arrays.cols["inter"][row_idx] == 36
-    assert np.isclose(edge_arrays.cols["jaccard"][row_idx], 36 / 75)
-    assert edge_arrays.cols["log_p"][row_idx] <= 0
-    assert np.isfinite(edge_arrays.cols["log_q_bh"][row_idx])
+    assert edge_arrays.cols["shared_sample_count"][row_idx] == 36
+    assert np.isclose(edge_arrays.cols["jaccard_taxon_pair"][row_idx], 36 / 75)
+    assert edge_arrays.cols["chi2_log_p_value"][row_idx] <= 0
+    assert np.isfinite(edge_arrays.cols["chi2_log_q_value_bh"][row_idx])
 
 
 def test_focal_rhs_cooccurrence_can_resolve_to_no_surviving_edges(raw_ingredients):

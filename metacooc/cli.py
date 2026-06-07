@@ -832,6 +832,7 @@ def analysis_command(args):
             null_model=args.null_model,
             nm_n_reps=args.nm_n_reps,
             nm_seed=args.nm_seed,
+            compute_fisher=args.compute_fisher,
             nm_n_workers=args.nm_n_workers,
             nm_mp_start=args.nm_mp_start,
             nm_burn_in_steps=args.nm_burn_in_steps,

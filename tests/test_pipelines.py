@@ -71,6 +71,64 @@ def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
     assert (tmp_path / "test_global_edges.tsv").exists()
 
 
+def test_run_cooccurrence_pipeline_writes_null_metadata_sidecar(tmp_path, raw_ingredients_path):
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        search_mode="taxa_context",
+        search_string="g__Rhizo",
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=7,
+        min_conditional_probability=0.0,
+    )
+    pipelines.run_cooccurrence(args)
+
+    edges = pd.read_csv(tmp_path / "test_global_edges.tsv", sep="\t")
+    metadata = pd.read_csv(tmp_path / "test_global_edges_metadata.tsv", sep="\t")
+    nodes = pd.read_csv(tmp_path / "test_global_nodes.tsv", sep="\t")
+
+    assert "source_taxon" in edges.columns
+    assert "target_taxon" in edges.columns
+    assert "jaccard_null_mean" in edges.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(edges.columns)
+    assert "taxon_sample_count" in nodes.columns
+    assert "out_degree_p_target_given_source_gt_0.0" in nodes.columns
+    assert dict(zip(metadata["key"], metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "7",
+        "null_seed_source": "user",
+    }
+
+
+def test_run_cooccurrence_pipeline_compute_fisher_outputs_readable_columns(
+    tmp_path,
+    raw_ingredients_path,
+):
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        search_mode="taxa_context",
+        search_string="g__Rhizo",
+        null_model="FE",
+        min_conditional_probability=0.0,
+        compute_fisher=True,
+    )
+    pipelines.run_cooccurrence(args)
+
+    edges = pd.read_csv(tmp_path / "test_global_edges.tsv", sep="\t")
+    assert {
+        "fisher_odds_ratio",
+        "fisher_p_value",
+        "fisher_log_p_value",
+    }.issubset(edges.columns)
+    assert {"fisher_odds", "fisher_p", "log_fisher_p"}.isdisjoint(edges.columns)
+
+
 def test_run_structure_pipeline(tmp_path, raw_ingredients_path):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),

@@ -70,6 +70,54 @@ ASSOCIATION_NULL_COLUMNS = [
     "jaccard_null_p_empirical",
 ]
 
+COOCCURRENCE_BASE_COLUMNS = [
+    "source_taxon",
+    "target_taxon",
+    "p_target_given_source",
+    "p_source_given_target",
+    "shared_sample_count",
+    "source_taxon_sample_count",
+    "target_taxon_sample_count",
+    "source_only_sample_count",
+    "target_only_sample_count",
+    "neither_source_nor_target_sample_count",
+    "background_sample_count",
+    "source_taxon_prevalence",
+    "target_taxon_prevalence",
+    "cooccurrence_prevalence",
+    "lift_taxon_pair",
+    "jaccard_taxon_pair",
+    "phi_coefficient",
+    "chi2_statistic",
+    "chi2_p_value",
+    "chi2_q_value_bh",
+    "chi2_log_p_value",
+    "chi2_log_q_value_bh",
+    "rr_target_given_source_vs_without_source",
+    "rr_source_given_target_vs_without_target",
+    "ln_rr_target_given_source_vs_without_source",
+    "ln_rr_source_given_target_vs_without_target",
+]
+
+COOCCURRENCE_FISHER_COLUMNS = [
+    "fisher_odds_ratio",
+    "fisher_p_value",
+    "fisher_log_p_value",
+]
+
+COOCCURRENCE_NULL_COLUMNS = [
+    "jaccard_null_mean",
+    "jaccard_null_sd",
+    "jaccard_null_ses",
+    "jaccard_null_p_empirical",
+    "jaccard_null_q_value_bh",
+    "jaccard_null_log_q_value_bh",
+]
+
+
+def _cooccurrence_degree_column(min_conditional_probability: float) -> str:
+    return f"out_degree_p_target_given_source_gt_{min_conditional_probability}"
+
 
 def _association_output_columns(
     *,
@@ -631,7 +679,12 @@ def _cooccur_core(
             A_totals = A_totals[keep]
 
         B_totals = totals[iB]
-        valid = _valid_edge_mask_from_counts(inter, A_totals, B_totals, N_total)
+        valid = _valid_edge_mask_from_counts(
+            shared_sample_count=inter,
+            source_taxon_sample_count=A_totals,
+            target_taxon_sample_count=B_totals,
+            N_total=N_total,
+        )
         if not np.any(valid):
             continue
 
@@ -641,18 +694,18 @@ def _cooccur_core(
 
     nodes_df = pd.DataFrame({
         "taxon": taxa_universe,
-        "total_count": totals.astype(int, copy=False),
-        f"degree_PBA_gt_{min_conditional_probability}": deg_fwd.astype(int, copy=False),
+        "taxon_sample_count": totals.astype(int, copy=False),
+        _cooccurrence_degree_column(min_conditional_probability): deg_fwd.astype(int, copy=False),
     })
 
     if n_keep == 0:
         return None, nodes_df
 
-    iA_all = np.empty(n_keep, dtype=np.int32)
-    iB_all = np.empty(n_keep, dtype=np.int32)
-    inter_all = np.empty(n_keep, dtype=np.int32)
-    log_p_all = np.empty(n_keep, dtype=np.float64)
-    jaccard_all = np.empty(n_keep, dtype=np.float32)
+    source_taxon_index_all = np.empty(n_keep, dtype=np.int32)
+    target_taxon_index_all = np.empty(n_keep, dtype=np.int32)
+    shared_sample_count_all = np.empty(n_keep, dtype=np.int32)
+    chi2_log_p_value_all = np.empty(n_keep, dtype=np.float64)
+    jaccard_taxon_pair_all = np.empty(n_keep, dtype=np.float32)
 
     pos = 0
     for iA, iB, inter in stream_edge_values(co_mat, min_value=0):
@@ -668,7 +721,12 @@ def _cooccur_core(
             A_totals = A_totals[keep]
 
         B_totals = totals[iB]
-        valid = _valid_edge_mask_from_counts(inter, A_totals, B_totals, N_total)
+        valid = _valid_edge_mask_from_counts(
+            shared_sample_count=inter,
+            source_taxon_sample_count=A_totals,
+            target_taxon_sample_count=B_totals,
+            N_total=N_total,
+        )
         if not np.any(valid):
             continue
 
@@ -678,31 +736,31 @@ def _cooccur_core(
         A_totals = A_totals[valid]
         B_totals = B_totals[valid]
 
-        log_p_chunk, jaccard_chunk = _compute_core_edge_metrics(
-            inter=inter,
-            A_totals=A_totals,
-            B_totals=B_totals,
+        chi2_log_p_value_chunk, jaccard_taxon_pair_chunk = _compute_core_edge_metrics(
+            shared_sample_count=inter,
+            source_taxon_sample_count=A_totals,
+            target_taxon_sample_count=B_totals,
             N_total=N_total,
         )
 
         k = int(inter.size)
         sl = slice(pos, pos + k)
 
-        iA_all[sl] = iA
-        iB_all[sl] = iB
-        inter_all[sl] = inter
-        log_p_all[sl] = log_p_chunk
-        jaccard_all[sl] = jaccard_chunk
+        source_taxon_index_all[sl] = iA
+        target_taxon_index_all[sl] = iB
+        shared_sample_count_all[sl] = inter
+        chi2_log_p_value_all[sl] = chi2_log_p_value_chunk
+        jaccard_taxon_pair_all[sl] = jaccard_taxon_pair_chunk
 
         pos += k
 
     edge_arrays = CooccurrenceArrays(
         cols={
-            "iA": iA_all,
-            "iB": iB_all,
-            "inter": inter_all,
-            "jaccard": jaccard_all,
-            "log_p": log_p_all,
+            "source_taxon_index": source_taxon_index_all,
+            "target_taxon_index": target_taxon_index_all,
+            "shared_sample_count": shared_sample_count_all,
+            "jaccard_taxon_pair": jaccard_taxon_pair_all,
+            "chi2_log_p_value": chi2_log_p_value_all,
         },
         meta={
             "totals": totals,
@@ -711,7 +769,10 @@ def _cooccur_core(
         },
     )
 
-    edge_arrays.cols["log_q_bh"] = bh_logq_from_logp(log_p_all, m_total=m_total)
+    edge_arrays.cols["chi2_log_q_value_bh"] = bh_logq_from_logp(
+        chi2_log_p_value_all,
+        m_total=m_total,
+    )
 
     return edge_arrays, nodes_df
 
@@ -727,7 +788,7 @@ def _cooccur_core_focal(
     """
     Focal-only co-occurrence core.
 
-    Computes only focal x all intersections and emits edges where A_taxon is focal.
+    Computes only focal x all intersections and emits edges where source_taxon is focal.
     Focal-focal pairs are emitted once with orientation normalised to iA < iB.
     """
     X_sub = presence_submatrix_by_taxa(ing, taxa_universe).tocsr()
@@ -739,8 +800,8 @@ def _cooccur_core_focal(
 
     nodes_df = pd.DataFrame({
         "taxon": taxa_universe,
-        "total_count": totals.astype(int, copy=False),
-        f"degree_PBA_gt_{min_conditional_probability}": np.zeros(len(taxa_universe), dtype=int),
+        "taxon_sample_count": totals.astype(int, copy=False),
+        _cooccurrence_degree_column(min_conditional_probability): np.zeros(len(taxa_universe), dtype=int),
     })
 
     if focal_local_idx.size == 0:
@@ -775,7 +836,12 @@ def _cooccur_core_focal(
             A_totals = A_totals[keep]
 
         B_totals = totals[j_cols]
-        valid = _valid_edge_mask_from_counts(inter, A_totals, B_totals, N_total)
+        valid = _valid_edge_mask_from_counts(
+            shared_sample_count=inter,
+            source_taxon_sample_count=A_totals,
+            target_taxon_sample_count=B_totals,
+            N_total=N_total,
+        )
         if not np.any(valid):
             continue
 
@@ -793,16 +859,16 @@ def _cooccur_core_focal(
         n_keep += int(iA.size)
         deg_fwd += np.bincount(iA, minlength=n_taxa)
 
-    nodes_df[f"degree_PBA_gt_{min_conditional_probability}"] = deg_fwd.astype(int, copy=False)
+    nodes_df[_cooccurrence_degree_column(min_conditional_probability)] = deg_fwd.astype(int, copy=False)
 
     if n_keep == 0:
         return None, nodes_df
 
-    iA_all = np.empty(n_keep, dtype=np.int32)
-    iB_all = np.empty(n_keep, dtype=np.int32)
-    inter_all = np.empty(n_keep, dtype=np.int32)
-    log_p_all = np.empty(n_keep, dtype=np.float64)
-    jaccard_all = np.empty(n_keep, dtype=np.float32)
+    source_taxon_index_all = np.empty(n_keep, dtype=np.int32)
+    target_taxon_index_all = np.empty(n_keep, dtype=np.int32)
+    shared_sample_count_all = np.empty(n_keep, dtype=np.int32)
+    chi2_log_p_value_all = np.empty(n_keep, dtype=np.float64)
+    jaccard_taxon_pair_all = np.empty(n_keep, dtype=np.float32)
 
     pos = 0
     for f_rows, j_cols, inter in _stream_csr_entries(co_focal, min_value=0):
@@ -827,7 +893,12 @@ def _cooccur_core_focal(
             A_totals = A_totals[keep]
 
         B_totals = totals[j_cols]
-        valid = _valid_edge_mask_from_counts(inter, A_totals, B_totals, N_total)
+        valid = _valid_edge_mask_from_counts(
+            shared_sample_count=inter,
+            source_taxon_sample_count=A_totals,
+            target_taxon_sample_count=B_totals,
+            N_total=N_total,
+        )
         if not np.any(valid):
             continue
 
@@ -848,30 +919,30 @@ def _cooccur_core_focal(
             A_totals = A_totals[keep2]
             B_totals = B_totals[keep2]
 
-        log_p_chunk, jaccard_chunk = _compute_core_edge_metrics(
-            inter=inter,
-            A_totals=A_totals,
-            B_totals=B_totals,
+        chi2_log_p_value_chunk, jaccard_taxon_pair_chunk = _compute_core_edge_metrics(
+            shared_sample_count=inter,
+            source_taxon_sample_count=A_totals,
+            target_taxon_sample_count=B_totals,
             N_total=N_total,
         )
 
         k = int(inter.size)
         sl = slice(pos, pos + k)
 
-        iA_all[sl] = iA.astype(np.int32, copy=False)
-        iB_all[sl] = iB.astype(np.int32, copy=False)
-        inter_all[sl] = inter
-        log_p_all[sl] = log_p_chunk
-        jaccard_all[sl] = jaccard_chunk
+        source_taxon_index_all[sl] = iA.astype(np.int32, copy=False)
+        target_taxon_index_all[sl] = iB.astype(np.int32, copy=False)
+        shared_sample_count_all[sl] = inter
+        chi2_log_p_value_all[sl] = chi2_log_p_value_chunk
+        jaccard_taxon_pair_all[sl] = jaccard_taxon_pair_chunk
         pos += k
 
     edge_arrays = CooccurrenceArrays(
         cols={
-            "iA": iA_all,
-            "iB": iB_all,
-            "inter": inter_all,
-            "jaccard": jaccard_all,
-            "log_p": log_p_all,
+            "source_taxon_index": source_taxon_index_all,
+            "target_taxon_index": target_taxon_index_all,
+            "shared_sample_count": shared_sample_count_all,
+            "jaccard_taxon_pair": jaccard_taxon_pair_all,
+            "chi2_log_p_value": chi2_log_p_value_all,
         },
         meta={
             "totals": totals,
@@ -880,7 +951,10 @@ def _cooccur_core_focal(
         },
     )
 
-    edge_arrays.cols["log_q_bh"] = bh_logq_from_logp(log_p_all, m_total=m_total)
+    edge_arrays.cols["chi2_log_q_value_bh"] = bh_logq_from_logp(
+        chi2_log_p_value_all,
+        m_total=m_total,
+    )
     return edge_arrays, nodes_df
 
 
@@ -924,7 +998,7 @@ def _subset_focal_edge_arrays(
 ) -> CooccurrenceArrays:
     """
     Restrict compact edge arrays to focal-anchored edges and orient them so the
-    focal taxon is always iA / A_taxon.
+    focal taxon is always source_taxon.
 
     Output columns added
     --------------------
@@ -941,8 +1015,8 @@ def _subset_focal_edge_arrays(
     """
     tax_to_idx = {t: i for i, t in enumerate(taxa_universe)}
 
-    src_iA = np.asarray(edge_arrays.cols["iA"], dtype=np.int64)
-    src_iB = np.asarray(edge_arrays.cols["iB"], dtype=np.int64)
+    source_indices = np.asarray(edge_arrays.cols["source_taxon_index"], dtype=np.int64)
+    target_indices = np.asarray(edge_arrays.cols["target_taxon_index"], dtype=np.int64)
 
     collected = {k: [] for k in edge_arrays.cols}
     focal_query_parts = []
@@ -954,21 +1028,21 @@ def _subset_focal_edge_arrays(
             if focal_idx is None:
                 continue
 
-            left_idx = np.flatnonzero(src_iA == focal_idx)
+            left_idx = np.flatnonzero(source_indices == focal_idx)
             if left_idx.size:
                 for key, arr in edge_arrays.cols.items():
                     collected[key].append(np.asarray(arr)[left_idx])
                 focal_query_parts.append(np.full(left_idx.size, focal_query, dtype=object))
                 focal_taxon_parts.append(np.full(left_idx.size, focal_taxon, dtype=object))
 
-            right_idx = np.flatnonzero(src_iB == focal_idx)
+            right_idx = np.flatnonzero(target_indices == focal_idx)
             if right_idx.size:
                 for key, arr in edge_arrays.cols.items():
                     arr_np = np.asarray(arr)
-                    if key == "iA":
-                        collected[key].append(src_iB[right_idx].astype(arr_np.dtype, copy=False))
-                    elif key == "iB":
-                        collected[key].append(src_iA[right_idx].astype(arr_np.dtype, copy=False))
+                    if key == "source_taxon_index":
+                        collected[key].append(target_indices[right_idx].astype(arr_np.dtype, copy=False))
+                    elif key == "target_taxon_index":
+                        collected[key].append(source_indices[right_idx].astype(arr_np.dtype, copy=False))
                     else:
                         collected[key].append(arr_np[right_idx])
                 focal_query_parts.append(np.full(right_idx.size, focal_query, dtype=object))
@@ -1002,20 +1076,21 @@ def _subset_edges_by_rhs_queries(
     Expected input
     --------------
     `edge_arrays` must already have:
-      - iA
-      - iB
+      - source_taxon_index
+      - target_taxon_index
       - focal_query
 
     Semantics
     ---------
     Keep an edge iff:
       - its focal_query exists in rhs_query_to_taxa, and
-      - its B_taxon name belongs to the RHS taxa mapped to that focal_query
+      - its target_taxon name belongs to the RHS taxa mapped to that focal_query
 
     Notes
     -----
-    - This assumes `_subset_focal_edge_arrays()` has already run, so focal_query
-      is present and iA is already oriented as the focal side.
+    - This assumes `_subset_focal_edge_arrays()` has already run, so
+      focal_query is present and source_taxon_index is already oriented as the
+      focal side.
     - Returning None here means:
           RHS taxa resolved, but no focal->RHS co-occurrence edges survived.
       That is a valid biological/data outcome, not a parsing error.
@@ -1031,8 +1106,8 @@ def _subset_edges_by_rhs_queries(
 
     taxa_arr = np.asarray(taxa_universe, dtype=object)
     focal_query_arr = np.asarray(edge_arrays.cols["focal_query"], dtype=object)
-    iB_arr = np.asarray(edge_arrays.cols["iB"], dtype=np.int64)
-    b_taxon_arr = taxa_arr[iB_arr]
+    target_index_arr = np.asarray(edge_arrays.cols["target_taxon_index"], dtype=np.int64)
+    target_taxon_arr = taxa_arr[target_index_arr]
 
     rhs_query_to_taxa_set = {
         q: set(taxa)
@@ -1052,7 +1127,7 @@ def _subset_edges_by_rhs_queries(
         if not np.any(q_mask):
             continue
 
-        keep[q_mask] = np.isin(b_taxon_arr[q_mask], list(rhs_taxa_set))
+        keep[q_mask] = np.isin(target_taxon_arr[q_mask], list(rhs_taxa_set))
 
     if not np.any(keep):
         return None
@@ -1079,6 +1154,7 @@ def cooccurrence_obj(
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_seed: int | None = None,
+    compute_fisher: bool = False,
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
@@ -1093,7 +1169,7 @@ def cooccurrence_obj(
     pairs only, using the union of resolved focal taxa across queries.
 
     If rhs_query_to_taxa is also provided, the already focal-expanded edge set is
-    further restricted so that B_taxon belongs to the RHS taxa for the matching
+    further restricted so that target_taxon belongs to the RHS taxa for the matching
     focal_query. This does not trigger additional null generation.
     """
     focal_local_idx = None
@@ -1140,7 +1216,7 @@ def cooccurrence_obj(
             taxa_universe,
             min_conditional_probability=min_conditional_probability,
             m_total=est_pairs,
-            compute_fisher=False,
+            compute_fisher=compute_fisher,
         )
     else:
         edge_arrays, nodes_df = _cooccur_core_focal(
@@ -1149,7 +1225,7 @@ def cooccurrence_obj(
             focal_local_idx=focal_local_idx,
             min_conditional_probability=min_conditional_probability,
             m_total=est_pairs,
-            compute_fisher=False,
+            compute_fisher=compute_fisher,
         )
 
     if edge_arrays is None or edge_arrays.n_rows == 0:
@@ -1176,13 +1252,13 @@ def cooccurrence_obj(
                 print(
                     "No focal->RHS co-occurrence edges survived after RHS restriction. "
                     "This means the RHS taxa were valid targets, but no edges to those "
-                    "B-side taxa survived under the current focal cohort, taxa universe, "
+                    "target-side taxa survived under the current focal cohort, taxa universe, "
                     "and min_conditional_probability settings."
                 )
                 return None, nodes_df
 
-        edge_arrays.cols["log_q_bh"] = bh_logq_from_logp(
-            edge_arrays.cols["log_p"],
+        edge_arrays.cols["chi2_log_q_value_bh"] = bh_logq_from_logp(
+            edge_arrays.cols["chi2_log_p_value"],
             m_total=edge_arrays.n_rows,
         )
 
@@ -1202,9 +1278,9 @@ def cooccurrence_obj(
     tax_map = {t: i for i, t in enumerate(null_ingredients.taxa)}
     subset_idx = np.array([tax_map[t] for t in taxa_universe], dtype=np.int64)
 
-    obs_jacc = edge_arrays.cols["jaccard"].astype(np.float64, copy=False)
-    iA_all = edge_arrays.cols["iA"].astype(np.int64, copy=False)
-    iB_all = edge_arrays.cols["iB"].astype(np.int64, copy=False)
+    observed_jaccard = edge_arrays.cols["jaccard_taxon_pair"].astype(np.float64, copy=False)
+    source_taxon_indices = edge_arrays.cols["source_taxon_index"].astype(np.int64, copy=False)
+    target_taxon_indices = edge_arrays.cols["target_taxon_index"].astype(np.int64, copy=False)
 
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
 
@@ -1221,7 +1297,7 @@ def cooccurrence_obj(
         X=X_full,
         model=null_model,
         n_reps=n_reps,
-        obs=obs_jacc,
+        obs=observed_jaccard,
         stat_fn=stat_fn_cooccurrence_jaccard,
         seed=nm_seed,
         n_workers=nm_n_workers,
@@ -1230,27 +1306,23 @@ def cooccurrence_obj(
         steps_per_rep=nm_steps_per_rep,
         progress_every=int(nm_progress_every),
         subset_idx=subset_idx,
-        iA=iA_all,
-        iB=iB_all,
+        iA=source_taxon_indices,
+        iB=target_taxon_indices,
     )
 
-    edge_arrays.cols[f"jaccard_null_mean_{null_model}"] = np.asarray(j_res["mean"], dtype=np.float32)
-    edge_arrays.cols[f"jaccard_null_sd_{null_model}"] = np.asarray(j_res["sd"], dtype=np.float32)
-    edge_arrays.cols[f"jaccard_ses_{null_model}"] = np.asarray(j_res["ses"], dtype=np.float32)
-    edge_arrays.cols[f"jaccard_p_{null_model}"] = np.asarray(j_res["p_emp"], dtype=np.float64)
+    edge_arrays.cols["jaccard_null_mean"] = np.asarray(j_res["mean"], dtype=np.float32)
+    edge_arrays.cols["jaccard_null_sd"] = np.asarray(j_res["sd"], dtype=np.float32)
+    edge_arrays.cols["jaccard_null_ses"] = np.asarray(j_res["ses"], dtype=np.float32)
+    edge_arrays.cols["jaccard_null_p_empirical"] = np.asarray(j_res["p_emp"], dtype=np.float64)
 
-    edge_arrays.cols[f"log_jaccard_q_{null_model}"] = bh_logq_from_logp(
-        np.log(edge_arrays.cols[f"jaccard_p_{null_model}"]),
+    edge_arrays.cols["jaccard_null_log_q_value_bh"] = bh_logq_from_logp(
+        np.log(edge_arrays.cols["jaccard_null_p_empirical"]),
         m_total=edge_arrays.n_rows if focal_query_to_taxa else est_pairs,
     )
 
-    edge_arrays.meta[f"n_ok_{null_model}"] = int(j_res["n_ok"])
-    edge_arrays.meta[f"n_err_{null_model}"] = int(j_res["n_err"])
-    edge_arrays.meta[f"n_done_{null_model}"] = int(j_res["n_done"])
-    edge_arrays.meta[f"n_requested_{null_model}"] = int(j_res["n_target"])
-    edge_arrays.meta["null_seed"] = int(j_res["null_seed"])
-    edge_arrays.meta["null_seed_source"] = j_res["null_seed_source"]
-    edge_arrays.meta["null_model"] = j_res["null_model"]
+    null_metadata = null_metadata_from_reduction(j_res)
+    edge_arrays.meta["null_metadata"] = null_metadata
+    edge_arrays.meta.update(null_metadata)
     print(
         f"INFO: Null simulation seed {j_res['null_seed']} "
         f"({j_res['null_seed_source']}, model={j_res['null_model']})."
@@ -1300,6 +1372,12 @@ def export_cooccurrence_outputs(
             float_format="%.6g",
         )
         print(f"Taxon edges analysis saved to {edges_tsv_path}")
+        metadata_path = write_result_metadata_sidecar(
+            edges_tsv_path,
+            edge_arrays.meta.get("null_metadata"),
+        )
+        if metadata_path is not None:
+            print(f"Taxon edges metadata saved to {metadata_path}")
         return
 
     parquet_path = os.path.join(output_dir, f"{edges_base}")
@@ -1313,6 +1391,12 @@ def export_cooccurrence_outputs(
         f"{os.path.splitext(parquet_path)[0]}.parquet "
         f"and {os.path.splitext(parquet_path)[0]}_taxa.parquet"
     )
+    metadata_path = write_result_metadata_sidecar(
+        f"{parquet_path}.parquet",
+        edge_arrays.meta.get("null_metadata"),
+    )
+    if metadata_path is not None:
+        print(f"Full taxon edges metadata saved to {metadata_path}")
 
     summary_df = _build_summary_df(
         edge_arrays=edge_arrays,
@@ -1332,6 +1416,12 @@ def export_cooccurrence_outputs(
         f"Summary taxon edges analysis saved to {summary_path} "
         f"({len(summary_df):,} of {n_rows:,} rows)"
     )
+    summary_metadata_path = write_result_metadata_sidecar(
+        summary_path,
+        edge_arrays.meta.get("null_metadata"),
+    )
+    if summary_metadata_path is not None:
+        print(f"Summary taxon edges metadata saved to {summary_metadata_path}")
 
 
 def cooccurrence(
@@ -1346,6 +1436,7 @@ def cooccurrence(
     null_model: str = "FE",
     nm_n_reps: int = 10,
     nm_seed: int | None = None,
+    compute_fisher: bool = False,
     *,
     nm_n_workers: int | None = None,
     nm_mp_start: str | None = None,
@@ -1373,6 +1464,7 @@ def cooccurrence(
         null_model=null_model,
         nm_n_reps=nm_n_reps,
         nm_seed=nm_seed,
+        compute_fisher=compute_fisher,
         nm_n_workers=nm_n_workers,
         nm_mp_start=nm_mp_start,
         nm_burn_in_steps=nm_burn_in_steps,
@@ -1460,11 +1552,10 @@ def _edge_summary_indices(
     null_model: str,
     summary_n: int,
 ) -> np.ndarray:
-    log_null_q = f"log_jaccard_q_{null_model}"
-    if log_null_q in cols:
-        score = cols[log_null_q]
+    if "jaccard_null_log_q_value_bh" in cols:
+        score = cols["jaccard_null_log_q_value_bh"]
     else:
-        score = cols["log_q_bh"]
+        score = cols["chi2_log_q_value_bh"]
 
     n = len(score)
     if n == 0:
@@ -1503,6 +1594,16 @@ def _build_summary_df(
     )
 
 
+def _finalize_cooccurrence_edge_frame(df: pd.DataFrame, *, compute_fisher: bool) -> pd.DataFrame:
+    columns = [col for col in ("focal_query", "focal_taxon") if col in df.columns]
+    columns.extend(COOCCURRENCE_BASE_COLUMNS)
+    if compute_fisher:
+        columns.extend(COOCCURRENCE_FISHER_COLUMNS)
+    columns.extend(col for col in COOCCURRENCE_NULL_COLUMNS if col in df.columns)
+    columns.extend(col for col in df.columns if col not in columns)
+    return df.loc[:, columns].copy()
+
+
 def _write_full_edges_parquet_from_arrays(
     edge_arrays: CooccurrenceArrays,
     taxa_universe: List[str],
@@ -1528,16 +1629,41 @@ def _write_full_edges_parquet_from_arrays(
     taxa_path = f"{output_path}_taxa.parquet"
 
     edge_table_dict = {
-        "iA": pa.array(np.asarray(cols["iA"], dtype=np.int32), type=pa.int32()),
-        "iB": pa.array(np.asarray(cols["iB"], dtype=np.int32), type=pa.int32()),
-        "A_B_intersection_count": pa.array(np.asarray(cols["inter"], dtype=np.int32), type=pa.int32()),
-        "jaccard": pa.array(np.asarray(cols["jaccard"], dtype=np.float32), type=pa.float32()),
-        "log_p": pa.array(np.asarray(cols["log_p"], dtype=np.float64), type=pa.float64()),
-        "log_q_bh": pa.array(np.asarray(cols["log_q_bh"], dtype=np.float64), type=pa.float64()),
+        "source_taxon_index": pa.array(
+            np.asarray(cols["source_taxon_index"], dtype=np.int32),
+            type=pa.int32(),
+        ),
+        "target_taxon_index": pa.array(
+            np.asarray(cols["target_taxon_index"], dtype=np.int32),
+            type=pa.int32(),
+        ),
+        "shared_sample_count": pa.array(
+            np.asarray(cols["shared_sample_count"], dtype=np.int32),
+            type=pa.int32(),
+        ),
+        "jaccard_taxon_pair": pa.array(
+            np.asarray(cols["jaccard_taxon_pair"], dtype=np.float32),
+            type=pa.float32(),
+        ),
+        "chi2_log_p_value": pa.array(
+            np.asarray(cols["chi2_log_p_value"], dtype=np.float64),
+            type=pa.float64(),
+        ),
+        "chi2_log_q_value_bh": pa.array(
+            np.asarray(cols["chi2_log_q_value_bh"], dtype=np.float64),
+            type=pa.float64(),
+        ),
     }
 
     for key, arr in cols.items():
-        if key in {"iA", "iB", "inter", "jaccard", "log_p", "log_q_bh"}:
+        if key in {
+            "source_taxon_index",
+            "target_taxon_index",
+            "shared_sample_count",
+            "jaccard_taxon_pair",
+            "chi2_log_p_value",
+            "chi2_log_q_value_bh",
+        }:
             continue
 
         arr = np.asarray(arr)
@@ -1619,57 +1745,59 @@ def bh_logq_from_logp(
 
 
 def _valid_edge_mask_from_counts(
-    inter: np.ndarray,
-    A_totals: np.ndarray,
-    B_totals: np.ndarray,
+    shared_sample_count: np.ndarray,
+    source_taxon_sample_count: np.ndarray,
+    target_taxon_sample_count: np.ndarray,
     N_total: int,
 ) -> np.ndarray:
     """
     Cheap validity mask from integer counts only.
     """
-    d = N_total - A_totals - B_totals + inter
+    neither_source_nor_target_count = (
+        N_total - source_taxon_sample_count - target_taxon_sample_count + shared_sample_count
+    )
 
     return (
-        (inter >= 0) &
-        (A_totals > 0) & (A_totals < N_total) &
-        (B_totals > 0) & (B_totals < N_total) &
-        (d >= 0)
+        (shared_sample_count >= 0) &
+        (source_taxon_sample_count > 0) & (source_taxon_sample_count < N_total) &
+        (target_taxon_sample_count > 0) & (target_taxon_sample_count < N_total) &
+        (neither_source_nor_target_count >= 0)
     )
 
 
 def _compute_core_edge_metrics(
-    inter: np.ndarray,
-    A_totals: np.ndarray,
-    B_totals: np.ndarray,
+    shared_sample_count: np.ndarray,
+    source_taxon_sample_count: np.ndarray,
+    target_taxon_sample_count: np.ndarray,
     N_total: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute only the core per-edge metrics we actually need to keep in memory.
     """
-    a = inter.astype(np.float64, copy=False)
-    row1 = A_totals.astype(np.float64, copy=False)
-    col1 = B_totals.astype(np.float64, copy=False)
+    shared = shared_sample_count.astype(np.float64, copy=False)
+    source_total = source_taxon_sample_count.astype(np.float64, copy=False)
+    target_total = target_taxon_sample_count.astype(np.float64, copy=False)
     n = float(N_total)
 
-    cross = a * n - row1 * col1
+    cross = shared * n - source_total * target_total
 
-    denom = row1 * (n - row1)
-    denom *= col1
-    denom *= (n - col1)
+    denom = source_total * (n - source_total)
+    denom *= target_total
+    denom *= (n - target_total)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         chi2 = n * (cross * cross) / denom
-        log_p = np.log(special.gammaincc(0.5, 0.5 * chi2))
+        chi2_log_p_value = np.log(special.gammaincc(0.5, 0.5 * chi2))
 
-    union = row1 + col1 - a
-    jaccard = np.divide(
-        a,
+    union = source_total + target_total - shared
+    jaccard_taxon_pair = np.divide(
+        shared,
         union,
-        out=np.zeros(a.shape[0], dtype=np.float32),
+        out=np.zeros(shared.shape[0], dtype=np.float32),
         where=union > 0,
     )
 
-    return log_p, jaccard
+    return chi2_log_p_value, jaccard_taxon_pair
 
 
 def _reconstruct_edge_frame(
@@ -1682,96 +1810,112 @@ def _reconstruct_edge_frame(
     N_total = int(edge_arrays.meta["N_total"])
     compute_fisher = bool(edge_arrays.meta.get("compute_fisher", False))
 
-    iA = cols["iA"][idx]
-    iB = cols["iB"][idx]
-    inter = cols["inter"][idx]
+    source_taxon_index = cols["source_taxon_index"][idx]
+    target_taxon_index = cols["target_taxon_index"][idx]
+    shared_sample_count = cols["shared_sample_count"][idx]
 
-    A_totals = totals[iA]
-    B_totals = totals[iB]
+    source_taxon_sample_count = totals[source_taxon_index]
+    target_taxon_sample_count = totals[target_taxon_index]
 
-    a = inter.astype(np.float64, copy=False)
-    b = (A_totals - inter).astype(np.float64, copy=False)
-    c = (B_totals - inter).astype(np.float64, copy=False)
-    d = (N_total - A_totals - B_totals + inter).astype(np.float64, copy=False)
+    source_only_sample_count = source_taxon_sample_count - shared_sample_count
+    target_only_sample_count = target_taxon_sample_count - shared_sample_count
+    neither_source_nor_target_sample_count = (
+        N_total - source_taxon_sample_count - target_taxon_sample_count + shared_sample_count
+    )
 
-    mets = table_metrics_arrays(a, b, c, d, compute_fisher=compute_fisher)
+    mets = table_metrics_arrays(
+        shared_sample_count.astype(np.float64, copy=False),
+        source_only_sample_count.astype(np.float64, copy=False),
+        target_only_sample_count.astype(np.float64, copy=False),
+        neither_source_nor_target_sample_count.astype(np.float64, copy=False),
+        compute_fisher=compute_fisher,
+    )
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        p_A = A_totals / float(N_total)
-        p_B = B_totals / float(N_total)
-        p_A_and_B = inter / float(N_total)
+        source_taxon_prevalence = source_taxon_sample_count / float(N_total)
+        target_taxon_prevalence = target_taxon_sample_count / float(N_total)
+        cooccurrence_prevalence = shared_sample_count / float(N_total)
 
-        denom_lift = p_A * p_B
-        lift = np.divide(
-            p_A_and_B,
+        denom_lift = source_taxon_prevalence * target_taxon_prevalence
+        lift_taxon_pair = np.divide(
+            cooccurrence_prevalence,
             denom_lift,
-            out=np.zeros_like(p_A_and_B, dtype=float),
+            out=np.zeros_like(cooccurrence_prevalence, dtype=float),
             where=denom_lift != 0,
         )
 
-        P_B_given_A = np.divide(
-            inter,
-            A_totals,
-            out=np.zeros_like(inter, dtype=float),
-            where=A_totals > 0,
+        p_target_given_source = np.divide(
+            shared_sample_count,
+            source_taxon_sample_count,
+            out=np.zeros_like(shared_sample_count, dtype=float),
+            where=source_taxon_sample_count > 0,
         )
 
-        P_A_given_B = np.divide(
-            inter,
-            B_totals,
-            out=np.zeros_like(inter, dtype=float),
-            where=B_totals > 0,
+        p_source_given_target = np.divide(
+            shared_sample_count,
+            target_taxon_sample_count,
+            out=np.zeros_like(shared_sample_count, dtype=float),
+            where=target_taxon_sample_count > 0,
         )
 
     taxa_arr = np.asarray(taxa_universe, dtype=object)
 
     out = {
-        "A_taxon": taxa_arr[iA],
-        "B_taxon": taxa_arr[iB],
-        "A_B_intersection_count": inter,
-        "A_total_count": A_totals,
-        "B_total_count": B_totals,
-        "a": a,
-        "b": b,
-        "c": c,
-        "d": d,
-        "N": np.full(inter.shape[0], N_total, dtype=np.int32),
-        "p_A": p_A,
-        "p_B": p_B,
-        "p_A_and_B": p_A_and_B,
-        "lift": lift,
-        "P_B_given_A": P_B_given_A,
-        "P_A_given_B": P_A_given_B,
-        "jaccard": cols["jaccard"][idx],
-        "chi2": mets["chi2"],
-        "p": np.exp(cols["log_p"][idx]),
-        "log_p": cols["log_p"][idx],
-        "phi": mets["phi"],
-        "RR_A_to_B": mets["RR_A_to_B"],
-        "RR_B_to_A": mets["RR_B_to_A"],
-        "logRR_A_to_B": mets["logRR_A_to_B"],
-        "logRR_B_to_A": mets["logRR_B_to_A"],
-        "fisher_odds": mets["fisher_odds"],
-        "fisher_p": mets["fisher_p"],
-        "log_fisher_p": mets["log_fisher_p"],
-        "q_bh": np.exp(cols["log_q_bh"][idx]),
-        "log_q_bh": cols["log_q_bh"][idx],
+        "source_taxon": taxa_arr[source_taxon_index],
+        "target_taxon": taxa_arr[target_taxon_index],
+        "p_target_given_source": p_target_given_source,
+        "p_source_given_target": p_source_given_target,
+        "shared_sample_count": shared_sample_count,
+        "source_taxon_sample_count": source_taxon_sample_count,
+        "target_taxon_sample_count": target_taxon_sample_count,
+        "source_only_sample_count": source_only_sample_count,
+        "target_only_sample_count": target_only_sample_count,
+        "neither_source_nor_target_sample_count": neither_source_nor_target_sample_count,
+        "background_sample_count": np.full(shared_sample_count.shape[0], N_total, dtype=np.int32),
+        "source_taxon_prevalence": source_taxon_prevalence,
+        "target_taxon_prevalence": target_taxon_prevalence,
+        "cooccurrence_prevalence": cooccurrence_prevalence,
+        "lift_taxon_pair": lift_taxon_pair,
+        "jaccard_taxon_pair": cols["jaccard_taxon_pair"][idx],
+        "phi_coefficient": mets["phi"],
+        "chi2_statistic": mets["chi2"],
+        "chi2_p_value": np.exp(cols["chi2_log_p_value"][idx]),
+        "chi2_q_value_bh": np.exp(cols["chi2_log_q_value_bh"][idx]),
+        "chi2_log_p_value": cols["chi2_log_p_value"][idx],
+        "chi2_log_q_value_bh": cols["chi2_log_q_value_bh"][idx],
+        "rr_target_given_source_vs_without_source": mets["RR_A_to_B"],
+        "rr_source_given_target_vs_without_target": mets["RR_B_to_A"],
+        "ln_rr_target_given_source_vs_without_source": mets["logRR_A_to_B"],
+        "ln_rr_source_given_target_vs_without_target": mets["logRR_B_to_A"],
     }
 
+    if compute_fisher:
+        out.update(
+            {
+                "fisher_odds_ratio": mets["fisher_odds"],
+                "fisher_p_value": mets["fisher_p"],
+                "fisher_log_p_value": mets["log_fisher_p"],
+            }
+        )
+
     for key, arr in cols.items():
-        if key in {"iA", "iB", "inter", "jaccard", "log_p", "log_q_bh"}:
+        if key in {
+            "source_taxon_index",
+            "target_taxon_index",
+            "shared_sample_count",
+            "jaccard_taxon_pair",
+            "chi2_log_p_value",
+            "chi2_log_q_value_bh",
+        }:
             continue
 
-        if key.startswith("log_jaccard_q_"):
-            model = key.removeprefix("log_jaccard_q_")
-            out[f"jaccard_q_{model}"] = np.exp(arr[idx])
+        if key == "jaccard_null_log_q_value_bh":
+            out["jaccard_null_q_value_bh"] = np.exp(arr[idx])
             out[key] = arr[idx]
         else:
             out[key] = arr[idx]
 
-    for key, value in edge_arrays.meta.items():
-        if key in {"totals", "N_total", "compute_fisher"}:
-            continue
-        out[key] = np.full(len(iA), value)
-
-    return pd.DataFrame(out)
+    return _finalize_cooccurrence_edge_frame(
+        pd.DataFrame(out),
+        compute_fisher=compute_fisher,
+    )

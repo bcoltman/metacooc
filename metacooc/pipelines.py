@@ -492,6 +492,7 @@ def run_cooccurrence(args):
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         nm_seed=args.nm_seed,
+        compute_fisher=getattr(args, "compute_fisher", False),
         nm_n_workers=getattr(args, "nm_n_workers", None),
         nm_mp_start=getattr(args, "nm_mp_start", None),
         nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),

@@ -626,6 +626,8 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "EE",
         "--nm_n_reps",
         "1",
+        "--nm_seed",
+        "7",
         "--tag",
         "cli",
     )
@@ -753,6 +755,8 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
         "EE",
         "--nm_n_reps",
         "1",
+        "--nm_seed",
+        "7",
         "--tag",
         "cli",
     )
@@ -762,25 +766,35 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
     assert {"focal_query", "focal_taxon"}.issubset(edges.columns)
     assert set(edges["focal_query"]) == {"s__rhizo_000"}
     assert edges["focal_taxon"].str.endswith("g__Rhizo; s__rhizo_000").all()
-    assert edges["A_taxon"].str.endswith("g__Rhizo; s__rhizo_000").all()
-    assert edges["B_taxon"].str.contains("g__Micro; s__micro_", regex=False).all()
+    assert edges["source_taxon"].str.endswith("g__Rhizo; s__rhizo_000").all()
+    assert edges["target_taxon"].str.contains("g__Micro; s__micro_", regex=False).all()
 
-    micro_000 = edges.loc[edges["B_taxon"].str.endswith("g__Micro; s__micro_000")].iloc[0]
-    assert micro_000["A_B_intersection_count"] == 36
-    assert micro_000["A_total_count"] == 60
-    assert micro_000["B_total_count"] == 51
-    assert micro_000["a"] == 36
-    assert micro_000["b"] == 24
-    assert micro_000["c"] == 15
-    assert micro_000["d"] == 25
-    assert micro_000["N"] == 100
-    assert micro_000["jaccard"] == pytest.approx(36 / 75)
-    assert micro_000["P_B_given_A"] == pytest.approx(36 / 60)
-    assert micro_000["P_A_given_B"] == pytest.approx(36 / 51)
-    assert 0 <= micro_000["q_bh"] <= 1
-    assert "jaccard_null_mean_EE" in edges.columns
-    assert "jaccard_p_EE" in edges.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.issubset(edges.columns)
+    micro_000 = edges.loc[edges["target_taxon"].str.endswith("g__Micro; s__micro_000")].iloc[0]
+    assert micro_000["shared_sample_count"] == 36
+    assert micro_000["source_taxon_sample_count"] == 60
+    assert micro_000["target_taxon_sample_count"] == 51
+    assert micro_000["source_only_sample_count"] == 24
+    assert micro_000["target_only_sample_count"] == 15
+    assert micro_000["neither_source_nor_target_sample_count"] == 25
+    assert micro_000["background_sample_count"] == 100
+    assert micro_000["jaccard_taxon_pair"] == pytest.approx(36 / 75)
+    assert micro_000["p_target_given_source"] == pytest.approx(36 / 60)
+    assert micro_000["p_source_given_target"] == pytest.approx(36 / 51)
+    assert 0 <= micro_000["chi2_q_value_bh"] <= 1
+    assert "jaccard_null_mean" in edges.columns
+    assert "jaccard_null_p_empirical" in edges.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(edges.columns)
+
+    edges_metadata = pd.read_csv(out / "cli_global_edges_metadata.tsv", sep="\t")
+    assert dict(zip(edges_metadata["key"], edges_metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "7",
+        "null_seed_source": "user",
+    }
 
 
 @pytest.mark.cli

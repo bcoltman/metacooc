@@ -184,7 +184,7 @@ def test_count_operations_do_not_overflow_uint8_presence():
         ingredients.taxa,
         min_conditional_probability=0.0,
     )
-    assert edge_arrays.cols["inter"][0] == 299
+    assert edge_arrays.cols["shared_sample_count"][0] == 299
 
 
 def test_presence_for_counts_prevents_uint8_sparse_product_overflow():
