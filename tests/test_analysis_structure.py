@@ -15,6 +15,7 @@ from metacooc.structure import (
     compute_c_score,
     compute_nodf_streamed,
     mean_jaccard_dot,
+    structure,
     structure_obj,
 )
 
@@ -368,7 +369,9 @@ def test_focal_rhs_cooccurrence_can_resolve_to_no_surviving_edges(raw_ingredient
 def test_structure_obj_observed_only(raw_ingredients):
     out = structure_obj(raw_ingredients, compute_null=False)
     assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
-    assert "obs" in out.columns
+    assert {"observed_value", "observed_error"}.issubset(out.columns)
+    assert "obs" not in out.columns
+    assert "null_mean" not in out.columns
 
 
 def test_blocked_structure_metrics_match_full_reference():
@@ -429,7 +432,7 @@ def test_structure_core_uses_blocked_metrics(raw_ingredients):
 
     assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
     for metric, value in expected.items():
-        observed = out.loc[out["metric"] == metric, "obs"].item()
+        observed = out.loc[out["metric"] == metric, "observed_value"].item()
         assert np.isclose(observed, value)
 
 
@@ -446,8 +449,48 @@ def test_structure_core_all_null_models(raw_ingredients):
             nm_progress_every=1,
         )
         assert out["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
-        assert f"null_mean_{model}" in out.columns
-        assert {"null_seed", "null_seed_source", "null_model"}.issubset(out.columns)
+        assert {
+            "null_mean",
+            "null_sd",
+            "null_standardized_effect_size",
+            "null_p_empirical",
+        }.issubset(out.columns)
+        assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(out.columns)
+        assert out.attrs["null_metadata"] == {
+            "null_model": model,
+            "null_replicates_requested": 1,
+            "null_replicates_completed": 1,
+            "null_replicates_ok": 1,
+            "null_replicates_error": 0,
+            "null_seed": 5,
+            "null_seed_source": "user",
+        }
+
+
+def test_structure_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredients):
+    structure(
+        raw_ingredients,
+        output_dir=str(tmp_path),
+        tag="direct_",
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=5,
+    )
+
+    structure_df = pd.read_csv(tmp_path / "direct_structure.tsv", sep="\t")
+    metadata_df = pd.read_csv(tmp_path / "direct_structure_metadata.tsv", sep="\t")
+
+    assert "null_mean" in structure_df.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(structure_df.columns)
+    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "5",
+        "null_seed_source": "user",
+    }
 
 
 def test_biome_distribution(raw_ingredients):

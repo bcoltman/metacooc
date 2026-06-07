@@ -564,8 +564,22 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "FE",
         "--nm_n_reps",
         "1",
+        "--nm_seed",
+        "7",
     )
-    assert (structure_out / "structure.tsv").exists()
+    structure = pd.read_csv(structure_out / "structure.tsv", sep="\t")
+    structure_metadata = pd.read_csv(structure_out / "structure_metadata.tsv", sep="\t")
+    assert "null_mean" in structure.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(structure.columns)
+    assert dict(zip(structure_metadata["key"], structure_metadata["value"].astype(str))) == {
+        "null_model": "FE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "7",
+        "null_seed_source": "user",
+    }
 
 
 @pytest.mark.cli
@@ -648,10 +662,24 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "FE",
         "--nm_n_reps",
         "1",
+        "--nm_seed",
+        "7",
         "--tag",
         "cli",
     )
-    assert (structure_out / "cli_global_structure.tsv").exists()
+    structure = pd.read_csv(structure_out / "cli_global_structure.tsv", sep="\t")
+    structure_metadata = pd.read_csv(structure_out / "cli_global_structure_metadata.tsv", sep="\t")
+    assert "null_mean" in structure.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(structure.columns)
+    assert dict(zip(structure_metadata["key"], structure_metadata["value"].astype(str))) == {
+        "null_model": "FE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "7",
+        "null_seed_source": "user",
+    }
 
     biome_out = tmp_path / "workflow_biome"
     run_cli(

@@ -13,9 +13,33 @@ from metacooc.null_models import (
 )
 
 from metacooc.pantry import load_ingredients, presence_for_counts
+from metacooc.output import null_metadata_from_reduction, write_result_metadata_sidecar
 
 
 _LARGE_STRUCTURE_PAIR_WARNING = 100_000_000
+
+STRUCTURE_BASE_COLUMNS = [
+    "metric",
+    "observed_value",
+    "observed_error",
+]
+
+STRUCTURE_NULL_COLUMNS = [
+    "null_mean",
+    "null_sd",
+    "null_standardized_effect_size",
+    "null_p_empirical",
+]
+
+
+def _finalize_structure_output(df: pd.DataFrame, *, include_null: bool) -> pd.DataFrame:
+    columns = list(STRUCTURE_BASE_COLUMNS)
+    if include_null:
+        columns.extend(STRUCTURE_NULL_COLUMNS)
+    attrs = dict(df.attrs)
+    out = df.loc[:, columns].copy()
+    out.attrs.update(attrs)
+    return out
 
 
 def _warn_if_large_structure_matrix(X: sp.spmatrix, chunk_rows: int) -> None:
@@ -258,34 +282,26 @@ def structure_obj(
     nm_progress_every: int = 25,
 ) -> pd.DataFrame:
     """
-    Entry point for association / term-enrichment analysis.
+    Entry point for community-structure analysis.
 
     Parameters
     ----------
-    null_ingredients : Ingredients
-        Background cohort (depends on null_scope, biome/local, etc).
-    filtered_ingredients : Ingredients
-        Term cohort T: samples matching the search term (soil, Nitrospira_D+, ...).
-        Must have samples ⊆ null_ingredients.samples.
-    threshold : float
-        Optional filter on p_T_given_X (taxon-centric specificity).
-    null_model : {"FE", "FF"}
-        "FE" -> analytic tests based on 2×2 tables (χ², Fisher, etc.) only.
-        "FF" -> same per-taxon stats + (optionally) SIM9-based community metrics.
-    community_structure : bool
-        If True and null_model == "FF", run SIM9 on the null presence matrix
-        and attach C-score, NODF, mean Jaccard (global + subset) in attrs.
+    ingredients : Ingredients
+        Cohort matrix used to compute C-score, mean Jaccard, and NODF.
+    null_model : {"FE", "EF", "EE", "FF"}
+        Null model passed to the structure null reduction when compute_null is True.
+    compute_null : bool
+        If True, compute null summaries for the observed structure metrics.
     nm_n_reps : int
-        Number of SIM9 null matrices if community_structure is True.
+        Number of null replicates if compute_null is True.
     nm_seed : int or None
-        Random seed for SIM9.
+        Random seed for null generation.
 
     Returns
     -------
     out : pd.DataFrame
-        One row per taxon with enrichment metrics and p-values.
-        If community_structure is True and null_model == "FF",
-        out.attrs["sim9_matrix_metrics"] contains matrix-level metrics.
+        One row per structure metric. Run-level null metadata, if present, is
+        stored in out.attrs["null_metadata"].
     """
     return _structure_core(
         ingredients=ingredients,
@@ -359,8 +375,8 @@ def _structure_core(
     rows.append(
         {
             "metric": "c_score",
-            "obs": cscore_obs if np.isfinite(cscore_obs) else np.nan,
-            "obs_error": cscore_err,
+            "observed_value": cscore_obs if np.isfinite(cscore_obs) else np.nan,
+            "observed_error": cscore_err,
         }
     )
     
@@ -375,8 +391,8 @@ def _structure_core(
     rows.append(
         {
             "metric": "mean_jaccard",
-            "obs": mj_obs if np.isfinite(mj_obs) else np.nan,
-            "obs_error": mj_err,
+            "observed_value": mj_obs if np.isfinite(mj_obs) else np.nan,
+            "observed_error": mj_err,
         }
     )
     
@@ -393,14 +409,14 @@ def _structure_core(
     rows.append(
         {
             "metric": "nodf",
-            "obs": nodf_obs if np.isfinite(nodf_obs) else np.nan,
-            "obs_error": nodf_err,
+            "observed_value": nodf_obs if np.isfinite(nodf_obs) else np.nan,
+            "observed_error": nodf_err,
         }
     )
     
     # If no null requested, return observed-only
     if (not compute_null) or (nm_n_reps is None) or (int(nm_n_reps) <= 0):
-        return pd.DataFrame(rows)
+        return _finalize_structure_output(pd.DataFrame(rows), include_null=False)
         
     # ---- null reduction (vectorised over the 3 metrics) ----
     suffix = str(null_model).upper()
@@ -408,7 +424,7 @@ def _structure_core(
     
     obs_vec = np.array([cscore_obs, mj_obs, nodf_obs], dtype=float)
     if not np.all(np.isfinite(obs_vec)):
-        return pd.DataFrame(rows)
+        return _finalize_structure_output(pd.DataFrame(rows), include_null=False)
         
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
     
@@ -433,25 +449,25 @@ def _structure_core(
     out_rows: list[dict] = []
     for i, r in enumerate(rows):
         payload = dict(r)
-        payload[f"null_mean_{suffix}"] = float(j_res["mean"][i]) if np.isfinite(j_res["mean"][i]) else np.nan
-        payload[f"null_sd_{suffix}"]   = float(j_res["sd"][i])   if np.isfinite(j_res["sd"][i])   else np.nan
-        payload[f"ses_{suffix}"]       = float(j_res["ses"][i])  if np.isfinite(j_res["ses"][i])  else np.nan
-        payload[f"p_emp_{suffix}"]     = float(j_res["p_emp"][i]) if np.isfinite(j_res["p_emp"][i]) else np.nan
-        payload[f"n_ok_{suffix}"]      = int(j_res["n_ok"])
-        payload[f"n_err_{suffix}"]     = int(j_res["n_err"])
-        payload[f"n_done_{suffix}"]    = int(j_res["n_done"])
-        payload[f"n_requested_{suffix}"]    = int(j_res["n_target"])
-        payload["null_seed"] = int(j_res["null_seed"])
-        payload["null_seed_source"] = j_res["null_seed_source"]
-        payload["null_model"] = j_res["null_model"]
+        payload["null_mean"] = float(j_res["mean"][i]) if np.isfinite(j_res["mean"][i]) else np.nan
+        payload["null_sd"] = float(j_res["sd"][i]) if np.isfinite(j_res["sd"][i]) else np.nan
+        payload["null_standardized_effect_size"] = (
+            float(j_res["ses"][i]) if np.isfinite(j_res["ses"][i]) else np.nan
+        )
+        payload["null_p_empirical"] = (
+            float(j_res["p_emp"][i]) if np.isfinite(j_res["p_emp"][i]) else np.nan
+        )
         out_rows.append(payload)
+
+    out = pd.DataFrame(out_rows)
+    out.attrs["null_metadata"] = null_metadata_from_reduction(j_res)
 
     print(
         f"INFO: Null simulation seed {j_res['null_seed']} "
         f"({j_res['null_seed_source']}, model={j_res['null_model']})."
     )
         
-    return pd.DataFrame(out_rows)
+    return _finalize_structure_output(out, include_null=True)
 
 
 def structure(
@@ -517,5 +533,11 @@ def structure(
     output_path = os.path.join(output_dir, f"{tag}structure.tsv")
     structure_df.to_csv(output_path, sep="\t", index=False)
     print(f"Structure analysis saved to {output_path}")
+    metadata_path = write_result_metadata_sidecar(
+        output_path,
+        structure_df.attrs.get("null_metadata"),
+    )
+    if metadata_path is not None:
+        print(f"Structure metadata saved to {metadata_path}")
     
     return structure_df
