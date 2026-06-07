@@ -692,7 +692,9 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "cli",
         "--return_all_taxa",
     )
-    assert (biome_out / "cli_taxa_biome_distribution.tsv").exists()
+    biome = pd.read_csv(biome_out / "cli_taxa_biome_distribution.tsv", sep="\t")
+    assert biome.columns.tolist() == ["taxon", "terrestrial", "aquatic"]
+    assert not (biome_out / "cli_taxa_biome_distribution_metadata.tsv").exists()
 
     filtered_biome_out = tmp_path / "workflow_biome_filtered"
     run_cli(
@@ -715,9 +717,8 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     filtered_biome = pd.read_csv(
         filtered_biome_out / "cli_taxa_biome_distribution.tsv",
         sep="\t",
-        index_col=0,
     )
-    assert filtered_biome.columns.tolist() == ["soil", "marine"]
+    assert filtered_biome.columns.tolist() == ["taxon", "soil", "marine"]
     assert len(filtered_biome) == 2
 
     invalid_biome = run_cli_no_check(
