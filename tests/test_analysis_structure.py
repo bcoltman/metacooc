@@ -100,8 +100,25 @@ def test_association_obj_fe_and_ee(raw_ingredients):
         "p_cohort_given_taxon",
         "p_taxon_given_cohort",
         "jaccard_taxon_cohort",
+        "rr_cohort_given_taxon_vs_without_taxon",
+        "rr_taxon_given_cohort_vs_without_cohort",
+        "ln_rr_cohort_given_taxon_vs_without_taxon",
+        "ln_rr_taxon_given_cohort_vs_without_cohort",
         "chi2_q_value_bh",
     }.issubset(fe.columns)
+    assert {"RR_A_to_B", "RR_B_to_A", "logRR_A_to_B", "logRR_B_to_A"}.isdisjoint(fe.columns)
+
+    row = fe.iloc[0]
+    a = row["taxon_in_cohort_count"]
+    b = row["taxon_in_background_not_cohort_count"]
+    c = row["cohort_without_taxon_count"]
+    d = row["neither_taxon_nor_cohort_count"]
+    expected_rr_cohort = ((a + 0.5) / (a + b + 0.5)) / ((c + 0.5) / (c + d + 0.5))
+    expected_rr_taxon = ((a + 0.5) / (a + c + 0.5)) / ((b + 0.5) / (b + d + 0.5))
+    assert np.isclose(row["rr_cohort_given_taxon_vs_without_taxon"], expected_rr_cohort)
+    assert np.isclose(row["rr_taxon_given_cohort_vs_without_cohort"], expected_rr_taxon)
+    assert np.isclose(row["ln_rr_cohort_given_taxon_vs_without_taxon"], np.log(expected_rr_cohort))
+    assert np.isclose(row["ln_rr_taxon_given_cohort_vs_without_cohort"], np.log(expected_rr_taxon))
     assert "jaccard_null_mean" not in fe.columns
 
     ee = association_obj(

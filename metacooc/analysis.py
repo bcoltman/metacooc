@@ -41,6 +41,10 @@ ASSOCIATION_BASE_COLUMNS = [
     "lift_taxon_cohort",
     "jaccard_taxon_cohort",
     "phi_coefficient",
+    "rr_cohort_given_taxon_vs_without_taxon",
+    "rr_taxon_given_cohort_vs_without_cohort",
+    "ln_rr_cohort_given_taxon_vs_without_taxon",
+    "ln_rr_taxon_given_cohort_vs_without_cohort",
     "chi2_statistic",
     "chi2_p_value",
     "chi2_q_value_bh",
@@ -490,6 +494,10 @@ def _association_core(
             "chi2_p_value": mets["p"],
             "chi2_log_p_value": mets["log_p"],
             "phi_coefficient": mets["phi"],
+            "rr_cohort_given_taxon_vs_without_taxon": mets["RR_A_to_B"],
+            "rr_taxon_given_cohort_vs_without_cohort": mets["RR_B_to_A"],
+            "ln_rr_cohort_given_taxon_vs_without_taxon": mets["logRR_A_to_B"],
+            "ln_rr_taxon_given_cohort_vs_without_cohort": mets["logRR_B_to_A"],
             "invalid_table": mets["invalid_table"],
         }
     )

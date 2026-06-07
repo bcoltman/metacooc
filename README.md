@@ -199,7 +199,7 @@ The three analysis pipelines (`association`, `cooccurrence`, and `structure`) fo
 
 ```bash
 metacooc cooccurrence \
-  --search_mode taxon \
+  --search_mode taxa_context \
   --search_string "g__Nitrospira" \
   --ranks_for_search_inclusion genus \
   --output_dir results/nitrospira_cooc \
@@ -338,6 +338,10 @@ delta_p_taxon_cohort_vs_not_cohort
 lift_taxon_cohort
 jaccard_taxon_cohort
 phi_coefficient
+rr_cohort_given_taxon_vs_without_taxon
+rr_taxon_given_cohort_vs_without_cohort
+ln_rr_cohort_given_taxon_vs_without_taxon
+ln_rr_taxon_given_cohort_vs_without_cohort
 chi2_statistic
 chi2_p_value
 chi2_q_value_bh
