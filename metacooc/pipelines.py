@@ -412,6 +412,12 @@ def run_structure(args):
     output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_structure.tsv")
     structure_df.to_csv(output_path, sep="\t", index=False)
     print(f"Pipeline: {null_scope_prefix} structure analysis saved to {output_path}")
+    metadata_path = write_result_metadata_sidecar(
+        output_path,
+        structure_df.attrs.get("null_metadata"),
+    )
+    if metadata_path is not None:
+        print(f"Pipeline: {null_scope_prefix} structure metadata saved to {metadata_path}")
 
 
 def run_association(args):
