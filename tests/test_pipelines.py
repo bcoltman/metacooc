@@ -176,6 +176,49 @@ def test_run_biome_distribution_pipeline(tmp_path, raw_ingredients_path):
     assert not (tmp_path / "test_taxa_biome_distribution_metadata.tsv").exists()
 
 
+def test_run_biome_distribution_species_fallback_schema(tmp_path, raw_ingredients_path):
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        return_all_taxa=False,
+        taxa_query=None,
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
+    )
+
+    pipelines.run_biome_distribution(args)
+
+    out_path = tmp_path / "test_taxa_biome_distribution_species.tsv"
+    out = pd.read_csv(out_path, sep="\t")
+    assert out.columns.tolist() == ["taxon", "terrestrial", "aquatic"]
+    assert len(out) == 300
+    assert out["taxon"].str.contains("s__").all()
+    assert not (tmp_path / "test_taxa_biome_distribution_species_metadata.tsv").exists()
+
+
+def test_run_biome_distribution_aggregated_schema(tmp_path, aggregated_ingredients_path):
+    args = pipeline_args(
+        custom_ingredients=str(aggregated_ingredients_path),
+        output_dir=str(tmp_path),
+        aggregated=True,
+        return_all_taxa=False,
+        taxa_query=None,
+        min_taxa_count=None,
+        min_sample_count=None,
+        filter_rank=None,
+    )
+
+    pipelines.run_biome_distribution(args)
+
+    out_path = tmp_path / "test_taxa_biome_distribution.tsv"
+    out = pd.read_csv(out_path, sep="\t")
+    assert out.columns.tolist() == ["taxon", "terrestrial", "aquatic"]
+    assert out["taxon"].str.contains("s__").any()
+    assert out["taxon"].str.contains("AGGREGATED").any()
+    assert not (tmp_path / "test_taxa_biome_distribution_metadata.tsv").exists()
+
+
 def test_run_biome_distribution_skips_filtering_by_default(
     tmp_path,
     raw_ingredients_path,
