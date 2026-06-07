@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import scipy.sparse as sp
 
-from metacooc.analysis import association_obj, cooccurrence_obj
+from metacooc.analysis import association, association_obj, cooccurrence_obj
 from metacooc.structure import (
     _structure_core,
     compute_c_score,
@@ -118,6 +119,58 @@ def test_association_obj_fe_and_ee(raw_ingredients):
         "null_seed_source": "user",
     }
     assert np.isfinite(ee["jaccard_taxon_cohort"].to_numpy()).all()
+
+
+def test_association_obj_compute_fisher_uses_readable_columns(raw_ingredients):
+    filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
+
+    out = association_obj(
+        raw_ingredients,
+        filtered,
+        min_conditional_probability=0.0,
+        null_model="FE",
+        nm_n_reps=1,
+        nm_seed=3,
+        compute_fisher=True,
+    )
+
+    assert {
+        "fisher_odds_ratio",
+        "fisher_p_value",
+        "fisher_log_p_value",
+    }.issubset(out.columns)
+    assert {"fisher_odds", "fisher_p", "log_fisher_p"}.isdisjoint(out.columns)
+    assert np.isfinite(out["fisher_p_value"].to_numpy()).all()
+
+
+def test_association_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredients):
+    filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
+
+    association(
+        raw_ingredients,
+        filtered,
+        output_dir=str(tmp_path),
+        tag="direct_",
+        min_conditional_probability=0.0,
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=3,
+    )
+
+    association_df = pd.read_csv(tmp_path / "direct_association.tsv", sep="\t")
+    metadata_df = pd.read_csv(tmp_path / "direct_association_metadata.tsv", sep="\t")
+
+    assert "jaccard_null_mean" in association_df.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association_df.columns)
+    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "3",
+        "null_seed_source": "user",
+    }
 
 
 def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
