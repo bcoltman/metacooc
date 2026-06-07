@@ -22,6 +22,41 @@ def test_run_association_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
     assert not pd.read_csv(out, sep="\t").empty
 
 
+def test_run_association_pipeline_writes_null_metadata_sidecar(
+    tmp_path,
+    raw_ingredients_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(pipelines, "plot_analysis_obj", lambda *args, **kwargs: None)
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        search_mode="taxa_context",
+        search_string="g__Rhizo",
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=7,
+    )
+    pipelines.run_association(args)
+
+    out = tmp_path / "test_global_association.tsv"
+    metadata = tmp_path / "test_global_association_metadata.tsv"
+    association_df = pd.read_csv(out, sep="\t")
+    metadata_df = pd.read_csv(metadata, sep="\t")
+
+    assert "jaccard_null_mean" in association_df.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association_df.columns)
+    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "7",
+        "null_seed_source": "user",
+    }
+
+
 def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),

@@ -13,14 +13,14 @@ def plot_analysis_obj(
     """
     Four fixed panels (all required columns assumed present):
 
-        Panel 1: phi vs taxon index (sorted by p_T_given_X)
-        Panel 2: p_T_given_X vs taxon index
+        Panel 1: phi vs taxon index (sorted by p_cohort_given_taxon)
+        Panel 2: p_cohort_given_taxon vs taxon index
         Panel 3: phi vs log2(effect)
         Panel 4: phi vs log10(chi2)
 
     Required columns:
-        phi, p_T_given_X, chi2,
-        log2_RR_T or log2_RR_X or RR_T or RR_X, q_bh optionally
+        phi_coefficient, p_cohort_given_taxon, chi2_statistic,
+        log2 risk-ratio columns, chi2_q_value_bh optionally
     """
 
     if df.empty:
@@ -29,31 +29,31 @@ def plot_analysis_obj(
     # Clean infinities
     df = df.replace([np.inf, -np.inf], np.nan)
 
-    # -------- Sorting (always by specificity p_T_given_X) ----------
-    df_sorted = df.sort_values("p_T_given_X", ascending=False)
+    # -------- Sorting (always by specificity p_cohort_given_taxon) ----------
+    df_sorted = df.sort_values("p_cohort_given_taxon", ascending=False)
     # df_sorted = df.sort_values("phi", ascending=False)
     x_idx = np.arange(len(df_sorted))
 
-    phi_vals = df_sorted["phi"].values
-    pTx_vals = df_sorted["p_T_given_X"].values
-    chi_vals = df_sorted["chi2"].values
+    phi_vals = df_sorted["phi_coefficient"].values
+    pTx_vals = df_sorted["p_cohort_given_taxon"].values
+    chi_vals = df_sorted["chi2_statistic"].values
 
     # Colours by phi sign
     colours = np.where(phi_vals >= 0, "#1f77b4", "#d62728")
 
     # -------- Effect size: pick first available ----------
-    if "log2_RR_T" in df_sorted.columns:
-        effect = df_sorted["log2_RR_T"].values
-        effect_label = "log2 RR_T"
-    elif "log2_RR_X" in df_sorted.columns:
-        effect = df_sorted["log2_RR_X"].values
-        effect_label = "log2 RR_X"
-    elif "RR_T" in df_sorted.columns:
-        effect = np.log2(df_sorted["RR_T"].replace(0, np.nan).values)
-        effect_label = "log2 RR_T"
+    if "log2_rr_taxon_cohort_vs_not_cohort" in df_sorted.columns:
+        effect = df_sorted["log2_rr_taxon_cohort_vs_not_cohort"].values
+        effect_label = "log2 RR taxon cohort vs not cohort"
+    elif "log2_rr_cohort_taxon_vs_not_taxon" in df_sorted.columns:
+        effect = df_sorted["log2_rr_cohort_taxon_vs_not_taxon"].values
+        effect_label = "log2 RR cohort taxon vs not taxon"
+    elif "rr_taxon_cohort_vs_not_cohort" in df_sorted.columns:
+        effect = np.log2(df_sorted["rr_taxon_cohort_vs_not_cohort"].replace(0, np.nan).values)
+        effect_label = "log2 RR taxon cohort vs not cohort"
     else:
-        effect = np.log2(df_sorted["RR_X"].replace(0, np.nan).values)
-        effect_label = "log2 RR_X"
+        effect = np.log2(df_sorted["rr_cohort_taxon_vs_not_taxon"].replace(0, np.nan).values)
+        effect_label = "log2 RR cohort taxon vs not taxon"
 
     log_chi = np.log10(chi_vals + 1e-12)
 
@@ -70,7 +70,7 @@ def plot_analysis_obj(
     )
 
     # ============================================================
-    # Panel 1 — phi vs index (sorted by p_T_given_X)
+    # Panel 1 — phi vs index (sorted by p_cohort_given_taxon)
     # ============================================================
     ax = axes[0]
     ax.scatter(x_idx, phi_vals, c=colours, s=30, alpha=0.8)
@@ -79,8 +79,8 @@ def plot_analysis_obj(
     ax.set_title("Association Strength (phi)", fontsize=16)
     ax.grid(True, linestyle="--", alpha=0.6)
 
-    if q_thresh is not None and "q_bh" in df_sorted.columns:
-        sig = df_sorted["q_bh"] <= q_thresh
+    if q_thresh is not None and "chi2_q_value_bh" in df_sorted.columns:
+        sig = df_sorted["chi2_q_value_bh"] <= q_thresh
         if sig.any():
             ax.scatter(
                 x_idx[sig.values],
@@ -92,17 +92,17 @@ def plot_analysis_obj(
             )
             ax.legend()
 
-    ax.set_xlabel("Taxa (sorted by p_T_given_X)", fontsize=14)
+    ax.set_xlabel("Taxa (sorted by p_cohort_given_taxon)", fontsize=14)
 
     # ============================================================
-    # Panel 2 — p_T_given_X vs index
+    # Panel 2 — p_cohort_given_taxon vs index
     # ============================================================
     ax = axes[1]
     ax.scatter(x_idx, pTx_vals, c=colours, s=30, alpha=0.8)
-    ax.set_ylabel("p_T_given_X", fontsize=14)
-    ax.set_title("Specificity p(T|X) Across Taxa", fontsize=16)
+    ax.set_ylabel("p_cohort_given_taxon", fontsize=14)
+    ax.set_title("Specificity p(cohort|taxon) Across Taxa", fontsize=16)
     ax.grid(True, linestyle="--", alpha=0.6)
-    ax.set_xlabel("Taxa (sorted by p_T_given_X)", fontsize=14)
+    ax.set_xlabel("Taxa (sorted by p_cohort_given_taxon)", fontsize=14)
 
     # # ============================================================
     # # Panel 3 — phi vs log2(effect)
