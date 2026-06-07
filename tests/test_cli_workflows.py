@@ -584,15 +584,29 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "--output_dir",
         assoc_out,
         "--null_model",
-        "FE",
+        "EE",
         "--nm_n_reps",
         "1",
+        "--nm_seed",
+        "7",
         "--min_conditional_probability",
         "0",
         "--tag",
         "cli",
     )
-    assert (assoc_out / "cli_global_association.tsv").exists()
+    association = pd.read_csv(assoc_out / "cli_global_association.tsv", sep="\t")
+    association_metadata = pd.read_csv(assoc_out / "cli_global_association_metadata.tsv", sep="\t")
+    assert "jaccard_null_mean" in association.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association.columns)
+    assert dict(zip(association_metadata["key"], association_metadata["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "7",
+        "null_seed_source": "user",
+    }
 
     cooc_out = tmp_path / "workflow_cooc"
     run_cli(

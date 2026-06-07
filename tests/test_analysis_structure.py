@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import scipy.sparse as sp
 
-from metacooc.analysis import association_obj, cooccurrence_obj
+from metacooc.analysis import association, association_obj, cooccurrence_obj
 from metacooc.structure import (
     _structure_core,
     compute_c_score,
@@ -84,8 +85,18 @@ def test_association_obj_fe_and_ee(raw_ingredients):
         nm_seed=3,
     )
     assert not fe.empty
-    assert {"taxon", "a", "b", "c", "d", "p_T_given_X", "jaccard", "q_bh"}.issubset(fe.columns)
-    assert not any(c.startswith("jaccard_null_mean_FE") for c in fe.columns)
+    assert {
+        "taxon",
+        "taxon_in_cohort_count",
+        "taxon_in_background_not_cohort_count",
+        "cohort_without_taxon_count",
+        "neither_taxon_nor_cohort_count",
+        "p_cohort_given_taxon",
+        "p_taxon_given_cohort",
+        "jaccard_taxon_cohort",
+        "chi2_q_value_bh",
+    }.issubset(fe.columns)
+    assert "jaccard_null_mean" not in fe.columns
 
     ee = association_obj(
         raw_ingredients,
@@ -95,10 +106,71 @@ def test_association_obj_fe_and_ee(raw_ingredients):
         nm_n_reps=1,
         nm_seed=3,
     )
-    assert "jaccard_null_mean_EE" in ee.columns
-    assert "jaccard_p_EE" in ee.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.issubset(ee.columns)
-    assert np.isfinite(ee["jaccard"].to_numpy()).all()
+    assert "jaccard_null_mean" in ee.columns
+    assert "jaccard_null_p_empirical" in ee.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(ee.columns)
+    assert ee.attrs["null_metadata"] == {
+        "null_model": "EE",
+        "null_replicates_requested": 1,
+        "null_replicates_completed": 1,
+        "null_replicates_ok": 1,
+        "null_replicates_error": 0,
+        "null_seed": 3,
+        "null_seed_source": "user",
+    }
+    assert np.isfinite(ee["jaccard_taxon_cohort"].to_numpy()).all()
+
+
+def test_association_obj_compute_fisher_uses_readable_columns(raw_ingredients):
+    filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
+
+    out = association_obj(
+        raw_ingredients,
+        filtered,
+        min_conditional_probability=0.0,
+        null_model="FE",
+        nm_n_reps=1,
+        nm_seed=3,
+        compute_fisher=True,
+    )
+
+    assert {
+        "fisher_odds_ratio",
+        "fisher_p_value",
+        "fisher_log_p_value",
+    }.issubset(out.columns)
+    assert {"fisher_odds", "fisher_p", "log_fisher_p"}.isdisjoint(out.columns)
+    assert np.isfinite(out["fisher_p_value"].to_numpy()).all()
+
+
+def test_association_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredients):
+    filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
+
+    association(
+        raw_ingredients,
+        filtered,
+        output_dir=str(tmp_path),
+        tag="direct_",
+        min_conditional_probability=0.0,
+        null_model="EE",
+        nm_n_reps=1,
+        nm_seed=3,
+    )
+
+    association_df = pd.read_csv(tmp_path / "direct_association.tsv", sep="\t")
+    metadata_df = pd.read_csv(tmp_path / "direct_association_metadata.tsv", sep="\t")
+
+    assert "jaccard_null_mean" in association_df.columns
+    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association_df.columns)
+    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
+        "null_model": "EE",
+        "null_replicates_requested": "1",
+        "null_replicates_completed": "1",
+        "null_replicates_ok": "1",
+        "null_replicates_error": "0",
+        "null_seed": "3",
+        "null_seed_source": "user",
+    }
 
 
 def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
@@ -311,16 +383,16 @@ def test_association_metrics_have_expected_counts(raw_ingredients):
     )
     row = out.loc[out["taxon"].eq(focal_taxon)].iloc[0]
 
-    assert row["a"] == 50
-    assert row["b"] == 10
-    assert row["c"] == 0
-    assert row["d"] == 40
-    assert row["N_T"] == 50
-    assert row["N_notT"] == 50
-    assert row["N_null"] == 100
-    assert np.isclose(row["jaccard"], 50 / 60)
-    assert np.isclose(row["phi"], 0.8164965809277261)
-    assert 0 <= row["q_bh"] <= 1
+    assert row["taxon_in_cohort_count"] == 50
+    assert row["taxon_in_background_not_cohort_count"] == 10
+    assert row["cohort_without_taxon_count"] == 0
+    assert row["neither_taxon_nor_cohort_count"] == 40
+    assert row["cohort_sample_count"] == 50
+    assert row["background_not_cohort_sample_count"] == 50
+    assert row["background_sample_count"] == 100
+    assert np.isclose(row["jaccard_taxon_cohort"], 50 / 60)
+    assert np.isclose(row["phi_coefficient"], 0.8164965809277261)
+    assert 0 <= row["chi2_q_value_bh"] <= 1
 
     filtered_sample_set = set(filtered.samples)
     null_sample_set = set(raw_ingredients.samples)
@@ -338,8 +410,8 @@ def test_association_metrics_have_expected_counts(raw_ingredients):
         expected_jaccard = a / (a + b + c)
 
         metric_row = out.loc[out["taxon"].eq(taxon)].iloc[0]
-        assert metric_row["a"] == a
-        assert metric_row["b"] == b
-        assert metric_row["c"] == c
-        assert metric_row["d"] == d
-        assert np.isclose(metric_row["jaccard"], expected_jaccard)
+        assert metric_row["taxon_in_cohort_count"] == a
+        assert metric_row["taxon_in_background_not_cohort_count"] == b
+        assert metric_row["cohort_without_taxon_count"] == c
+        assert metric_row["neither_taxon_nor_cohort_count"] == d
+        assert np.isclose(metric_row["jaccard_taxon_cohort"], expected_jaccard)

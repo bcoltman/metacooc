@@ -23,10 +23,81 @@ from metacooc.null_models import (
     stat_fn_cooccurrence_jaccard,
     _best_mp_start
 )
+from metacooc.output import null_metadata_from_reduction, write_result_metadata_sidecar
 
 
 _SMOOTH = 0.5
 _COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD = 1_000_000
+
+ASSOCIATION_BASE_COLUMNS = [
+    "taxon",
+    "p_cohort_given_taxon",
+    "p_taxon_given_cohort",
+    "log2_rr_cohort_taxon_vs_not_taxon",
+    "rr_cohort_taxon_vs_not_taxon",
+    "log2_rr_taxon_cohort_vs_not_cohort",
+    "rr_taxon_cohort_vs_not_cohort",
+    "delta_p_taxon_cohort_vs_not_cohort",
+    "lift_taxon_cohort",
+    "jaccard_taxon_cohort",
+    "phi_coefficient",
+    "chi2_statistic",
+    "chi2_p_value",
+    "chi2_q_value_bh",
+    "chi2_log_p_value",
+    "chi2_log_q_value_bh",
+    "taxon_in_cohort_count",
+    "taxon_in_background_not_cohort_count",
+    "cohort_without_taxon_count",
+    "neither_taxon_nor_cohort_count",
+    "cohort_sample_count",
+    "background_not_cohort_sample_count",
+    "background_sample_count",
+    "p_taxon_given_not_cohort",
+    "p_cohort_given_not_taxon",
+]
+
+ASSOCIATION_FISHER_COLUMNS = [
+    "fisher_odds_ratio",
+    "fisher_p_value",
+    "fisher_log_p_value",
+]
+
+ASSOCIATION_NULL_COLUMNS = [
+    "jaccard_null_mean",
+    "jaccard_null_sd",
+    "jaccard_null_ses",
+    "jaccard_null_p_empirical",
+]
+
+
+def _association_output_columns(
+    *,
+    compute_fisher: bool,
+    include_null: bool,
+) -> list[str]:
+    columns = list(ASSOCIATION_BASE_COLUMNS)
+    if compute_fisher:
+        columns.extend(ASSOCIATION_FISHER_COLUMNS)
+    if include_null:
+        columns.extend(ASSOCIATION_NULL_COLUMNS)
+    return columns
+
+
+def _finalize_association_output(
+    df: pd.DataFrame,
+    *,
+    compute_fisher: bool,
+    include_null: bool,
+) -> pd.DataFrame:
+    columns = _association_output_columns(
+        compute_fisher=compute_fisher,
+        include_null=include_null,
+    )
+    attrs = dict(df.attrs)
+    out = df.loc[:, columns].copy()
+    out.attrs.update(attrs)
+    return out
 
 
 @dataclass
@@ -208,7 +279,9 @@ def association_obj(
     )
 
     if min_conditional_probability is not None:
-        out = out[out["p_T_given_X"] > min_conditional_probability].copy()
+        attrs = dict(out.attrs)
+        out = out[out["p_cohort_given_taxon"] > min_conditional_probability].copy()
+        out.attrs.update(attrs)
 
     return out
 
@@ -241,101 +314,178 @@ def _association_core(
     if taxa.size == 0:
         raise ValueError("No taxa intersect the null and filtered ingredients.")
 
-    N_T = float(len(filtered_ingredients.samples))
-    N_null = float(len(null_ingredients.samples))
-    if N_T <= 0 or N_null <= 0 or N_null < N_T:
-        raise ValueError(f"Invalid cohort sizes: N_T={N_T}, N_null={N_null}")
-    if N_null == N_T:
-        raise ValueError("Null and term cohorts are identical (N_null == N_T): no non-term samples available.")
-
-    a_raw = filtered_ingredients.total_counts[filt_idx].astype(float, copy=False)
-    ref_counts = null_ingredients.total_counts[null_idx].astype(float, copy=False)
-    b_raw = ref_counts - a_raw
-
-    N_notT = N_null - N_T
-    c_raw = N_T - a_raw
-    d_raw = N_notT - b_raw
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        jaccard_obs_all = np.divide(
-            a_raw,
-            (b_raw + N_T),
-            out=np.zeros_like(a_raw, dtype=float),
-            where=(b_raw + N_T) > 0,
+    cohort_sample_count = float(len(filtered_ingredients.samples))
+    background_sample_count = float(len(null_ingredients.samples))
+    if cohort_sample_count <= 0 or background_sample_count <= 0 or background_sample_count < cohort_sample_count:
+        raise ValueError(
+            "Invalid cohort sizes: "
+            f"cohort_sample_count={cohort_sample_count}, "
+            f"background_sample_count={background_sample_count}"
+        )
+    if background_sample_count == cohort_sample_count:
+        raise ValueError(
+            "Null and term cohorts are identical: no non-term samples available."
         )
 
-    mets = table_metrics(a_raw, b_raw, c_raw, d_raw, compute_fisher=compute_fisher)
+    taxon_in_cohort_count = filtered_ingredients.total_counts[filt_idx].astype(float, copy=False)
+    taxon_in_background_total_count = null_ingredients.total_counts[null_idx].astype(float, copy=False)
+    taxon_in_background_not_cohort_count = taxon_in_background_total_count - taxon_in_cohort_count
 
-    a = a_raw + _SMOOTH
-    b = b_raw + _SMOOTH
-    c = c_raw + _SMOOTH
-    d = d_raw + _SMOOTH
+    background_not_cohort_sample_count = background_sample_count - cohort_sample_count
+    cohort_without_taxon_count = cohort_sample_count - taxon_in_cohort_count
+    neither_taxon_nor_cohort_count = (
+        background_not_cohort_sample_count - taxon_in_background_not_cohort_count
+    )
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        p_X_given_T = a / (a + c)
-        p_X_given_notT = b / (b + d)
-        RR_T = np.divide(p_X_given_T, p_X_given_notT, out=np.zeros_like(p_X_given_T), where=p_X_given_notT != 0)
-        log2_RR_T = np.where(RR_T > 0, np.log2(RR_T), -np.inf)
-        delta_p_T = p_X_given_T - p_X_given_notT
+        jaccard_taxon_cohort = np.divide(
+            taxon_in_cohort_count,
+            taxon_in_background_not_cohort_count + cohort_sample_count,
+            out=np.zeros_like(taxon_in_cohort_count, dtype=float),
+            where=(taxon_in_background_not_cohort_count + cohort_sample_count) > 0,
+        )
 
-        p_T_given_X = a / (a + b)
-        p_T_given_notX = c / (c + d)
-        RR_X = np.divide(p_T_given_X, p_T_given_notX, out=np.zeros_like(p_T_given_X), where=p_T_given_notX != 0)
-        log2_RR_X = np.where(RR_X > 0, np.log2(RR_X), -np.inf)
+    mets = table_metrics(
+        taxon_in_cohort_count,
+        taxon_in_background_not_cohort_count,
+        cohort_without_taxon_count,
+        neither_taxon_nor_cohort_count,
+        compute_fisher=compute_fisher,
+    )
 
-        P_X = (a + b) / N_null
-        P_T = (a + c) / N_null
-        P_XT = a / N_null
-        lift = np.divide(P_XT, P_X * P_T, out=np.zeros_like(P_XT), where=(P_X * P_T) != 0)
+    taxon_in_cohort_smoothed = taxon_in_cohort_count + _SMOOTH
+    taxon_in_background_not_cohort_smoothed = taxon_in_background_not_cohort_count + _SMOOTH
+    cohort_without_taxon_smoothed = cohort_without_taxon_count + _SMOOTH
+    neither_taxon_nor_cohort_smoothed = neither_taxon_nor_cohort_count + _SMOOTH
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        p_taxon_given_cohort = taxon_in_cohort_smoothed / (
+            taxon_in_cohort_smoothed + cohort_without_taxon_smoothed
+        )
+        p_taxon_given_not_cohort = taxon_in_background_not_cohort_smoothed / (
+            taxon_in_background_not_cohort_smoothed + neither_taxon_nor_cohort_smoothed
+        )
+        rr_taxon_cohort_vs_not_cohort = np.divide(
+            p_taxon_given_cohort,
+            p_taxon_given_not_cohort,
+            out=np.zeros_like(p_taxon_given_cohort),
+            where=p_taxon_given_not_cohort != 0,
+        )
+        log2_rr_taxon_cohort_vs_not_cohort = np.where(
+            rr_taxon_cohort_vs_not_cohort > 0,
+            np.log2(rr_taxon_cohort_vs_not_cohort),
+            -np.inf,
+        )
+        delta_p_taxon_cohort_vs_not_cohort = (
+            p_taxon_given_cohort - p_taxon_given_not_cohort
+        )
+
+        p_cohort_given_taxon = taxon_in_cohort_smoothed / (
+            taxon_in_cohort_smoothed + taxon_in_background_not_cohort_smoothed
+        )
+        p_cohort_given_not_taxon = cohort_without_taxon_smoothed / (
+            cohort_without_taxon_smoothed + neither_taxon_nor_cohort_smoothed
+        )
+        rr_cohort_taxon_vs_not_taxon = np.divide(
+            p_cohort_given_taxon,
+            p_cohort_given_not_taxon,
+            out=np.zeros_like(p_cohort_given_taxon),
+            where=p_cohort_given_not_taxon != 0,
+        )
+        log2_rr_cohort_taxon_vs_not_taxon = np.where(
+            rr_cohort_taxon_vs_not_taxon > 0,
+            np.log2(rr_cohort_taxon_vs_not_taxon),
+            -np.inf,
+        )
+
+        p_taxon = (
+            taxon_in_cohort_smoothed + taxon_in_background_not_cohort_smoothed
+        ) / background_sample_count
+        p_cohort = (
+            taxon_in_cohort_smoothed + cohort_without_taxon_smoothed
+        ) / background_sample_count
+        p_taxon_and_cohort = taxon_in_cohort_smoothed / background_sample_count
+        lift_taxon_cohort = np.divide(
+            p_taxon_and_cohort,
+            p_taxon * p_cohort,
+            out=np.zeros_like(p_taxon_and_cohort),
+            where=(p_taxon * p_cohort) != 0,
+        )
 
     out = pd.DataFrame(
         {
             "taxon": taxa,
-            "a": a_raw, "b": b_raw, "c": c_raw, "d": d_raw,
-            "N_T": N_T, "N_notT": N_notT, "N_null": N_null,
-            "p_X_given_T": p_X_given_T,
-            "p_X_given_notT": p_X_given_notT,
-            "RR_T": RR_T,
-            "log2_RR_T": log2_RR_T,
-            "delta_p_T": delta_p_T,
-            "p_T_given_X": p_T_given_X,
-            "p_T_given_notX": p_T_given_notX,
-            "RR_X": RR_X,
-            "log2_RR_X": log2_RR_X,
-            "lift": lift,
-            "jaccard": jaccard_obs_all,
+            "p_cohort_given_taxon": p_cohort_given_taxon,
+            "p_taxon_given_cohort": p_taxon_given_cohort,
+            "log2_rr_cohort_taxon_vs_not_taxon": log2_rr_cohort_taxon_vs_not_taxon,
+            "rr_cohort_taxon_vs_not_taxon": rr_cohort_taxon_vs_not_taxon,
+            "log2_rr_taxon_cohort_vs_not_cohort": log2_rr_taxon_cohort_vs_not_cohort,
+            "rr_taxon_cohort_vs_not_cohort": rr_taxon_cohort_vs_not_cohort,
+            "delta_p_taxon_cohort_vs_not_cohort": delta_p_taxon_cohort_vs_not_cohort,
+            "lift_taxon_cohort": lift_taxon_cohort,
+            "jaccard_taxon_cohort": jaccard_taxon_cohort,
+            "taxon_in_cohort_count": taxon_in_cohort_count,
+            "taxon_in_background_not_cohort_count": taxon_in_background_not_cohort_count,
+            "cohort_without_taxon_count": cohort_without_taxon_count,
+            "neither_taxon_nor_cohort_count": neither_taxon_nor_cohort_count,
+            "cohort_sample_count": cohort_sample_count,
+            "background_not_cohort_sample_count": background_not_cohort_sample_count,
+            "background_sample_count": background_sample_count,
+            "p_taxon_given_not_cohort": p_taxon_given_not_cohort,
+            "p_cohort_given_not_taxon": p_cohort_given_not_taxon,
         }
     )
 
-    out = out.join(
-        mets[
-            [
-                "chi2", "p", "log_p", "phi",
-                "RR_A_to_B", "RR_B_to_A", "logRR_A_to_B", "logRR_B_to_A",
-                "fisher_odds", "fisher_p", "log_fisher_p",
-                "invalid_table",
-            ]
-        ]
+    metrics = pd.DataFrame(
+        {
+            "chi2_statistic": mets["chi2"],
+            "chi2_p_value": mets["p"],
+            "chi2_log_p_value": mets["log_p"],
+            "phi_coefficient": mets["phi"],
+            "invalid_table": mets["invalid_table"],
+        }
     )
+    if compute_fisher:
+        metrics = metrics.join(
+            mets[["fisher_odds", "fisher_p", "log_fisher_p"]].rename(
+                columns={
+                    "fisher_odds": "fisher_odds_ratio",
+                    "fisher_p": "fisher_p_value",
+                    "log_fisher_p": "fisher_log_p_value",
+                }
+            )
+        )
 
-    out["log_q_bh"] = bh_logq_from_logp(out["log_p"].to_numpy(dtype=np.float64, copy=False))
-    out["q_bh"] = np.exp(out["log_q_bh"].to_numpy(dtype=np.float64, copy=False))
+    out = out.join(metrics)
+
+    out["chi2_log_q_value_bh"] = bh_logq_from_logp(
+        out["chi2_log_p_value"].to_numpy(dtype=np.float64, copy=False)
+    )
+    out["chi2_q_value_bh"] = np.exp(out["chi2_log_q_value_bh"].to_numpy(dtype=np.float64, copy=False))
 
     valid_mask = ~out["invalid_table"].values
     out = out.loc[valid_mask].copy()
     out.drop(columns="invalid_table", inplace=True)
 
-    null_idx_valid = null_idx[valid_mask]
-    out.attrs["null_idx_valid"] = np.asarray(null_idx_valid, dtype=int)
+    background_taxon_indices_valid = null_idx[valid_mask]
+    out.attrs["background_taxon_indices_valid"] = np.asarray(background_taxon_indices_valid, dtype=int)
     out.attrs["taxa_valid"] = out["taxon"].to_numpy(dtype=object, copy=False)
 
     n_reps = int(nm_n_reps) if nm_n_reps is not None else 0
     if n_reps <= 0 or out.shape[0] == 0:
-        return out
+        return _finalize_association_output(
+            out,
+            compute_fisher=compute_fisher,
+            include_null=False,
+        )
 
     if null_model == "FE":
         print("FE: association determined analytically - no need for shuffling null and probabilistic approach")
-        return out
+        return _finalize_association_output(
+            out,
+            compute_fisher=compute_fisher,
+            include_null=False,
+        )
 
     X_full = presence_for_counts(null_ingredients).tocsr()
     X_full.eliminate_zeros()
@@ -351,17 +501,17 @@ def _association_core(
     mask_cols[term_cols] = True
     nonterm_cols = np.where(~mask_cols)[0].astype(np.int64, copy=False)
 
-    subset_idx = np.asarray(null_idx_valid, dtype=np.int64)
+    subset_idx = np.asarray(background_taxon_indices_valid, dtype=np.int64)
 
-    obs_jacc = out["jaccard"].to_numpy(dtype=float, copy=False)
+    observed_jaccard = out["jaccard_taxon_cohort"].to_numpy(dtype=float, copy=False)
 
     mp_start = _best_mp_start() if nm_mp_start is None else str(nm_mp_start)
 
-    j_res = parallel_null_reduce_vector(
+    null_reduction = parallel_null_reduce_vector(
         X=X_full,
         model=null_model,
         n_reps=n_reps,
-        obs=obs_jacc,
+        obs=observed_jaccard,
         stat_fn=stat_fn_association_jaccard,
         seed=nm_seed,
         n_workers=nm_n_workers,
@@ -373,27 +523,24 @@ def _association_core(
         nonterm_cols=nonterm_cols,
         subset_idx=subset_idx,
         n_rows=n_rows,
-        N_T=N_T,
+        N_T=cohort_sample_count,
     )
 
-    out[f"jaccard_null_mean_{null_model}"] = j_res["mean"]
-    out[f"jaccard_null_sd_{null_model}"] = j_res["sd"]
-    out[f"jaccard_ses_{null_model}"] = j_res["ses"]
-    out[f"jaccard_p_{null_model}"] = j_res["p_emp"]
-
-    out[f"n_ok_{null_model}"] = int(j_res["n_ok"])
-    out[f"n_err_{null_model}"] = int(j_res["n_err"])
-    out[f"n_done_{null_model}"] = int(j_res["n_done"])
-    out[f"n_requested_{null_model}"] = int(j_res["n_target"])
-    out["null_seed"] = int(j_res["null_seed"])
-    out["null_seed_source"] = j_res["null_seed_source"]
-    out["null_model"] = j_res["null_model"]
+    out["jaccard_null_mean"] = null_reduction["mean"]
+    out["jaccard_null_sd"] = null_reduction["sd"]
+    out["jaccard_null_ses"] = null_reduction["ses"]
+    out["jaccard_null_p_empirical"] = null_reduction["p_emp"]
+    out.attrs["null_metadata"] = null_metadata_from_reduction(null_reduction)
     print(
-        f"INFO: Null simulation seed {j_res['null_seed']} "
-        f"({j_res['null_seed_source']}, model={j_res['null_model']})."
+        f"INFO: Null simulation seed {null_reduction['null_seed']} "
+        f"({null_reduction['null_seed_source']}, model={null_reduction['null_model']})."
     )
 
-    return out
+    return _finalize_association_output(
+        out,
+        compute_fisher=compute_fisher,
+        include_null=True,
+    )
 
 
 def association(
@@ -438,6 +585,12 @@ def association(
         output_path = os.path.join(output_dir, f"{tag}association.tsv")
         association_df.to_csv(output_path, sep="\t", index=False)
         print(f"Association analysis saved to {output_path}")
+        metadata_path = write_result_metadata_sidecar(
+            output_path,
+            association_df.attrs.get("null_metadata"),
+        )
+        if metadata_path is not None:
+            print(f"Association metadata saved to {metadata_path}")
 
 
 def presence_submatrix_by_taxa(ingredients: Ingredients, taxa_subset: List[str]) -> sp.csr_matrix:
