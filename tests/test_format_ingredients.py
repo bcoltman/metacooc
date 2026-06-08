@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
+import json
 import os
+from datetime import datetime, timezone
+
+import numpy as np
 import pytest
 import scipy.sparse as sp
 
@@ -16,6 +19,14 @@ from metacooc.pantry import (
 )
 from metacooc.analysis import _cooccur_core
 
+
+def _assert_date_generated(value):
+    assert value.endswith("Z")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    assert parsed.tzinfo == timezone.utc
+    assert parsed.microsecond == 0
+
+
 def test_format_data_writes_raw_and_aggregated(raw_ingredients_path, aggregated_ingredients_path):
     assert raw_ingredients_path.exists()
     assert aggregated_ingredients_path.exists()
@@ -27,6 +38,28 @@ def test_format_data_writes_raw_and_aggregated(raw_ingredients_path, aggregated_
         assert (path / "presence.npz").exists()
         assert (path / "coverage.npz").exists()
         assert (path / "total_counts.npy").exists()
+        manifest = json.loads((path / "manifest.json").read_text())
+        _assert_date_generated(manifest["date_generated"])
+
+
+def test_load_ingredients_accepts_manifest_without_date_generated(tmp_path):
+    ingredients = Ingredients(
+        samples=["S1"],
+        taxa=["d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a"],
+        presence_matrix=sp.csr_matrix([[1]], dtype=np.uint8),
+        coverage_matrix=sp.csr_matrix([[1.0]], dtype=float),
+    )
+    out = tmp_path / "ingredients_legacy_manifest"
+    save_ingredients_directory(ingredients, str(out))
+
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.pop("date_generated")
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+    loaded = load_ingredients(custom_ingredients=str(out))
+    assert loaded.samples == ["S1"]
+    assert loaded.taxa == ["d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a"]
 
 
 def test_raw_ingredients_contents(raw_ingredients):
