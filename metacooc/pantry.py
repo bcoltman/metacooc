@@ -6,6 +6,7 @@ import tarfile
 import warnings
 import re
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from typing import List, Dict, Tuple, Optional
 
@@ -25,6 +26,10 @@ from metacooc.utils import (
 
 INGREDIENTS_FORMAT_VERSION = 1
 AGGREGATED_SUFFIX = " AGGREGATED"
+
+
+def _utc_timestamp_seconds() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def presence_for_counts(obj):
@@ -919,6 +924,7 @@ def _write_ingredients_directory(
 
     manifest = {
         "format_version": INGREDIENTS_FORMAT_VERSION,
+        "date_generated": _utc_timestamp_seconds(),
         "data_version": getattr(ingredients, "data_version", None),
         "aggregated": bool(aggregated),
         "matrix_shapes": {
