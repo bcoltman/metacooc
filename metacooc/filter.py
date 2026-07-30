@@ -221,7 +221,7 @@ def filter_data(accessions_file,
                 taxa_degree=1,
                 min_shared_samples_between_taxa=1,
                 custom_ingredients=None,
-                data_version=None,
+                data_release=None,
                 metadata_file=None,
                 min_coverage=None,
                 min_coverage_by_rank=None,
@@ -235,7 +235,7 @@ def filter_data(accessions_file,
     ingredients = load_ingredients(data_dir, 
                                    aggregated, 
                                    custom_ingredients, 
-                                   data_version)
+                                   data_release)
     ingredients = threshold_ingredients_presence(
         ingredients,
         min_coverage=min_coverage,
@@ -279,7 +279,7 @@ def filter_data(accessions_file,
                                               search_string=search_string,
                                               data_dir=data_dir,
                                               custom_ingredients=ingredients,
-                                              data_version=data_version,
+                                              data_release=data_release,
                                               aggregated=aggregated,
                                               metadata_file=metadata_file)
         
@@ -302,7 +302,7 @@ def filter_data(accessions_file,
                                               search_string=search_string,
                                               data_dir=data_dir,
                                               custom_ingredients=ingredients,
-                                              data_version=data_version,
+                                              data_release=data_release,
                                               aggregated=aggregated,
                                               metadata_file=metadata_file)
         

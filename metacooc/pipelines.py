@@ -147,7 +147,7 @@ def run_shared_pipeline_setup(args):
         args.data_dir,
         args.aggregated,
         args.custom_ingredients,
-        args.data_version,
+        args.data_release,
     )
     ingredients = _threshold_ingredients_from_args(ingredients, args)
 
@@ -164,7 +164,7 @@ def run_shared_pipeline_setup(args):
             column_names=args.column_names,
             inverse=args.inverse,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
             return_details=True,
@@ -180,7 +180,7 @@ def run_shared_pipeline_setup(args):
             column_names=args.column_names,
             inverse=args.inverse,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
         )
@@ -245,7 +245,7 @@ def run_shared_pipeline_setup(args):
             search_string=search_string,
             data_dir=args.data_dir,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
         )
@@ -270,7 +270,7 @@ def run_shared_pipeline_setup(args):
             search_string=search_string,
             data_dir=args.data_dir,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
         )
@@ -318,7 +318,7 @@ def run_shared_pipeline_setup(args):
             column_names=args.column_names,
             inverse=False,
             custom_ingredients=filtered_ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
             return_details=True,
@@ -530,7 +530,7 @@ def run_biome_distribution(args):
     """
     os.makedirs(args.output_dir, exist_ok=True)
 
-    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_release)
     ingredients = _threshold_ingredients_from_args(ingredients, args)
     if _biome_distribution_filter_requested(args):
         ingredients, is_successful = filter_data_obj(

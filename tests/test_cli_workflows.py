@@ -52,7 +52,7 @@ def test_cli_data_dir_default_uses_env_var(monkeypatch, tmp_path):
     monkeypatch.setenv("METACOOC_DATA_DIR", str(expected))
 
     parser = build_parser()
-    args = parser.parse_args(["download", "--list_data_versions"])
+    args = parser.parse_args(["download", "--list-data-releases"])
 
     assert args.data_dir == str(expected)
 
@@ -70,9 +70,33 @@ def test_cli_data_dir_default_uses_platformdirs(monkeypatch, tmp_path):
     )
 
     parser = build_parser()
-    args = parser.parse_args(["download", "--list_data_versions"])
+    args = parser.parse_args(["download", "--list-data-releases"])
 
     assert args.data_dir == str(tmp_path / "share" / "metacooc" / "data")
+
+
+@pytest.mark.cli
+def test_cli_uses_data_release_names_and_rejects_legacy_flags():
+    from metacooc.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["download", "--data-release", "R226_gtdb"])
+    assert args.data_release == "R226_gtdb"
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["download", "--data_version", "2.0.0_gtdb"])
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["download", "--list_data_versions"])
+
+    invalid_release = run_cli_no_check(
+        "download",
+        "--data-release",
+        "2.0.0_gtdb",
+    )
+    assert invalid_release.returncode != 0
+    assert "Traceback" not in invalid_release.stderr
+    assert "must match R<number>_<variant>" in invalid_release.stderr
 
 
 @pytest.mark.cli
@@ -409,7 +433,7 @@ def cli_formatted_dir(tmp_path, fixture_dir):
         "--aggregated",
         "--tag",
         "cli",
-        "--data_version",
+        "--data-release",
         "test",
     )
     assert (out / "ingredients_raw_cli").exists()

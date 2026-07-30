@@ -50,26 +50,28 @@ pip install -e .
 
 ## Data and download
 
-MetaCoOc uses prebuilt datasets hosted on **Zenodo**. The current compatible data release is `2.0.0`, hosted in Zenodo record `20096010`, and is available as **two Sandpiper database variants**:
+MetaCoOc uses prebuilt datasets hosted on **Zenodo**. Data releases identify the underlying Sandpiper/database release and are available as two variants:
 
 * `gtdb` — SingleM generated taxonomic profiles based on **GTDB** genomes
 * `globdb` — SingleM generated taxonomic profiles based on **GlobDB** genomes
 
 
-A complete version string must be:
+A complete data-release identifier must be:
 
 ```
-<base_version>_<variant>
+R<database_release>_<variant>
 ```
 
 Examples:
 
-* `2.0.0_gtdb`
-* `2.0.0_globdb`
+* `R226_gtdb`
+* `R226_globdb`
 
-If no version is specified, MetaCoOc defaults to the latest available base release with the default variant (`gtdb`).
-The data-release version identifies the Zenodo-hosted Ingredients files and is separate from the MetaCoOc Python package version.
-Older data releases used earlier Ingredients storage formats and are not compatible with current MetaCoOc releases.
+If no data release is specified, MetaCoOc defaults to the latest available release with the default variant (`gtdb`).
+The data release is separate from both the MetaCoOc Python package version and the internal Ingredients storage `format_version`.
+Older semver-style identifiers such as `2.0.0_gtdb` are not accepted.
+
+Newly formatted Ingredients directories store `"format_version": 1` in their manifest. This integer identifies the on-disk schema, and MetaCoOc rejects directories whose format version is missing or unsupported. The source release is stored separately as `data_release` in both the manifest and the in-memory `Ingredients` object.
 
 ---
 
@@ -85,7 +87,7 @@ metacooc download
 
 MetaCoOc will:
 
-1. Use the **latest available version** (e.g. `2.0.0_gtdb`)
+1. Use the **latest available data release** (e.g. `R226_gtdb`)
 2. Download all required files
 3. Install them into the default user data directory for your operating system
 
@@ -98,7 +100,7 @@ metacooc download --data_dir ./my_data
 You can also set `METACOOC_DATA_DIR` to choose a persistent default location
 for all MetaCoOc commands.
 
-The download command only needs to be run once per data version and data directory.
+The download command only needs to be run once per data release and data directory.
 
 After the files are downloaded, all subsequent analyses reuse the local copies.
 
@@ -106,18 +108,18 @@ After the files are downloaded, all subsequent analyses reuse the local copies.
 
 #### What gets downloaded
 
-For a version such as:
+For a data release such as:
 
 ```
-2.0.0_gtdb
+R226_gtdb
 ```
 
 The following files are retrieved from Zenodo and installed locally:
 
 ##### Variant-specific
 
-* `ingredients_raw_2.0.0_gtdb/`
-* `ingredients_aggregated_2.0.0_gtdb/`
+* `ingredients_raw_R226_gtdb/`
+* `ingredients_aggregated_R226_gtdb/`
 
 These are prebuilt **Ingredients** directories containing sparse matrices, labels, manifests, biome annotations, and cached taxonomic lookups.
 
@@ -135,7 +137,7 @@ In short:
 
 ##### Base-version shared files
 
-* `sra_metadata_2.0.0.tsv`
+* `sra_metadata_R226.tsv`
 
 This is used for:
 
@@ -158,7 +160,7 @@ metacooc download
 ### 2) Run a complete pipeline
 
 Example: association of taxa with the metadata term “soil”, using a global null background.
-(This assumes the above download command has been used and therefore uses the default data directory and latest data version.)
+(This assumes the above download command has been used and therefore uses the default data directory and latest data release.)
 
 ```bash
 metacooc association \

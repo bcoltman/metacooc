@@ -765,7 +765,7 @@ def search_data_obj(
     column_names=None,
     inverse=False,
     custom_ingredients=None,
-    data_version=None,
+    data_release=None,
     aggregated: bool = False,
     metadata_file=None,
     return_details: bool = False,
@@ -799,20 +799,20 @@ def search_data_obj(
             raise ValueError("'->' syntax is not supported in metadata mode")
 
         if metadata_file is None:
-            defaulted_data_version = data_version is None
-            data_version = data_version or LATEST_VERSION
-            filenames, _ = get_file_info(data_version)
+            defaulted_data_release = data_release is None
             if not data_dir:
                 raise ValueError("data_dir must be provided if searching metadata without metadata_file")
+            data_release = data_release or LATEST_DATA_RELEASE
+            filenames, _ = get_file_info(data_release)
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
             if not os.path.exists(metadata_file):
-                raise DataVersionError(
-                    missing_data_version_message(
+                raise DataReleaseError(
+                    missing_data_release_message(
                         data_dir=data_dir,
-                        data_version=data_version,
+                        data_release=data_release,
                         missing_path=metadata_file,
                         file_kind="metadata",
-                        defaulted=defaulted_data_version,
+                        defaulted=defaulted_data_release,
                     )
                 )
         elif not os.path.exists(metadata_file):
@@ -853,7 +853,7 @@ def search_data_obj(
         data_dir,
         aggregated=aggregated,
         custom_ingredients=custom_ingredients,
-        data_version=data_version,
+        data_release=data_release,
     )
     ingredients = threshold_ingredients_presence(
         ingredients,
@@ -919,7 +919,7 @@ def search_data(
     tag="",
     inverse=False,
     custom_ingredients=None,
-    data_version=None,
+    data_release=None,
     list_column_names=False,
     list_biomes=False,
     aggregated=False,
@@ -953,27 +953,27 @@ def search_data(
             data_dir=data_dir,
             aggregated=aggregated,
             custom_ingredients=custom_ingredients,
-            data_version=data_version,
+            data_release=data_release,
         )
         print(format_available_biomes(ingredients))
         return
 
     if list_column_names:
         if metadata_file is None:
-            defaulted_data_version = data_version is None
-            data_version = data_version or LATEST_VERSION
-            filenames, _ = get_file_info(data_version)
+            defaulted_data_release = data_release is None
             if not data_dir:
                 raise ValueError("data_dir must be provided if listing metadata columns without metadata_file")
+            data_release = data_release or LATEST_DATA_RELEASE
+            filenames, _ = get_file_info(data_release)
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
             if not os.path.exists(metadata_file):
-                raise DataVersionError(
-                    missing_data_version_message(
+                raise DataReleaseError(
+                    missing_data_release_message(
                         data_dir=data_dir,
-                        data_version=data_version,
+                        data_release=data_release,
                         missing_path=metadata_file,
                         file_kind="metadata",
-                        defaulted=defaulted_data_version,
+                        defaulted=defaulted_data_release,
                     )
                 )
         elif not os.path.exists(metadata_file):
@@ -992,7 +992,7 @@ def search_data(
         column_names=column_names,
         inverse=inverse,
         custom_ingredients=custom_ingredients,
-        data_version=data_version,
+        data_release=data_release,
         aggregated=aggregated,
         metadata_file=metadata_file,
         min_coverage=min_coverage,

@@ -63,21 +63,11 @@ def test_download_stream_writes_chunks_without_buffering_response(monkeypatch, t
     assert progress_updates == [3, 4, 1]
 
 
-def test_download_data_uses_default_data_dir(monkeypatch, tmp_path):
-    default_dir = tmp_path / "default-data"
-    monkeypatch.setattr(download, "default_data_dir", lambda: default_dir)
-    monkeypatch.setattr(download, "get_file_info", lambda version: ({}, {}))
-
-    download.download_data(data_dir=None, data_version="1.1.0_gtdb")
-
-    assert default_dir.exists()
-
-
 def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path):
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w:gz") as tar:
         data = b'{"format_version": 1}\n'
-        info = tarfile.TarInfo("ingredients_raw_2.0.0_gtdb/manifest.json")
+        info = tarfile.TarInfo("ingredients_raw_R226_gtdb/manifest.json")
         info.size = len(data)
         tar.addfile(info, io.BytesIO(data))
     archive_bytes = payload.getvalue()
@@ -85,9 +75,9 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
     monkeypatch.setattr(
         download,
         "get_file_info",
-        lambda version: (
-            {"ingredients_raw": "ingredients_raw_2.0.0_gtdb"},
-            {"ingredients_raw_2.0.0_gtdb.tar.gz": "https://example.test/raw.tar.gz"},
+        lambda release: (
+            {"ingredients_raw": "ingredients_raw_R226_gtdb"},
+            {"ingredients_raw_R226_gtdb.tar.gz": "https://example.test/raw.tar.gz"},
         ),
     )
     monkeypatch.setattr(builtins, "input", lambda prompt: "y")
@@ -99,7 +89,7 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
 
     monkeypatch.setattr(download, "_download_stream", fake_download_stream)
 
-    download.download_data(tmp_path, data_version="2.0.0_gtdb")
+    download.download_data(tmp_path, data_release="R226_gtdb")
 
-    assert (tmp_path / "ingredients_raw_2.0.0_gtdb" / "manifest.json").exists()
-    assert not (tmp_path / "ingredients_raw_2.0.0_gtdb.tmp.tar.gz").exists()
+    assert (tmp_path / "ingredients_raw_R226_gtdb" / "manifest.json").exists()
+    assert not (tmp_path / "ingredients_raw_R226_gtdb.tmp.tar.gz").exists()
