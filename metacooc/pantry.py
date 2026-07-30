@@ -1008,6 +1008,14 @@ def load_ingredients(
         filepath = os.path.join(data_dir, filenames[key])
     else:
         if isinstance(custom_ingredients, Ingredients):
+            if (
+                data_release is not None
+                and custom_ingredients.data_release != data_release
+            ):
+                raise DataReleaseError(
+                    f"Loaded data release {custom_ingredients.data_release!r}, "
+                    f"expected {data_release!r}."
+                )
             return custom_ingredients
         filepath = custom_ingredients
     

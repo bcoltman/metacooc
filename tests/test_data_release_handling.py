@@ -101,6 +101,23 @@ def test_load_ingredients_rejects_manifest_release_mismatch(monkeypatch, tmp_pat
         load_ingredients(custom_ingredients=str(path), data_release="R226_gtdb")
 
 
+def test_load_ingredients_rejects_in_memory_release_mismatch():
+    matrix = sp.csr_matrix(np.array([[1]], dtype=np.uint8))
+    ingredients = Ingredients(
+        samples=["S001"],
+        taxa=["d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__x"],
+        presence_matrix=matrix,
+        coverage_matrix=matrix.astype(float),
+        data_release="R226_globdb",
+    )
+
+    with pytest.raises(DataReleaseError, match="expected 'R226_gtdb'"):
+        load_ingredients(
+            custom_ingredients=ingredients,
+            data_release="R226_gtdb",
+        )
+
+
 @pytest.mark.parametrize("format_version", [None, 99])
 def test_load_ingredients_rejects_unsupported_format(tmp_path, format_version):
     path = tmp_path / "ingredients_raw_R226_globdb"
