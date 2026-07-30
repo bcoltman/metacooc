@@ -5,9 +5,9 @@ download.py
 Download initial data files for metacooc.
 
 This script downloads the following default files into the specified data directory:
-    - ingredients_raw_<data_version>/
-    - ingredients_aggregated_<data_version>/
-    - sra_metadata_<base_version>.tsv
+    - ingredients_raw_<data_release>/
+    - ingredients_aggregated_<data_release>/
+    - sra_metadata_<base_release>.tsv
 
 Ingredients are downloaded as .tar.gz archives, extracted to Ingredients
 directories, and the temporary archives are removed. Metadata files are
@@ -57,24 +57,24 @@ def _download_stream(url, temp_path):
                 progress.update(len(chunk))
 
 
-def download_data(data_dir=None, list_data_versions=False, data_version=None, force=False):
+def download_data(data_dir=None, list_data_releases=False, data_release=None, force=False):
     """
-    Download data files for a specific Sandpiper data_version into data_dir.
+    Download data files for a specific Sandpiper data_release into data_dir.
     
     Parameters:
         data_dir (str): Directory where data files will be saved.
         force (bool): If True, force re-download even if the file exists.
-        data_version (str): data_version to download (default: latest available).
+        data_release (str): data release to download (default: latest available).
     """
-    if list_data_versions:
-        avail = ", ".join(available_versions())
-        print(f"Available: {avail}")
+    if list_data_releases:
+        available = ", ".join(available_releases()) or "none"
+        print(f"Available: {available}")
         return
 
-    data_version = data_version or LATEST_VERSION  # defaults to latest *_gtdb
+    data_release = data_release or LATEST_DATA_RELEASE
     data_dir = os.fspath(data_dir or default_data_dir())
 
-    filenames, download_urls = get_file_info(data_version)
+    filenames, download_urls = get_file_info(data_release)
         
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
@@ -99,8 +99,8 @@ def download_data(data_dir=None, list_data_versions=False, data_version=None, fo
         print("All files already exist; skipping download.")
         return
     
-    print(f"This script is looking for the download files of {data_version}. If you want an alternative version, "
-          "please specify it with --data_version. To see which versions are available, please use --list_data_versions")
+    print(f"This script is looking for the download files of {data_release}. If you want an alternative release, "
+          "please specify it with --data-release. To see which releases are available, please use --list-data-releases")
     # Prompt user for confirmation
     user_input = input(f"Do you want to download {missing_files} missing files to {data_dir}? (y/n): ").strip().lower()
     if user_input != 'y':
@@ -158,11 +158,16 @@ def main():
         help="Target directory for data files (default: %(default)s)",
     )
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
-    parser.add_argument("--data_version", default=None, help="Specify which data version to load (default: latest)")
-    parser.add_argument("--list_data_versions", action="store_true", help="Specify which data version to load (default: latest)")
+    parser.add_argument("--data-release", default=None, help="Specify which data release to download (default: latest)")
+    parser.add_argument("--list-data-releases", action="store_true", help="List available data releases")
     args = parser.parse_args()
     
-    download_data(args.data_dir, list_data_versions=args.list_data_versions, data_version=args.data_version, force=args.force)
+    download_data(
+        args.data_dir,
+        list_data_releases=args.list_data_releases,
+        data_release=args.data_release,
+        force=args.force,
+    )
 
 if __name__ == "__main__":
     main()

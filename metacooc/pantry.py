@@ -14,7 +14,12 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from metacooc._data_config import *
+from metacooc._data_config import (
+    DataReleaseError,
+    LATEST_DATA_RELEASE,
+    get_file_info,
+    missing_data_release_message,
+)
 from metacooc.utils import (
     _RANK_PREFIXES, 
     _PREFIX_TO_RANK, 
@@ -377,6 +382,7 @@ class Ingredients:
         presence_matrix (sp.csr_matrix): Binary presence/absence.
         coverage_matrix (sp.csr_matrix): Coverage values.
         total_counts (np.ndarray): Cached per-taxon counts.
+        data_release (Optional[str]): Source database release label, when known.
         sample_to_biome (Dict[str, Tuple[str, str]]): Mapping sample to (biome_level_1, biome_level_2).
         biomes_order (Dict[str, List[str]]): Unique biomes for each level.
         sample_biome_indices (Dict[str, np.ndarray]): Per-sample biome index for each level (-1 if missing).
@@ -388,7 +394,7 @@ class Ingredients:
         presence_matrix: sp.csr_matrix,
         coverage_matrix: sp.csr_matrix,
         sample_to_biome: Dict[str, str] = None,
-        data_version: Optional[str] = None,
+        data_release: Optional[str] = None,
         ):
         self.taxa = taxa
         self.samples = samples
@@ -409,7 +415,7 @@ class Ingredients:
             
         self._rank_lookups = None
         self._terminal_rank_prefixes = None
-        self.data_version = data_version
+        self.data_release = data_release
         self.presence_thresholds = None
     
     def __getstate__(self):
@@ -420,7 +426,7 @@ class Ingredients:
             "_coverage_matrix": self.coverage_matrix,
             "total_counts": self.total_counts,
             "sample_to_biome": self.sample_to_biome,
-            "data_version": self.data_version,
+            "data_release": self.data_release,
             "presence_thresholds": getattr(self, "presence_thresholds", None),
         }
         
@@ -459,7 +465,7 @@ class Ingredients:
         elif self.sample_to_biome:
             self._allocate_biomes()
         
-        self.data_version = state.get("data_version", None)
+        self.data_release = state.get("data_release", None)
         self.presence_thresholds = state.get("presence_thresholds", None)
     
     def _invalidate_taxa_caches(self):
@@ -586,7 +592,7 @@ class Ingredients:
         
         new.total_counts = self.total_counts
         new.sample_to_biome = self.sample_to_biome
-        new.data_version = self.data_version
+        new.data_release = self.data_release
         new.presence_thresholds = getattr(self, "presence_thresholds", None)
         
         new._rank_lookups = self._rank_lookups
@@ -613,7 +619,7 @@ class Ingredients:
             presence_matrix=self.presence_matrix.copy(),
             coverage_matrix=self.coverage_matrix.copy(),
             sample_to_biome=self.sample_to_biome.copy() if self.sample_to_biome is not None else None,
-            data_version=self.data_version,
+            data_release=self.data_release,
         )
         copied.presence_thresholds = getattr(self, "presence_thresholds", None)
         return copied
@@ -886,7 +892,7 @@ def _ingredients_from_directory(directory: str) -> Ingredients:
         new._allocate_biomes()
     new._rank_lookups = None
     new._terminal_rank_prefixes = None
-    new.data_version = manifest.get("data_version")
+    new.data_release = manifest.get("data_release")
     new.presence_thresholds = manifest.get("presence_thresholds")
     return new
 
@@ -925,7 +931,7 @@ def _write_ingredients_directory(
     manifest = {
         "format_version": INGREDIENTS_FORMAT_VERSION,
         "date_generated": _utc_timestamp_seconds(),
-        "data_version": getattr(ingredients, "data_version", None),
+        "data_release": getattr(ingredients, "data_release", None),
         "aggregated": bool(aggregated),
         "matrix_shapes": {
             "presence": list(presence.shape),
@@ -973,15 +979,15 @@ def load_ingredients(
     data_dir: Optional[str] = None,
     aggregated: bool = False,
     custom_ingredients=None,
-    data_version: Optional[str] = None,
+    data_release: Optional[str] = None,
     sample_to_biome_file=None) -> Ingredients:
     """Load an Ingredients object and associated biome mapping."""
     
     # determine ingredients file path
     if not custom_ingredients:
-        defaulted_data_version = data_version is None
-        data_version = data_version or LATEST_VERSION
-        filenames, _ = get_file_info(data_version)
+        defaulted_data_release = data_release is None
+        data_release = data_release or LATEST_DATA_RELEASE
+        filenames, _ = get_file_info(data_release)
         if not data_dir:
             raise ValueError(
                 "data_dir must be provided when not using custom_ingredients"
@@ -1000,24 +1006,26 @@ def load_ingredients(
             f"{custom_ingredients} is either not found or isn't an Ingredients object"
             )
         
-        raise DataVersionError(
-            missing_data_version_message(
+        raise DataReleaseError(
+            missing_data_release_message(
                 data_dir=data_dir,
-                data_version=data_version,
+                data_release=data_release,
                 missing_path=filepath,
                 file_kind="Ingredients",
-                defaulted=defaulted_data_version,
+                defaulted=defaulted_data_release,
             )
         )
     ingredients = _ingredients_from_directory(filepath)
     
-    # version mismatch warning
-    if not custom_ingredients:
-        ev = getattr(ingredients, "data_version", None)
-        if ev and ev != data_version:
-            warnings.warn(
-                f"Loaded version {ev}, expected {data_version}.", UserWarning
+    # A requested release is an assertion, including for an explicit custom
+    # directory.  Without one, the manifest remains authoritative.
+    if data_release is not None:
+        ev = getattr(ingredients, "data_release", None)
+        if ev != data_release:
+            raise DataReleaseError(
+                f"Loaded data release {ev!r}, expected {data_release!r}."
             )
+    if not custom_ingredients:
         print(f"Using {filepath}")
     
     return ingredients
@@ -1027,15 +1035,15 @@ def save_ingredients(ingredients: "Ingredients",
                      *, 
                      aggregated: bool = False,
                      tag: Optional[str] = None, 
-                     data_version: Optional[str] = None,
+                     data_release: Optional[str] = None,
                      archive: bool = False) -> str:
     os.makedirs(output_dir, exist_ok=True)
     
-    if data_version is not None:
-        ingredients.data_version = data_version
+    if data_release is not None:
+        ingredients.data_release = data_release
         
     kind = "ingredients_aggregated" if aggregated else "ingredients_raw"
-    label = tag or data_version
+    label = tag or data_release or getattr(ingredients, "data_release", None)
     suffix = f"_{label}" if label else ""
     dirpath = os.path.join(output_dir, f"{kind}{suffix}")
     path = _write_ingredients_directory(ingredients, dirpath, aggregated=aggregated)

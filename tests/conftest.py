@@ -23,7 +23,7 @@ def formatted_data_dir(tmp_path: Path, fixture_dir: Path) -> Path:
         sample_to_biome_file=str(fixture_dir / "sample_to_biome.tsv"),
         aggregated=True,
         tag="test",
-        data_version="test",
+        data_release="test",
     )
     return out
 
@@ -56,7 +56,7 @@ def metadata_file(fixture_dir: Path) -> Path:
 def pipeline_args(**overrides):
     base = dict(
         data_dir=None,
-        data_version=None,
+        data_release=None,
         aggregated=False,
         custom_ingredients=None,
         metadata_file=None,

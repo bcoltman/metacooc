@@ -172,23 +172,23 @@ def add_data_dir(parser, group=None):
     (group or parser).add_argument("--data_dir", **kwargs)
 
 
-def add_data_version(parser, group=None, mode: str = "load"):
+def add_data_release(parser, group=None, mode: str = "load"):
     """
-    Add --data_version CLI option.
+    Add --data-release CLI option.
 
     mode:
-        "load"   -> select which version to load (default: latest)
-        "format" -> label/version to stamp into generated files (default: none)
+        "load"   -> select which release to load (default: latest)
+        "format" -> label/release to stamp into generated files (default: none)
     """
     if mode == "load":
         help_text = (
-            "Specify which data version to load (default: latest). "
+            "Specify which data release to load (default: latest). "
             "Versions available for download can be listed with "
-            "'metacooc download --list_data_versions'."
+            "'metacooc download --list-data-releases'."
         )
     elif mode == "format":
         help_text = (
-            "Optional version label to embed in the generated Ingredients files. "
+            "Optional data release label to embed in the generated Ingredients files. "
             "No default is applied."
         )
     else:
@@ -198,7 +198,7 @@ def add_data_version(parser, group=None, mode: str = "load"):
         "default": None,
         "help": help_text,
     }
-    (group or parser).add_argument("--data_version", **kwargs)
+    (group or parser).add_argument("--data-release", dest="data_release", **kwargs)
 
 
 def add_tag_and_aggregated(parser, group=None):
@@ -242,7 +242,7 @@ def add_metadata_file(parser, group=None):
         "--metadata_file",
         help=(
             "Explicit metadata TSV file to use for metadata search instead of "
-            "resolving one from --data_dir/--data_version."
+            "resolving one from --data_dir/--data-release."
         ),
     )
 
@@ -608,11 +608,11 @@ def add_force(parser, group=None):
     )
 
 
-def add_list_data_versions(parser, group=None):
+def add_list_data_releases(parser, group=None):
     (group or parser).add_argument(
-        "--list_data_versions",
+        "--list-data-releases",
         action="store_true",
-        help="List available versions.",
+        help="List available data releases.",
     )
 
 
@@ -697,8 +697,8 @@ def download_command(args):
     download_data(
         data_dir=args.data_dir,
         force=args.force,
-        list_data_versions=args.list_data_versions,
-        data_version=args.data_version,
+        list_data_releases=args.list_data_releases,
+        data_release=args.data_release,
     )
 
 
@@ -710,7 +710,7 @@ def format_command(args):
         sample_to_biome_file=args.sample_to_biome_file,
         aggregated=args.aggregated,
         tag=args.tag,
-        data_version=args.data_version,
+        data_release=args.data_release,
         archive_ingredients=args.archive_ingredients,
     )
 
@@ -745,7 +745,7 @@ def search_command(args, subparser):
         inverse=args.inverse,
         tag=args.tag,
         custom_ingredients=args.custom_ingredients,
-        data_version=args.data_version,
+        data_release=args.data_release,
         list_column_names=args.list_column_names,
         list_biomes=args.list_biomes,
         aggregated=args.aggregated,
@@ -798,7 +798,7 @@ def filter_command(args, subparser):
         taxa_degree=args.taxa_degree,
         min_shared_samples_between_taxa=args.min_shared_samples_between_taxa,
         custom_ingredients=args.custom_ingredients,
-        data_version=args.data_version,
+        data_release=args.data_release,
         metadata_file=args.metadata_file,
         min_coverage=args.min_coverage,
         min_coverage_by_rank=args.min_coverage_by_rank,
@@ -936,7 +936,7 @@ def build_parser():
     data = argument_group(
         download_sub,
         "DATA SOURCE",
-        "Choose where MetaCoOc data are stored and which data version to use.",
+        "Choose where MetaCoOc data are stored and which data release to use.",
     )
     download_opts = argument_group(
         download_sub,
@@ -945,8 +945,8 @@ def build_parser():
     )
     add_help(download_sub, group=general)
     add_data_dir(download_sub, group=data)
-    add_data_version(download_sub, group=data)
-    add_list_data_versions(download_sub, group=download_opts)
+    add_data_release(download_sub, group=data)
+    add_list_data_releases(download_sub, group=download_opts)
     add_force(download_sub, group=download_opts)
 
     # Format
@@ -972,7 +972,7 @@ def build_parser():
     add_tax_profile(format_sub, group=req)
     add_help(format_sub, group=general)
     add_tag_and_aggregated(format_sub, group=output)
-    add_data_version(format_sub, group=output, mode="format")
+    add_data_release(format_sub, group=output, mode="format")
     add_archive_ingredients(format_sub, group=output)
     add_sample_to_biome_file(format_sub, group=metadata)
 
@@ -1013,7 +1013,7 @@ def build_parser():
     add_output_dir(search_sub, required=False, group=req)
     add_help(search_sub, group=general)
     add_data_dir(search_sub, group=data)
-    add_data_version(search_sub, group=data)
+    add_data_release(search_sub, group=data)
     add_aggregated(search_sub, group=data)
     add_custom_ingredients(search_sub, group=data)
     add_metadata_file(search_sub, group=data)
@@ -1061,7 +1061,7 @@ def build_parser():
     add_output_dir(filter_sub, group=req)
     add_help(filter_sub, group=general)
     add_data_dir(filter_sub, group=data)
-    add_data_version(filter_sub, group=data)
+    add_data_release(filter_sub, group=data)
     add_aggregated(filter_sub, group=data)
     add_custom_ingredients(filter_sub, group=data)
     add_metadata_file(filter_sub, group=data)
@@ -1178,7 +1178,7 @@ def build_parser():
     add_output_dir(cooc_sub, group=req)
     add_help(cooc_sub, group=general)
     add_data_dir(cooc_sub, group=data)
-    add_data_version(cooc_sub, group=data)
+    add_data_release(cooc_sub, group=data)
     add_aggregated(cooc_sub, group=data)
     add_custom_ingredients(cooc_sub, group=data)
     add_metadata_file(cooc_sub, group=data)
@@ -1241,7 +1241,7 @@ def build_parser():
     add_output_dir(assoc_sub, group=req)
     add_help(assoc_sub, group=general)
     add_data_dir(assoc_sub, group=data)
-    add_data_version(assoc_sub, group=data)
+    add_data_release(assoc_sub, group=data)
     add_aggregated(assoc_sub, group=data)
     add_custom_ingredients(assoc_sub, group=data)
     add_metadata_file(assoc_sub, group=data)
@@ -1298,7 +1298,7 @@ def build_parser():
     add_output_dir(structure_sub, group=req)
     add_help(structure_sub, group=general)
     add_data_dir(structure_sub, group=data)
-    add_data_version(structure_sub, group=data)
+    add_data_release(structure_sub, group=data)
     add_aggregated(structure_sub, group=data)
     add_custom_ingredients(structure_sub, group=data)
     add_metadata_file(structure_sub, group=data)
@@ -1342,7 +1342,7 @@ def build_parser():
     add_output_dir(biome_sub, group=req)
     add_help(biome_sub, group=general)
     add_data_dir(biome_sub, group=data)
-    add_data_version(biome_sub, group=data)
+    add_data_release(biome_sub, group=data)
     add_aggregated(biome_sub, group=data)
     add_custom_ingredients(biome_sub, group=data)
     add_tag(biome_sub, group=output)
@@ -1360,7 +1360,7 @@ def build_parser():
 
 
 def parse_cli():
-    from metacooc._data_config import DataVersionError
+    from metacooc._data_config import DataReleaseError
 
     parser = build_parser()
     args = parser.parse_args()
@@ -1370,7 +1370,7 @@ def parse_cli():
 
     try:
         args.func(args)
-    except DataVersionError as e:
+    except DataReleaseError as e:
         parser.error(str(e))
 
 

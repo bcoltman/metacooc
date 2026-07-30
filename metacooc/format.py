@@ -126,7 +126,7 @@ def format_data(
     sample_to_biome_file: Optional[str] = None,
     aggregated: bool = False,
     tag: str = "",
-    data_version: Optional[str] = None,
+    data_release: Optional[str] = None,
     archive_ingredients: bool = False,
 ):
     """
@@ -138,7 +138,7 @@ def format_data(
         sample_to_biome_file: Optional biome mapping TSV.
         aggregated: Whether to also generate aggregated ingredients.
         tag: Optional filename suffix.
-        data_version: Dataset/schema version to embed in Ingredients.
+        data_release: Optional source release label to embed in Ingredients.
     """
     
     # load biome mapping
@@ -158,7 +158,7 @@ def format_data(
         sample_to_biome,
     )
     
-    raw_ingredients.data_version = data_version
+    raw_ingredients.data_release = data_release
     
     # save raw
     save_ingredients(
@@ -166,21 +166,21 @@ def format_data(
         output_dir,
         aggregated=False,
         tag=tag,
-        data_version=data_version,
+        data_release=data_release,
         archive=archive_ingredients,
     )
     
     # aggregated
     if aggregated:
         agg = add_taxa_levels_to_ingredients(raw_ingredients.copy())
-        agg.data_version = data_version
+        agg.data_release = data_release
         
         save_ingredients(
             agg,
             output_dir,
             aggregated=True,
             tag=tag,
-            data_version=data_version,
+            data_release=data_release,
             archive=archive_ingredients,
         )
 
@@ -281,4 +281,5 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
         presence_matrix=full_P,
         coverage_matrix=full_C,
         sample_to_biome=ingredients.sample_to_biome,
+        data_release=getattr(ingredients, "data_release", None),
     )

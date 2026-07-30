@@ -40,6 +40,7 @@ def test_format_data_writes_raw_and_aggregated(raw_ingredients_path, aggregated_
         assert (path / "total_counts.npy").exists()
         manifest = json.loads((path / "manifest.json").read_text())
         _assert_date_generated(manifest["date_generated"])
+        assert manifest["data_release"] == "test"
 
 
 def test_load_ingredients_accepts_manifest_without_date_generated(tmp_path):
@@ -63,7 +64,7 @@ def test_load_ingredients_accepts_manifest_without_date_generated(tmp_path):
 
 
 def test_raw_ingredients_contents(raw_ingredients):
-    assert raw_ingredients.data_version == "test"
+    assert raw_ingredients.data_release == "test"
     assert raw_ingredients.samples[0] == "S001"
     assert len(raw_ingredients.samples) == 100
     assert set(raw_ingredients.samples) == {f"S{i:03d}" for i in range(1, 101)}
@@ -108,7 +109,7 @@ def test_available_biomes_handles_missing_mapping(raw_ingredients):
 
 
 def test_aggregated_ingredients_contains_ancestors(aggregated_ingredients):
-    assert aggregated_ingredients.data_version == "test"
+    assert aggregated_ingredients.data_release == "test"
     assert aggregated_ingredients.presence_matrix.shape[1] == 100
     assert len(aggregated_ingredients.taxa) > 300
     assert any(t.endswith("AGGREGATED") for t in aggregated_ingredients.taxa)
@@ -129,7 +130,7 @@ def test_ingredients_directory_lazy_loads_matrices(raw_ingredients_path, monkeyp
     assert loaded.samples[0] == "S001"
     assert loaded.taxa[0].endswith("s__rhizo_000")
     assert loaded.sample_to_biome["S001"] == ("terrestrial", "soil")
-    assert loaded.data_version == "test"
+    assert loaded.data_release == "test"
     assert np.array_equal(loaded.total_counts[:3], np.array([60, 13, 14], dtype=np.int32))
     assert calls == []
 
@@ -188,7 +189,7 @@ def test_format_data_archive_option_writes_tarballs(tmp_path, fixture_dir):
         sample_to_biome_file=str(fixture_dir / "sample_to_biome.tsv"),
         aggregated=True,
         tag="archive",
-        data_version="test",
+        data_release="test",
         archive_ingredients=True,
     )
 
