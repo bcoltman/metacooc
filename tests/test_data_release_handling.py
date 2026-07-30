@@ -71,6 +71,18 @@ def test_missing_release_message_uses_real_data_dir_flag(tmp_path):
     assert "--data-dir" not in message
 
 
+def test_missing_metadata_message_requests_optional_download(tmp_path):
+    message = missing_data_release_message(
+        data_dir=tmp_path,
+        data_release="R226_gtdb",
+        missing_path=str(tmp_path / "sra_metadata_R226.tsv"),
+        file_kind="metadata",
+        defaulted=False,
+    )
+
+    assert message.endswith("--data-release R226_gtdb --include-metadata")
+
+
 def test_local_data_releases_reports_canonical_sources(tmp_path):
     (tmp_path / "ingredients_raw_R226_globdb").mkdir()
     (tmp_path / "ingredients_aggregated_R226_gtdb").mkdir()

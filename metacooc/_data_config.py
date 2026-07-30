@@ -143,6 +143,8 @@ def missing_data_release_message(
             f"--data-release {local_releases[0]}."
         )
 
+    metadata_option = " --include-metadata" if file_kind == "metadata" else ""
+
     return (
         f"{first}\n"
         f"Missing required {file_kind} file: {missing_path}\n"
@@ -150,6 +152,7 @@ def missing_data_release_message(
         f"{suggestion}\n"
         f"To fetch the requested data source, run: "
         f"metacooc download --data_dir {data_dir} --data-release {data_release}"
+        f"{metadata_option}"
     )
 
 

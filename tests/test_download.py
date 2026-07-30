@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import builtins
+import gzip
 import io
 import tarfile
 
 from metacooc import download
+
+
+def _file_info_with_metadata(_release):
+    return (
+        {
+            "ingredients_raw": "ingredients_raw_R226_gtdb",
+            "ingredients_aggregated": "ingredients_aggregated_R226_gtdb",
+            "sra_metadata": "sra_metadata_R226.tsv",
+        },
+        {
+            "ingredients_raw_R226_gtdb.tar.gz": "https://example.test/raw.tar.gz",
+            "ingredients_aggregated_R226_gtdb.tar.gz": "https://example.test/aggregated.tar.gz",
+            "sra_metadata_R226.tsv.gz": "https://example.test/metadata.tsv.gz",
+        },
+    )
 
 
 class FakeResponse:
@@ -76,7 +92,10 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
         download,
         "get_file_info",
         lambda release: (
-            {"ingredients_raw": "ingredients_raw_R226_gtdb"},
+            {
+                "ingredients_raw": "ingredients_raw_R226_gtdb",
+                "sra_metadata": "sra_metadata_R226.tsv",
+            },
             {"ingredients_raw_R226_gtdb.tar.gz": "https://example.test/raw.tar.gz"},
         ),
     )
@@ -93,3 +112,43 @@ def test_download_data_extracts_local_ingredients_tarball(monkeypatch, tmp_path)
 
     assert (tmp_path / "ingredients_raw_R226_gtdb" / "manifest.json").exists()
     assert not (tmp_path / "ingredients_raw_R226_gtdb.tmp.tar.gz").exists()
+
+
+def test_download_data_excludes_metadata_by_default(monkeypatch, tmp_path):
+    (tmp_path / "ingredients_raw_R226_gtdb").mkdir()
+    (tmp_path / "ingredients_aggregated_R226_gtdb").mkdir()
+    monkeypatch.setattr(download, "get_file_info", _file_info_with_metadata)
+
+    def unexpected_prompt(_prompt):
+        raise AssertionError("metadata should not be considered for download")
+
+    monkeypatch.setattr(builtins, "input", unexpected_prompt)
+
+    download.download_data(tmp_path, data_release="R226_gtdb")
+
+    assert not (tmp_path / "sra_metadata_R226.tsv").exists()
+
+
+def test_download_data_includes_metadata_when_requested(monkeypatch, tmp_path):
+    (tmp_path / "ingredients_raw_R226_gtdb").mkdir()
+    (tmp_path / "ingredients_aggregated_R226_gtdb").mkdir()
+    monkeypatch.setattr(download, "get_file_info", _file_info_with_metadata)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "y")
+
+    def fake_download_stream(url, temp_path):
+        assert url == "https://example.test/metadata.tsv.gz"
+        with open(temp_path, "wb") as handle:
+            handle.write(gzip.compress(b"accession\tbiome\nS1\tsoil\n"))
+
+    monkeypatch.setattr(download, "_download_stream", fake_download_stream)
+
+    download.download_data(
+        tmp_path,
+        data_release="R226_gtdb",
+        include_metadata=True,
+    )
+
+    assert (tmp_path / "sra_metadata_R226.tsv").read_text() == (
+        "accession\tbiome\nS1\tsoil\n"
+    )
+    assert not (tmp_path / "sra_metadata_R226.tsv.tmp.gz").exists()

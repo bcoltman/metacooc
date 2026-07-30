@@ -7,7 +7,9 @@ Download initial data files for metacooc.
 This script downloads the following default files into the specified data directory:
     - ingredients_raw_<data_release>/
     - ingredients_aggregated_<data_release>/
-    - sra_metadata_<base_release>.tsv
+
+The shared sra_metadata_<base_release>.tsv file is downloaded only when
+--include-metadata is specified.
 
 Ingredients are downloaded as .tar.gz archives, extracted to Ingredients
 directories, and the temporary archives are removed. Metadata files are
@@ -57,7 +59,13 @@ def _download_stream(url, temp_path):
                 progress.update(len(chunk))
 
 
-def download_data(data_dir=None, list_data_releases=False, data_release=None, force=False):
+def download_data(
+    data_dir=None,
+    list_data_releases=False,
+    data_release=None,
+    force=False,
+    include_metadata=False,
+):
     """
     Download data files for a specific Sandpiper data_release into data_dir.
     
@@ -65,6 +73,7 @@ def download_data(data_dir=None, list_data_releases=False, data_release=None, fo
         data_dir (str): Directory where data files will be saved.
         force (bool): If True, force re-download even if the file exists.
         data_release (str): data release to download (default: latest available).
+        include_metadata (bool): Also download the shared SRA metadata table.
     """
     if list_data_releases:
         available = ", ".join(available_releases()) or "none"
@@ -75,6 +84,13 @@ def download_data(data_dir=None, list_data_releases=False, data_release=None, fo
     data_dir = os.fspath(data_dir or default_data_dir())
 
     filenames, download_urls = get_file_info(data_release)
+    if not include_metadata:
+        metadata_archive = filenames["sra_metadata"] + ".gz"
+        download_urls = {
+            name: url
+            for name, url in download_urls.items()
+            if name != metadata_archive
+        }
         
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
@@ -160,6 +176,11 @@ def main():
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
     parser.add_argument("--data-release", default=None, help="Specify which data release to download (default: latest)")
     parser.add_argument("--list-data-releases", action="store_true", help="List available data releases")
+    parser.add_argument(
+        "--include-metadata",
+        action="store_true",
+        help="Also download the shared SRA metadata table",
+    )
     args = parser.parse_args()
     
     download_data(
@@ -167,6 +188,7 @@ def main():
         list_data_releases=args.list_data_releases,
         data_release=args.data_release,
         force=args.force,
+        include_metadata=args.include_metadata,
     )
 
 if __name__ == "__main__":
