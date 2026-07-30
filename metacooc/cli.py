@@ -1360,7 +1360,7 @@ def build_parser():
 
 
 def parse_cli():
-    from metacooc._data_config import DataReleaseError
+    from metacooc._data_config import DataReleaseError, IngredientsFormatError
 
     parser = build_parser()
     args = parser.parse_args()
@@ -1370,7 +1370,7 @@ def parse_cli():
 
     try:
         args.func(args)
-    except DataReleaseError as e:
+    except (DataReleaseError, IngredientsFormatError) as e:
         parser.error(str(e))
 
 

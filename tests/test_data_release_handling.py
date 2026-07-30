@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 import scipy.sparse as sp
 
 from metacooc._data_config import (
     DataReleaseError,
+    IngredientsFormatError,
     ReleaseSpec,
     available_releases,
     describe_data_release,
@@ -96,3 +99,20 @@ def test_load_ingredients_rejects_manifest_release_mismatch(monkeypatch, tmp_pat
 
     with pytest.raises(DataReleaseError, match="expected 'R226_gtdb'"):
         load_ingredients(custom_ingredients=str(path), data_release="R226_gtdb")
+
+
+@pytest.mark.parametrize("format_version", [None, 99])
+def test_load_ingredients_rejects_unsupported_format(tmp_path, format_version):
+    path = tmp_path / "ingredients_raw_R226_globdb"
+    _write_minimal_ingredients(path)
+
+    manifest_path = path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if format_version is None:
+        manifest.pop("format_version")
+    else:
+        manifest["format_version"] = format_version
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(IngredientsFormatError, match="format version"):
+        load_ingredients(custom_ingredients=str(path))

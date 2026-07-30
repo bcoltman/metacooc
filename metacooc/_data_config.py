@@ -36,6 +36,10 @@ class DataReleaseError(FileNotFoundError):
     """Raised when a requested data release is invalid or unavailable."""
 
 
+class IngredientsFormatError(ValueError):
+    """Raised when an Ingredients directory uses an unsupported format."""
+
+
 def _release_key(release: str) -> int:
     return int(release[1:])
 

@@ -16,6 +16,7 @@ import scipy.sparse as sp
 
 from metacooc._data_config import (
     DataReleaseError,
+    IngredientsFormatError,
     LATEST_DATA_RELEASE,
     get_file_info,
     missing_data_release_message,
@@ -859,6 +860,17 @@ def _ingredients_from_directory(directory: str) -> Ingredients:
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
+
+    format_version = manifest.get("format_version")
+    if (
+        type(format_version) is not int
+        or format_version != INGREDIENTS_FORMAT_VERSION
+    ):
+        raise IngredientsFormatError(
+            f"Unsupported Ingredients format version {format_version!r} in "
+            f"{manifest_path}; this metacooc version supports "
+            f"{INGREDIENTS_FORMAT_VERSION}."
+        )
 
     components = manifest.get("components", {})
     matrix_shapes = manifest.get("matrix_shapes", {})
