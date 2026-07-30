@@ -88,7 +88,7 @@ metacooc download
 MetaCoOc will:
 
 1. Use the **latest available data release** (e.g. `R226_gtdb`)
-2. Download all required files
+2. Download the raw and aggregated Ingredients archives
 3. Install them into the default user data directory for your operating system
 
 You can override the location using `--data_dir`:
@@ -135,11 +135,17 @@ In short:
 `raw` = coverage at that exact rank only.
 `aggregated` = total coverage across the full subtree.
 
-##### Base-version shared files
+##### Optional base-release metadata
 
 * `sra_metadata_R226.tsv`
 
-This is used for:
+This potentially large file is not downloaded by default. Download it when you need metadata searches or metadata-based cohort construction:
+
+```bash
+metacooc download --data-release R226_gtdb --include-metadata
+```
+
+It is used for:
 
 * metadata searches
 * cohort construction
@@ -616,7 +622,7 @@ metacooc association \
 
 ### Notes on metadata
 
-MetaCoOc downloads a parsed SRA metadata table (`sra_metadata_<base>.tsv`) for metadata queries. Biome mappings are stored in Ingredients directories. If you build your own datasets, ensure the required metadata table and Ingredients biome mappings are present, or adjust your workflow to use only taxon-based searches.
+MetaCoOc can optionally download a parsed SRA metadata table (`sra_metadata_<base>.tsv`) for metadata queries by passing `--include-metadata` to `metacooc download`. Biome mappings are stored in Ingredients directories. If you build your own datasets, ensure the required metadata table and Ingredients biome mappings are present, or adjust your workflow to use only taxon-based searches.
 
 ---
 

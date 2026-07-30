@@ -616,6 +616,14 @@ def add_list_data_releases(parser, group=None):
     )
 
 
+def add_include_metadata(parser, group=None):
+    (group or parser).add_argument(
+        "--include-metadata",
+        action="store_true",
+        help="Also download the shared SRA metadata table.",
+    )
+
+
 def add_tax_profile(parser, group=None):
     (group or parser).add_argument(
         "--tax_profile",
@@ -699,6 +707,7 @@ def download_command(args):
         force=args.force,
         list_data_releases=args.list_data_releases,
         data_release=args.data_release,
+        include_metadata=args.include_metadata,
     )
 
 
@@ -947,6 +956,7 @@ def build_parser():
     add_data_dir(download_sub, group=data)
     add_data_release(download_sub, group=data)
     add_list_data_releases(download_sub, group=download_opts)
+    add_include_metadata(download_sub, group=download_opts)
     add_force(download_sub, group=download_opts)
 
     # Format

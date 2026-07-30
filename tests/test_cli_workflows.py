@@ -82,6 +82,12 @@ def test_cli_uses_data_release_names_and_rejects_legacy_flags():
     parser = build_parser()
     args = parser.parse_args(["download", "--data-release", "R226_gtdb"])
     assert args.data_release == "R226_gtdb"
+    assert args.include_metadata is False
+
+    args = parser.parse_args(
+        ["download", "--data-release", "R226_gtdb", "--include-metadata"]
+    )
+    assert args.include_metadata is True
 
     with pytest.raises(SystemExit):
         parser.parse_args(["download", "--data_version", "2.0.0_gtdb"])
