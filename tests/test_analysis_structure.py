@@ -10,6 +10,7 @@ from metacooc.analysis import (
     cooccurrence_obj,
     export_cooccurrence_outputs,
 )
+from metacooc.output import COMPACT_NULL_METADATA_COLUMNS
 from metacooc.structure import (
     _structure_core,
     compute_c_score,
@@ -51,6 +52,28 @@ def _reference_mean_jaccard(X):
             union = deg[i] + deg[j] - S[i, j]
             vals.append(0.0 if union <= 0 else S[i, j] / union)
     return float(np.mean(vals))
+
+
+def _assert_compact_null_metadata(
+    result,
+    *,
+    model,
+    replicates,
+    failed,
+    seed,
+):
+    assert result.columns.tolist()[-4:] == COMPACT_NULL_METADATA_COLUMNS
+    expected = {
+        "null_model": model,
+        "null_replicates": replicates,
+        "null_replicates_failed": failed,
+        "null_seed": seed,
+    }
+    for column, value in expected.items():
+        if value is None:
+            assert result[column].isna().all()
+        else:
+            assert set(result[column]) == {value}
 
 
 def _reference_nodf_for_orientation(X):
@@ -166,7 +189,7 @@ def test_association_obj_compute_fisher_uses_readable_columns(raw_ingredients):
     assert np.isfinite(out["fisher_p_value"].to_numpy()).all()
 
 
-def test_association_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredients):
+def test_association_wrapper_embeds_compact_null_metadata(tmp_path, raw_ingredients):
     filtered = raw_ingredients.filtered_samples([s <= "S050" for s in raw_ingredients.samples])
 
     association(
@@ -181,19 +204,42 @@ def test_association_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredie
     )
 
     association_df = pd.read_csv(tmp_path / "direct_association.tsv", sep="\t")
-    metadata_df = pd.read_csv(tmp_path / "direct_association_metadata.tsv", sep="\t")
-
+    summary_df = pd.read_csv(
+        tmp_path / "direct_association_summary.tsv",
+        sep="\t",
+    )
     assert "jaccard_null_mean" in association_df.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association_df.columns)
-    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "3",
-        "null_seed_source": "user",
-    }
+    assert summary_df.columns.tolist() == [
+        "taxon",
+        "phi_coefficient",
+        "p_cohort_given_taxon",
+        "p_taxon_given_cohort",
+        "taxon_in_cohort_count",
+        "cohort_sample_count",
+        "taxon_in_background_not_cohort_count",
+        "background_not_cohort_sample_count",
+        "chi2_q_value_bh",
+        "jaccard_null_ses",
+        "jaccard_null_p_empirical",
+        *COMPACT_NULL_METADATA_COLUMNS,
+    ]
+    assert len(summary_df) == len(association_df)
+    assert summary_df["chi2_q_value_bh"].is_monotonic_increasing
+    _assert_compact_null_metadata(
+        association_df,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=3,
+    )
+    _assert_compact_null_metadata(
+        summary_df,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=3,
+    )
+    assert not (tmp_path / "direct_association_metadata.tsv").exists()
 
 
 def test_cooccurrence_obj_fe_and_ee(raw_ingredients):

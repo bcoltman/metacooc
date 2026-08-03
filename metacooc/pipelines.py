@@ -32,10 +32,11 @@ from metacooc.pantry import load_ingredients, threshold_ingredients_presence
 from metacooc.analysis import (
     association_obj,
     cooccurrence_obj,
+    export_association_outputs,
     select_taxa_universe,
     export_cooccurrence_outputs,
 )
-from metacooc.output import write_result_metadata_sidecar
+from metacooc.output import with_compact_null_metadata, write_result_metadata_sidecar
 from metacooc.plot import plot_analysis_obj
 from metacooc.clustering import determine_taxa_context
 from metacooc.structure import structure_obj
@@ -453,14 +454,11 @@ def run_association(args):
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
     output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_association.tsv")
-    single_df.to_csv(output_path, sep="\t", index=False)
-    print(f"Pipeline: {null_scope_prefix} association analysis saved to {output_path}")
-    metadata_path = write_result_metadata_sidecar(
+    export_association_outputs(
+        single_df,
         output_path,
-        single_df.attrs.get("null_metadata"),
+        null_model=args.null_model,
     )
-    if metadata_path is not None:
-        print(f"Pipeline: {null_scope_prefix} association metadata saved to {metadata_path}")
 
     output_plot_file = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_plot.png")
     plot_analysis_obj(single_df, out_file=output_plot_file)

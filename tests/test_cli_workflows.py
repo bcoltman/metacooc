@@ -8,8 +8,18 @@ import multiprocessing as mp
 import pandas as pd
 import pytest
 
+from metacooc.output import COMPACT_NULL_METADATA_COLUMNS
+
 SOIL_SAMPLE_LINES = [f"S{i:03d}" for i in range(1, 51)]
 RHIZO_SAMPLE_LINES = [f"S{i:03d}" for i in range(1, 61)]
+
+
+def _assert_compact_null_metadata(result, *, model, replicates, failed, seed):
+    assert result.columns.tolist()[-4:] == COMPACT_NULL_METADATA_COLUMNS
+    assert set(result["null_model"]) == {model}
+    assert set(result["null_replicates"]) == {replicates}
+    assert set(result["null_replicates_failed"]) == {failed}
+    assert set(result["null_seed"]) == {seed}
 
 
 def run_cli(*args, cwd=None):
@@ -838,6 +848,7 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "0",
     )
     assert not pd.read_csv(assoc_out / "association.tsv", sep="\t").empty
+    assert (assoc_out / "association_summary.tsv").exists()
 
     cooc_out = tmp_path / "analysis_cooc"
     run_cli(
@@ -918,18 +929,28 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "cli",
     )
     association = pd.read_csv(assoc_out / "cli_global_association.tsv", sep="\t")
-    association_metadata = pd.read_csv(assoc_out / "cli_global_association_metadata.tsv", sep="\t")
+    association_summary = pd.read_csv(
+        assoc_out / "cli_global_association_summary.tsv",
+        sep="\t",
+    )
     assert "jaccard_null_mean" in association.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association.columns)
-    assert dict(zip(association_metadata["key"], association_metadata["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "7",
-        "null_seed_source": "user",
-    }
+    assert "jaccard_null_mean" not in association_summary.columns
+    assert "jaccard_null_ses" in association_summary.columns
+    _assert_compact_null_metadata(
+        association,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    _assert_compact_null_metadata(
+        association_summary,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    assert not (assoc_out / "cli_global_association_metadata.tsv").exists()
 
     cooc_out = tmp_path / "workflow_cooc"
     run_cli(

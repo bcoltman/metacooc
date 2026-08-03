@@ -5,6 +5,29 @@ import pytest
 
 from conftest import pipeline_args
 from metacooc import pipelines
+from metacooc.output import COMPACT_NULL_METADATA_COLUMNS
+
+
+def _assert_compact_null_metadata(
+    result,
+    *,
+    model,
+    replicates,
+    failed,
+    seed,
+):
+    assert result.columns.tolist()[-4:] == COMPACT_NULL_METADATA_COLUMNS
+    expected = {
+        "null_model": model,
+        "null_replicates": replicates,
+        "null_replicates_failed": failed,
+        "null_seed": seed,
+    }
+    for column, value in expected.items():
+        if value is None:
+            assert result[column].isna().all()
+        else:
+            assert set(result[column]) == {value}
 
 
 def test_run_association_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
@@ -18,11 +41,30 @@ def test_run_association_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
     )
     pipelines.run_association(args)
     out = tmp_path / "test_global_association.tsv"
+    summary = tmp_path / "test_global_association_summary.tsv"
     assert out.exists()
-    assert not pd.read_csv(out, sep="\t").empty
+    assert summary.exists()
+    association = pd.read_csv(out, sep="\t")
+    association_summary = pd.read_csv(summary, sep="\t")
+    assert not association.empty
+    assert "jaccard_null_ses" not in association_summary.columns
+    _assert_compact_null_metadata(
+        association,
+        model="FE",
+        replicates=None,
+        failed=None,
+        seed=None,
+    )
+    _assert_compact_null_metadata(
+        association_summary,
+        model="FE",
+        replicates=None,
+        failed=None,
+        seed=None,
+    )
 
 
-def test_run_association_pipeline_writes_null_metadata_sidecar(
+def test_run_association_pipeline_embeds_compact_null_metadata(
     tmp_path,
     raw_ingredients_path,
     monkeypatch,
@@ -40,21 +82,29 @@ def test_run_association_pipeline_writes_null_metadata_sidecar(
     pipelines.run_association(args)
 
     out = tmp_path / "test_global_association.tsv"
-    metadata = tmp_path / "test_global_association_metadata.tsv"
+    summary = tmp_path / "test_global_association_summary.tsv"
     association_df = pd.read_csv(out, sep="\t")
-    metadata_df = pd.read_csv(metadata, sep="\t")
+    summary_df = pd.read_csv(summary, sep="\t")
 
     assert "jaccard_null_mean" in association_df.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(association_df.columns)
-    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "7",
-        "null_seed_source": "user",
-    }
+    assert {"jaccard_null_ses", "jaccard_null_p_empirical"}.issubset(
+        summary_df.columns
+    )
+    _assert_compact_null_metadata(
+        association_df,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    _assert_compact_null_metadata(
+        summary_df,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    assert not (tmp_path / "test_global_association_metadata.tsv").exists()
 
 
 def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):

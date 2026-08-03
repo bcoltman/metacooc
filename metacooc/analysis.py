@@ -23,7 +23,11 @@ from metacooc.null_models import (
     stat_fn_cooccurrence_jaccard,
     _best_mp_start
 )
-from metacooc.output import null_metadata_from_reduction, write_result_metadata_sidecar
+from metacooc.output import (
+    null_metadata_from_reduction,
+    with_compact_null_metadata,
+    write_result_metadata_sidecar,
+)
 
 
 _SMOOTH = 0.5
@@ -70,6 +74,23 @@ ASSOCIATION_FISHER_COLUMNS = [
 ASSOCIATION_NULL_COLUMNS = [
     "jaccard_null_mean",
     "jaccard_null_sd",
+    "jaccard_null_ses",
+    "jaccard_null_p_empirical",
+]
+
+ASSOCIATION_SUMMARY_BASE_COLUMNS = [
+    "taxon",
+    "phi_coefficient",
+    "p_cohort_given_taxon",
+    "p_taxon_given_cohort",
+    "taxon_in_cohort_count",
+    "cohort_sample_count",
+    "taxon_in_background_not_cohort_count",
+    "background_not_cohort_sample_count",
+    "chi2_q_value_bh",
+]
+
+ASSOCIATION_SUMMARY_NULL_COLUMNS = [
     "jaccard_null_ses",
     "jaccard_null_p_empirical",
 ]
@@ -148,6 +169,44 @@ def _finalize_association_output(
     )
     attrs = dict(df.attrs)
     out = df.loc[:, columns].copy()
+    out.attrs.update(attrs)
+    return out
+
+
+def _build_association_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Build the interpretation-first association result table."""
+    columns = list(ASSOCIATION_SUMMARY_BASE_COLUMNS)
+    columns.extend(
+        column for column in ASSOCIATION_SUMMARY_NULL_COLUMNS if column in df.columns
+    )
+
+    attrs = dict(df.attrs)
+    out = df.loc[:, columns].copy()
+
+    count_columns = [
+        "taxon_in_cohort_count",
+        "cohort_sample_count",
+        "taxon_in_background_not_cohort_count",
+        "background_not_cohort_sample_count",
+    ]
+    for column in count_columns:
+        out[column] = out[column].astype(np.int64)
+
+    out["_summary_abs_phi"] = out["phi_coefficient"].abs()
+    out.sort_values(
+        by=[
+            "chi2_q_value_bh",
+            "_summary_abs_phi",
+            "taxon_in_cohort_count",
+            "taxon",
+        ],
+        ascending=[True, False, False, True],
+        na_position="last",
+        kind="mergesort",
+        inplace=True,
+    )
+    out.drop(columns="_summary_abs_phi", inplace=True)
+    out.reset_index(drop=True, inplace=True)
     out.attrs.update(attrs)
     return out
 
@@ -336,6 +395,39 @@ def association_obj(
         out.attrs.update(attrs)
 
     return out
+
+
+def export_association_outputs(
+    association_df: pd.DataFrame,
+    output_path: str,
+    *,
+    null_model: str = "FE",
+) -> None:
+    """Write detailed and reduced association results for one analysis run."""
+    metadata = association_df.attrs.get("null_metadata")
+    fallback_null_model = "FE" if str(null_model).upper() == "FE" else None
+
+    detailed_df = with_compact_null_metadata(
+        association_df,
+        metadata,
+        fallback_null_model=fallback_null_model,
+    )
+    detailed_df.to_csv(output_path, sep="\t", index=False)
+    print(f"Detailed association analysis saved to {output_path}")
+
+    summary_path = f"{os.path.splitext(output_path)[0]}_summary.tsv"
+    summary_df = with_compact_null_metadata(
+        _build_association_summary(association_df),
+        metadata,
+        fallback_null_model=fallback_null_model,
+    )
+    summary_df.to_csv(
+        summary_path,
+        sep="\t",
+        index=False,
+        float_format="%.6g",
+    )
+    print(f"Association summary saved to {summary_path}")
 
 
 def _association_core(
@@ -639,14 +731,11 @@ def association(
 
     if association_df is not None:
         output_path = os.path.join(output_dir, f"{tag}association.tsv")
-        association_df.to_csv(output_path, sep="\t", index=False)
-        print(f"Association analysis saved to {output_path}")
-        metadata_path = write_result_metadata_sidecar(
+        export_association_outputs(
+            association_df,
             output_path,
-            association_df.attrs.get("null_metadata"),
+            null_model=null_model,
         )
-        if metadata_path is not None:
-            print(f"Association metadata saved to {metadata_path}")
 
 
 def presence_submatrix_by_taxa(ingredients: Ingredients, taxa_subset: List[str]) -> sp.csr_matrix:
