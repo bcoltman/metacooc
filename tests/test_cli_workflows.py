@@ -870,6 +870,7 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
         "1",
     )
     assert (cooc_out / "taxon_nodes.tsv").exists()
+    assert (cooc_out / "taxon_edges_summary.tsv").exists()
 
     structure_out = tmp_path / "analysis_structure"
     run_cli(
@@ -976,6 +977,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         "cli",
     )
     assert (cooc_out / "cli_global_nodes.tsv").exists()
+    assert (cooc_out / "cli_global_edges_summary.tsv").exists()
 
     structure_out = tmp_path / "workflow_structure"
     run_cli(
@@ -1121,7 +1123,15 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
     )
 
     edges = pd.read_csv(out / "cli_global_edges.tsv", sep="\t")
+    summary = pd.read_csv(out / "cli_global_edges_summary.tsv", sep="\t")
     assert not edges.empty
+    assert summary.columns.tolist()[:4] == [
+        "focal_query",
+        "focal_taxon",
+        "source_taxon",
+        "target_taxon",
+    ]
+    assert len(summary) == len(edges)
     assert {"focal_query", "focal_taxon"}.issubset(edges.columns)
     assert set(edges["focal_query"]) == {"s__rhizo_000"}
     assert edges["focal_taxon"].str.endswith("g__Rhizo; s__rhizo_000").all()
@@ -1142,18 +1152,21 @@ def test_cli_focal_lhs_rhs_cooccurrence_outputs_metrics(tmp_path, cli_formatted_
     assert 0 <= micro_000["chi2_q_value_bh"] <= 1
     assert "jaccard_null_mean" in edges.columns
     assert "jaccard_null_p_empirical" in edges.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(edges.columns)
-
-    edges_metadata = pd.read_csv(out / "cli_global_edges_metadata.tsv", sep="\t")
-    assert dict(zip(edges_metadata["key"], edges_metadata["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "7",
-        "null_seed_source": "user",
-    }
+    _assert_compact_null_metadata(
+        edges,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    _assert_compact_null_metadata(
+        summary,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    assert not (out / "cli_global_edges_metadata.tsv").exists()
 
 
 @pytest.mark.cli

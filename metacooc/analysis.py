@@ -26,12 +26,12 @@ from metacooc.null_models import (
 from metacooc.output import (
     null_metadata_from_reduction,
     with_compact_null_metadata,
-    write_result_metadata_sidecar,
 )
 
 
 _SMOOTH = 0.5
 _COOCCURRENCE_NULL_EDGE_WARNING_THRESHOLD = 1_000_000
+_COOCCURRENCE_PARQUET_BATCH_SIZE = 100_000
 
 ASSOCIATION_BASE_COLUMNS = [
     "taxon",
@@ -137,6 +137,24 @@ COOCCURRENCE_NULL_COLUMNS = [
     "jaccard_null_p_empirical",
     "jaccard_null_q_value_bh",
     "jaccard_null_log_q_value_bh",
+]
+
+COOCCURRENCE_SUMMARY_BASE_COLUMNS = [
+    "source_taxon",
+    "target_taxon",
+    "phi_coefficient",
+    "p_target_given_source",
+    "p_source_given_target",
+    "shared_sample_count",
+    "source_taxon_sample_count",
+    "target_taxon_sample_count",
+    "chi2_q_value_bh",
+]
+
+COOCCURRENCE_SUMMARY_NULL_COLUMNS = [
+    "jaccard_null_ses",
+    "jaccard_null_p_empirical",
+    "jaccard_null_q_value_bh",
 ]
 
 
@@ -1453,28 +1471,48 @@ def export_cooccurrence_outputs(
         return
 
     n_rows = edge_arrays.n_rows
+    metadata = edge_arrays.meta.get("null_metadata")
+    fallback_null_model = "FE" if str(null_model).upper() == "FE" else None
 
     if n_rows <= summary_n:
         edges_tsv_path = os.path.join(output_dir, f"{edges_base}.tsv")
-        summary_df = _build_summary_df(
+        detailed_df = _reconstruct_edge_frame(
             edge_arrays=edge_arrays,
             taxa_universe=taxa_universe,
-            null_model=null_model,
-            summary_n=summary_n,
+            idx=slice(None),
         )
-        summary_df.to_csv(
+        summary_df = _build_cooccurrence_summary(
+            edge_arrays=edge_arrays,
+            taxa_universe=taxa_universe,
+            summary_n=summary_n,
+            detailed_df=detailed_df,
+        )
+        detailed_df = with_compact_null_metadata(
+            detailed_df,
+            metadata,
+            fallback_null_model=fallback_null_model,
+        )
+        detailed_df.to_csv(
             edges_tsv_path,
             sep="\t",
             index=False,
             float_format="%.6g",
         )
-        print(f"Taxon edges analysis saved to {edges_tsv_path}")
-        metadata_path = write_result_metadata_sidecar(
-            edges_tsv_path,
-            edge_arrays.meta.get("null_metadata"),
+        print(f"Detailed taxon edges analysis saved to {edges_tsv_path}")
+
+        summary_df = with_compact_null_metadata(
+            summary_df,
+            metadata,
+            fallback_null_model=fallback_null_model,
         )
-        if metadata_path is not None:
-            print(f"Taxon edges metadata saved to {metadata_path}")
+        summary_path = os.path.join(output_dir, f"{edges_base}_summary.tsv")
+        summary_df.to_csv(
+            summary_path,
+            sep="\t",
+            index=False,
+            float_format="%.6g",
+        )
+        print(f"Taxon edges summary saved to {summary_path}")
         return
 
     parquet_path = os.path.join(output_dir, f"{edges_base}")
@@ -1482,24 +1520,22 @@ def export_cooccurrence_outputs(
         edge_arrays=edge_arrays,
         taxa_universe=taxa_universe,
         output_path=parquet_path,
+        null_model=null_model,
     )
     print(
-        f"Full compact taxon edges analysis saved to "
+        f"Full detailed taxon edges analysis saved to "
         f"{os.path.splitext(parquet_path)[0]}.parquet "
         f"and {os.path.splitext(parquet_path)[0]}_taxa.parquet"
     )
-    metadata_path = write_result_metadata_sidecar(
-        f"{parquet_path}.parquet",
-        edge_arrays.meta.get("null_metadata"),
-    )
-    if metadata_path is not None:
-        print(f"Full taxon edges metadata saved to {metadata_path}")
-
-    summary_df = _build_summary_df(
+    summary_df = _build_cooccurrence_summary(
         edge_arrays=edge_arrays,
         taxa_universe=taxa_universe,
-        null_model=null_model,
         summary_n=summary_n,
+    )
+    summary_df = with_compact_null_metadata(
+        summary_df,
+        metadata,
+        fallback_null_model=fallback_null_model,
     )
 
     summary_path = os.path.join(output_dir, f"{edges_base}_summary.tsv")
@@ -1513,12 +1549,6 @@ def export_cooccurrence_outputs(
         f"Summary taxon edges analysis saved to {summary_path} "
         f"({len(summary_df):,} of {n_rows:,} rows)"
     )
-    summary_metadata_path = write_result_metadata_sidecar(
-        summary_path,
-        edge_arrays.meta.get("null_metadata"),
-    )
-    if summary_metadata_path is not None:
-        print(f"Summary taxon edges metadata saved to {summary_metadata_path}")
 
 
 def cooccurrence(
@@ -1645,15 +1675,13 @@ def table_metrics_arrays(
 
 
 def _edge_summary_indices(
-    cols: dict[str, np.ndarray],
-    null_model: str,
+    edge_arrays: CooccurrenceArrays,
+    taxa_universe: List[str],
     summary_n: int,
 ) -> np.ndarray:
-    if "jaccard_null_log_q_value_bh" in cols:
-        score = cols["jaccard_null_log_q_value_bh"]
-    else:
-        score = cols["chi2_log_q_value_bh"]
-
+    cols = edge_arrays.cols
+    score_column = _cooccurrence_summary_log_q_column(edge_arrays)
+    score = np.asarray(cols[score_column], dtype=np.float64)
     n = len(score)
     if n == 0:
         return np.array([], dtype=np.int64)
@@ -1664,31 +1692,127 @@ def _edge_summary_indices(
     else:
         score_for_sort = score
 
-    if n <= summary_n:
+    k = min(n, int(summary_n))
+    if k <= 0:
+        return np.array([], dtype=np.int64)
+
+    if n <= k:
         return np.arange(n, dtype=np.int64)
 
-    k = int(summary_n)
-    idx = np.argpartition(score_for_sort, k - 1)[:k]
-    idx = idx[np.argsort(score_for_sort[idx], kind="quicksort")]
-    return idx
+    cutoff = np.partition(score_for_sort, k - 1)[k - 1]
+    better = np.flatnonzero(score_for_sort < cutoff)
+    tied = np.flatnonzero(score_for_sort == cutoff)
+    remaining = k - better.size
+
+    if tied.size > remaining:
+        phi = _edge_phi(edge_arrays, tied)
+        phi = np.nan_to_num(np.abs(phi), nan=-np.inf)
+        support = np.asarray(cols["shared_sample_count"])[tied]
+        source_idx = np.asarray(cols["source_taxon_index"], dtype=np.int64)[tied]
+        target_idx = np.asarray(cols["target_taxon_index"], dtype=np.int64)[tied]
+
+        taxa_order = np.argsort(np.asarray(taxa_universe, dtype=object), kind="stable")
+        taxa_rank = np.empty(taxa_order.size, dtype=np.int64)
+        taxa_rank[taxa_order] = np.arange(taxa_order.size, dtype=np.int64)
+
+        tied_order = np.lexsort(
+            (
+                tied,
+                taxa_rank[target_idx],
+                taxa_rank[source_idx],
+                -support,
+                -phi,
+            )
+        )
+        tied = tied[tied_order[:remaining]]
+
+    return np.concatenate((better, tied[:remaining])).astype(np.int64, copy=False)
 
 
-def _build_summary_df(
+def _cooccurrence_summary_log_q_column(
+    edge_arrays: CooccurrenceArrays,
+) -> str:
+    if "jaccard_null_log_q_value_bh" in edge_arrays.cols:
+        return "jaccard_null_log_q_value_bh"
+    return "chi2_log_q_value_bh"
+
+
+def _edge_phi(
+    edge_arrays: CooccurrenceArrays,
+    idx: np.ndarray,
+) -> np.ndarray:
+    cols = edge_arrays.cols
+    totals = np.asarray(edge_arrays.meta["totals"], dtype=np.int32)
+    n_total = int(edge_arrays.meta["N_total"])
+
+    source_idx = np.asarray(cols["source_taxon_index"], dtype=np.int64)[idx]
+    target_idx = np.asarray(cols["target_taxon_index"], dtype=np.int64)[idx]
+    shared = np.asarray(cols["shared_sample_count"], dtype=np.float64)[idx]
+    source_total = totals[source_idx].astype(np.float64, copy=False)
+    target_total = totals[target_idx].astype(np.float64, copy=False)
+
+    _, phi, _ = _chi2_phi_from_counts(
+        shared,
+        source_total - shared,
+        target_total - shared,
+        n_total - source_total - target_total + shared,
+    )
+    return phi
+
+
+def _build_cooccurrence_summary(
     edge_arrays: CooccurrenceArrays,
     taxa_universe: List[str],
-    null_model: str,
     summary_n: int,
+    detailed_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     idx = _edge_summary_indices(
-        edge_arrays.cols,
-        null_model=null_model,
+        edge_arrays,
+        taxa_universe=taxa_universe,
         summary_n=summary_n,
     )
-    return _reconstruct_edge_frame(
-        edge_arrays=edge_arrays,
-        taxa_universe=taxa_universe,
-        idx=idx,
+    if detailed_df is None:
+        detailed = _reconstruct_edge_frame(
+            edge_arrays=edge_arrays,
+            taxa_universe=taxa_universe,
+            idx=idx,
+            compute_fisher=False,
+        )
+    else:
+        detailed = detailed_df.iloc[idx].copy()
+
+    score_column = (
+        "jaccard_null_q_value_bh"
+        if "jaccard_null_q_value_bh" in detailed
+        else "chi2_q_value_bh"
     )
+    detailed["_summary_abs_phi"] = detailed["phi_coefficient"].abs()
+    detailed.sort_values(
+        by=[
+            score_column,
+            "_summary_abs_phi",
+            "shared_sample_count",
+            "source_taxon",
+            "target_taxon",
+        ],
+        ascending=[True, False, False, True, True],
+        na_position="last",
+        kind="mergesort",
+        inplace=True,
+    )
+    detailed.drop(columns="_summary_abs_phi", inplace=True)
+    detailed.reset_index(drop=True, inplace=True)
+
+    columns = [
+        column for column in ("focal_query", "focal_taxon") if column in detailed
+    ]
+    columns.extend(COOCCURRENCE_SUMMARY_BASE_COLUMNS)
+    columns.extend(
+        column
+        for column in COOCCURRENCE_SUMMARY_NULL_COLUMNS
+        if column in detailed
+    )
+    return detailed.loc[:, columns].copy()
 
 
 def _finalize_cooccurrence_edge_frame(df: pd.DataFrame, *, compute_fisher: bool) -> pd.DataFrame:
@@ -1705,9 +1829,12 @@ def _write_full_edges_parquet_from_arrays(
     edge_arrays: CooccurrenceArrays,
     taxa_universe: List[str],
     output_path: str,
+    *,
+    null_model: str = "FE",
+    batch_size: int = _COOCCURRENCE_PARQUET_BATCH_SIZE,
 ) -> None:
     """
-    Write full co-occurrence output in compact form.
+    Write every detailed co-occurrence metric using bounded-memory batches.
     """
     try:
         import pyarrow as pa
@@ -1718,65 +1845,73 @@ def _write_full_edges_parquet_from_arrays(
             "no parquet engine is installed. Install 'pyarrow'."
         ) from e
 
-    cols = edge_arrays.cols
     totals = np.asarray(edge_arrays.meta["totals"], dtype=np.int32)
     taxa_arr = np.asarray(taxa_universe, dtype=object)
+    compute_fisher = bool(edge_arrays.meta.get("compute_fisher", False))
+    n_rows = edge_arrays.n_rows
+    metadata = edge_arrays.meta.get("null_metadata")
+    fallback_null_model = "FE" if str(null_model).upper() == "FE" else None
+
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if compute_fisher:
+        print(
+            "WARNING: --compute_fisher will calculate Fisher's exact test for "
+            f"all {n_rows:,} edges while writing the detailed Parquet output. "
+            "This can substantially increase export time."
+        )
 
     edges_path = f"{output_path}.parquet"
     taxa_path = f"{output_path}_taxa.parquet"
 
-    edge_table_dict = {
-        "source_taxon_index": pa.array(
-            np.asarray(cols["source_taxon_index"], dtype=np.int32),
-            type=pa.int32(),
-        ),
-        "target_taxon_index": pa.array(
-            np.asarray(cols["target_taxon_index"], dtype=np.int32),
-            type=pa.int32(),
-        ),
-        "shared_sample_count": pa.array(
-            np.asarray(cols["shared_sample_count"], dtype=np.int32),
-            type=pa.int32(),
-        ),
-        "jaccard_taxon_pair": pa.array(
-            np.asarray(cols["jaccard_taxon_pair"], dtype=np.float32),
-            type=pa.float32(),
-        ),
-        "chi2_log_p_value": pa.array(
-            np.asarray(cols["chi2_log_p_value"], dtype=np.float64),
-            type=pa.float64(),
-        ),
-        "chi2_log_q_value_bh": pa.array(
-            np.asarray(cols["chi2_log_q_value_bh"], dtype=np.float64),
-            type=pa.float64(),
-        ),
-    }
+    n_batches = (n_rows + batch_size - 1) // batch_size
+    writer = None
+    try:
+        for batch_number, start in enumerate(range(0, n_rows, batch_size), start=1):
+            stop = min(start + batch_size, n_rows)
+            if n_batches > 1:
+                print(
+                    "INFO: Writing detailed cooccurrence batch "
+                    f"{batch_number:,}/{n_batches:,} ({start:,}:{stop:,})."
+                )
 
-    for key, arr in cols.items():
-        if key in {
-            "source_taxon_index",
-            "target_taxon_index",
-            "shared_sample_count",
-            "jaccard_taxon_pair",
-            "chi2_log_p_value",
-            "chi2_log_q_value_bh",
-        }:
-            continue
+            batch = _reconstruct_edge_frame(
+                edge_arrays=edge_arrays,
+                taxa_universe=taxa_universe,
+                idx=slice(start, stop),
+                compute_fisher=compute_fisher,
+            )
+            batch = with_compact_null_metadata(
+                batch,
+                metadata,
+                fallback_null_model=fallback_null_model,
+            )
+            source_idx = np.asarray(
+                edge_arrays.cols["source_taxon_index"][start:stop],
+                dtype=np.int32,
+            )
+            target_idx = np.asarray(
+                edge_arrays.cols["target_taxon_index"][start:stop],
+                dtype=np.int32,
+            )
+            batch.drop(columns=["source_taxon", "target_taxon"], inplace=True)
+            id_position = sum(
+                column in batch.columns for column in ("focal_query", "focal_taxon")
+            )
+            batch.insert(id_position, "source_taxon_index", source_idx)
+            batch.insert(id_position + 1, "target_taxon_index", target_idx)
 
-        arr = np.asarray(arr)
-        if arr.dtype == np.float32:
-            edge_table_dict[key] = pa.array(arr, type=pa.float32())
-        elif arr.dtype == np.float64:
-            edge_table_dict[key] = pa.array(arr, type=pa.float64())
-        elif arr.dtype == np.int32:
-            edge_table_dict[key] = pa.array(arr, type=pa.int32())
-        elif arr.dtype == np.int64:
-            edge_table_dict[key] = pa.array(arr, type=pa.int64())
-        else:
-            edge_table_dict[key] = pa.array(arr)
-
-    edge_table = pa.table(edge_table_dict)
-    pq.write_table(edge_table, edges_path, compression="snappy")
+            table = pa.Table.from_pandas(batch, preserve_index=False)
+            if writer is None:
+                writer = pq.ParquetWriter(
+                    edges_path,
+                    table.schema,
+                    compression="snappy",
+                )
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
 
     taxa_table = pa.table({
         "taxon_id": pa.array(np.arange(taxa_arr.shape[0], dtype=np.int32), type=pa.int32()),
@@ -1901,11 +2036,13 @@ def _reconstruct_edge_frame(
     edge_arrays: CooccurrenceArrays,
     taxa_universe: List[str],
     idx: np.ndarray | slice,
+    compute_fisher: bool | None = None,
 ) -> pd.DataFrame:
     cols = edge_arrays.cols
     totals = np.asarray(edge_arrays.meta["totals"], dtype=np.int32)
     N_total = int(edge_arrays.meta["N_total"])
-    compute_fisher = bool(edge_arrays.meta.get("compute_fisher", False))
+    if compute_fisher is None:
+        compute_fisher = bool(edge_arrays.meta.get("compute_fisher", False))
 
     source_taxon_index = cols["source_taxon_index"][idx]
     target_taxon_index = cols["target_taxon_index"][idx]

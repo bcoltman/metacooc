@@ -4,7 +4,14 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+import metacooc.analysis as analysis_module
 from metacooc.analysis import (
+    COOCCURRENCE_BASE_COLUMNS,
+    COOCCURRENCE_FISHER_COLUMNS,
+    CooccurrenceArrays,
+    _build_cooccurrence_summary,
+    _reconstruct_edge_frame,
+    _write_full_edges_parquet_from_arrays,
     association,
     association_obj,
     cooccurrence_obj,
@@ -52,6 +59,44 @@ def _reference_mean_jaccard(X):
             union = deg[i] + deg[j] - S[i, j]
             vals.append(0.0 if union <= 0 else S[i, j] / union)
     return float(np.mean(vals))
+
+
+def _synthetic_edge_arrays(*, compute_fisher=False, include_null=False):
+    shared = np.array([5, 5, 3, 3], dtype=np.int32)
+    source = np.array([0, 0, 1, 0], dtype=np.int32)
+    target = np.array([1, 2, 3, 3], dtype=np.int32)
+    totals = np.array([10, 8, 8, 5], dtype=np.int32)
+    union = totals[source] + totals[target] - shared
+
+    cols = {
+        "source_taxon_index": source,
+        "target_taxon_index": target,
+        "shared_sample_count": shared,
+        "jaccard_taxon_pair": (shared / union).astype(np.float32),
+        "chi2_log_p_value": np.log(np.array([0.001, 0.8, 0.9, 0.7])),
+        "chi2_log_q_value_bh": np.log(np.array([0.001, 0.8, 0.9, 0.7])),
+    }
+    if include_null:
+        cols.update(
+            {
+                "jaccard_null_mean": np.full(4, 0.2, dtype=np.float32),
+                "jaccard_null_sd": np.full(4, 0.1, dtype=np.float32),
+                "jaccard_null_ses": np.array([0.2, 0.3, 0.4, 0.5]),
+                "jaccard_null_p_empirical": np.array([0.1, 0.1, 0.01, np.nan]),
+                "jaccard_null_log_q_value_bh": np.log(
+                    np.array([0.1, 0.1, 0.01, np.nan])
+                ),
+            }
+        )
+
+    return CooccurrenceArrays(
+        cols=cols,
+        meta={
+            "totals": totals,
+            "N_total": 20,
+            "compute_fisher": compute_fisher,
+        },
+    )
 
 
 def _assert_compact_null_metadata(
@@ -287,7 +332,10 @@ def test_cooccurrence_obj_fe_and_ee(raw_ingredients):
     assert edge_arrays_ee.meta["null_model"] == "EE"
 
 
-def test_cooccurrence_large_export_writes_metadata_sidecars(tmp_path, raw_ingredients):
+def test_cooccurrence_large_export_embeds_compact_null_metadata(
+    tmp_path,
+    raw_ingredients,
+):
     taxa_universe = list(raw_ingredients.taxa)
     edge_arrays, nodes_df = cooccurrence_obj(
         raw_ingredients,
@@ -315,15 +363,11 @@ def test_cooccurrence_large_export_writes_metadata_sidecars(tmp_path, raw_ingred
     assert (tmp_path / "large_nodes.tsv").exists()
     assert (tmp_path / "large_edges.parquet").exists()
     assert (tmp_path / "large_edges_taxa.parquet").exists()
-    assert (tmp_path / "large_edges_metadata.tsv").exists()
     assert (tmp_path / "large_edges_summary.tsv").exists()
-    assert (tmp_path / "large_edges_summary_metadata.tsv").exists()
+    assert not (tmp_path / "large_edges_metadata.tsv").exists()
 
     full_edges = pd.read_parquet(tmp_path / "large_edges.parquet")
     summary_edges = pd.read_csv(tmp_path / "large_edges_summary.tsv", sep="\t")
-    metadata = pd.read_csv(tmp_path / "large_edges_metadata.tsv", sep="\t")
-    summary_metadata = pd.read_csv(tmp_path / "large_edges_summary_metadata.tsv", sep="\t")
-
     assert {
         "source_taxon_index",
         "target_taxon_index",
@@ -331,27 +375,166 @@ def test_cooccurrence_large_export_writes_metadata_sidecars(tmp_path, raw_ingred
         "jaccard_taxon_pair",
         "jaccard_null_mean",
     }.issubset(full_edges.columns)
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(full_edges.columns)
-    assert {"source_taxon", "target_taxon", "jaccard_null_mean"}.issubset(summary_edges.columns)
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(summary_edges.columns)
-    assert dict(zip(metadata["key"], metadata["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "4",
-        "null_seed_source": "user",
-    }
-    assert dict(zip(summary_metadata["key"], summary_metadata["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "4",
-        "null_seed_source": "user",
-    }
+    expected_full_edges = _reconstruct_edge_frame(
+        edge_arrays,
+        taxa_universe,
+        idx=slice(None),
+        compute_fisher=False,
+    )
+    expected_full_edges.drop(
+        columns=["source_taxon", "target_taxon"],
+        inplace=True,
+    )
+    expected_full_edges.insert(
+        0,
+        "source_taxon_index",
+        edge_arrays.cols["source_taxon_index"],
+    )
+    expected_full_edges.insert(
+        1,
+        "target_taxon_index",
+        edge_arrays.cols["target_taxon_index"],
+    )
+    pd.testing.assert_frame_equal(
+        full_edges.drop(columns=COMPACT_NULL_METADATA_COLUMNS),
+        expected_full_edges,
+        check_dtype=False,
+    )
+    _assert_compact_null_metadata(
+        full_edges,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=4,
+    )
+    assert summary_edges.columns.tolist() == [
+        "source_taxon",
+        "target_taxon",
+        "phi_coefficient",
+        "p_target_given_source",
+        "p_source_given_target",
+        "shared_sample_count",
+        "source_taxon_sample_count",
+        "target_taxon_sample_count",
+        "chi2_q_value_bh",
+        "jaccard_null_ses",
+        "jaccard_null_p_empirical",
+        "jaccard_null_q_value_bh",
+        *COMPACT_NULL_METADATA_COLUMNS,
+    ]
+    assert len(summary_edges) == 1
+    _assert_compact_null_metadata(
+        summary_edges,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=4,
+    )
+
+
+def test_cooccurrence_summary_uses_empirical_q_and_exact_tie_breaking():
+    taxa_universe = ["z_source", "b_target", "a_target", "c_target"]
+    edge_arrays = _synthetic_edge_arrays(include_null=True)
+
+    capped = _build_cooccurrence_summary(
+        edge_arrays,
+        taxa_universe,
+        summary_n=2,
+    )
+    assert list(zip(capped["source_taxon"], capped["target_taxon"])) == [
+        ("b_target", "c_target"),
+        ("z_source", "a_target"),
+    ]
+    np.testing.assert_allclose(
+        capped["jaccard_null_q_value_bh"],
+        [0.01, 0.1],
+    )
+
+    uncapped = _build_cooccurrence_summary(
+        edge_arrays,
+        taxa_universe,
+        summary_n=4,
+    )
+    assert list(zip(uncapped["source_taxon"], uncapped["target_taxon"])) == [
+        ("b_target", "c_target"),
+        ("z_source", "a_target"),
+        ("z_source", "b_target"),
+        ("z_source", "c_target"),
+    ]
+    assert np.isnan(uncapped["jaccard_null_q_value_bh"].iloc[-1])
+
+    analytical = _build_cooccurrence_summary(
+        _synthetic_edge_arrays(),
+        taxa_universe,
+        summary_n=1,
+    )
+    assert list(zip(analytical["source_taxon"], analytical["target_taxon"])) == [
+        ("z_source", "b_target")
+    ]
+
+
+def test_large_parquet_batches_store_all_fisher_metrics_without_summary_recompute(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    taxa_universe = ["z_source", "b_target", "a_target", "c_target"]
+    edge_arrays = _synthetic_edge_arrays(compute_fisher=True)
+    edge_arrays.cols["focal_query"] = np.array(["query"] * 4, dtype=object)
+    edge_arrays.cols["focal_taxon"] = np.array(["z_source"] * 4, dtype=object)
+    fisher_calls = 0
+    fisher_exact = analysis_module._fisher_exact
+
+    def counting_fisher_exact(*args, **kwargs):
+        nonlocal fisher_calls
+        fisher_calls += 1
+        return fisher_exact(*args, **kwargs)
+
+    monkeypatch.setattr(analysis_module, "_fisher_exact", counting_fisher_exact)
+    output_path = str(tmp_path / "batched_edges")
+    _write_full_edges_parquet_from_arrays(
+        edge_arrays,
+        taxa_universe,
+        output_path,
+        batch_size=2,
+    )
+
+    full_edges = pd.read_parquet(f"{output_path}.parquet")
+    expected_columns = [
+        "focal_query",
+        "focal_taxon",
+        "source_taxon_index",
+        "target_taxon_index",
+        *COOCCURRENCE_BASE_COLUMNS[2:],
+        *COOCCURRENCE_FISHER_COLUMNS,
+        *COMPACT_NULL_METADATA_COLUMNS,
+    ]
+    assert full_edges.columns.tolist() == expected_columns
+    assert len(full_edges) == edge_arrays.n_rows
+    assert full_edges["focal_taxon"].eq("z_source").all()
+    assert full_edges["background_sample_count"].eq(20).all()
+    assert full_edges[COOCCURRENCE_FISHER_COLUMNS].notna().all().all()
+    _assert_compact_null_metadata(
+        full_edges,
+        model="FE",
+        replicates=None,
+        failed=None,
+        seed=None,
+    )
+    assert fisher_calls == edge_arrays.n_rows
+
+    summary = _build_cooccurrence_summary(
+        edge_arrays,
+        taxa_universe,
+        summary_n=1,
+    )
+    assert fisher_calls == edge_arrays.n_rows
+    assert set(COOCCURRENCE_FISHER_COLUMNS).isdisjoint(summary.columns)
+
+    output = capsys.readouterr().out
+    assert "all 4 edges" in output
+    assert "batch 1/2" in output
+    assert "batch 2/2" in output
 
 
 def test_focal_rhs_cooccurrence_edges_and_metrics(raw_ingredients):

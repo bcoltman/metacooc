@@ -119,9 +119,41 @@ def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
     pipelines.run_cooccurrence(args)
     assert (tmp_path / "test_global_nodes.tsv").exists()
     assert (tmp_path / "test_global_edges.tsv").exists()
+    edges = pd.read_csv(tmp_path / "test_global_edges.tsv", sep="\t")
+    summary = pd.read_csv(tmp_path / "test_global_edges_summary.tsv", sep="\t")
+    assert summary.columns.tolist() == [
+        "source_taxon",
+        "target_taxon",
+        "phi_coefficient",
+        "p_target_given_source",
+        "p_source_given_target",
+        "shared_sample_count",
+        "source_taxon_sample_count",
+        "target_taxon_sample_count",
+        "chi2_q_value_bh",
+        *COMPACT_NULL_METADATA_COLUMNS,
+    ]
+    assert summary["chi2_q_value_bh"].is_monotonic_increasing
+    _assert_compact_null_metadata(
+        edges,
+        model="FE",
+        replicates=None,
+        failed=None,
+        seed=None,
+    )
+    _assert_compact_null_metadata(
+        summary,
+        model="FE",
+        replicates=None,
+        failed=None,
+        seed=None,
+    )
 
 
-def test_run_cooccurrence_pipeline_writes_null_metadata_sidecar(tmp_path, raw_ingredients_path):
+def test_run_cooccurrence_pipeline_embeds_compact_null_metadata(
+    tmp_path,
+    raw_ingredients_path,
+):
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
@@ -135,24 +167,35 @@ def test_run_cooccurrence_pipeline_writes_null_metadata_sidecar(tmp_path, raw_in
     pipelines.run_cooccurrence(args)
 
     edges = pd.read_csv(tmp_path / "test_global_edges.tsv", sep="\t")
-    metadata = pd.read_csv(tmp_path / "test_global_edges_metadata.tsv", sep="\t")
+    summary = pd.read_csv(tmp_path / "test_global_edges_summary.tsv", sep="\t")
     nodes = pd.read_csv(tmp_path / "test_global_nodes.tsv", sep="\t")
 
     assert "source_taxon" in edges.columns
     assert "target_taxon" in edges.columns
     assert "jaccard_null_mean" in edges.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(edges.columns)
+    assert {
+        "jaccard_null_ses",
+        "jaccard_null_p_empirical",
+        "jaccard_null_q_value_bh",
+    }.issubset(summary.columns)
+    assert "jaccard_null_mean" not in summary.columns
     assert "taxon_sample_count" in nodes.columns
     assert "out_degree_p_target_given_source_gt_0.0" in nodes.columns
-    assert dict(zip(metadata["key"], metadata["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "7",
-        "null_seed_source": "user",
-    }
+    _assert_compact_null_metadata(
+        edges,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    _assert_compact_null_metadata(
+        summary,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    assert not (tmp_path / "test_global_edges_metadata.tsv").exists()
 
 
 def test_run_cooccurrence_pipeline_compute_fisher_outputs_readable_columns(
