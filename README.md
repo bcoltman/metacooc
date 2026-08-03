@@ -67,7 +67,9 @@ Examples:
 * `R226_gtdb_rev1`
 * `R226_globdb_rev1`
 
-An exact data release must be specified when using published data; MetaCoOc does not silently select a latest revision. Available releases can be listed with `metacooc download --list-data-releases`.
+When `--data-release` is omitted from the CLI, MetaCoOc uses the exact default selected by the release registry: the latest current GlobDB snapshot. The current default is `R226_globdb_rev1`. MetaCoOc prints the selected identifier so that it can be recorded or supplied explicitly in later reproducible runs. Use `metacooc download --list-data-releases` to list all releases and identify the current default.
+
+Supplying an exact identifier pins a run to that immutable snapshot. Explicit custom Ingredients and metadata paths suppress the corresponding default; the Python APIs continue to require explicit release or path selection.
 
 A revision is a complete publication snapshot. If any scientific input changes, both variants and the shared files are published under the next revision, even when some contents are unchanged. Previous revisions remain immutable and downloadable.
 
@@ -76,7 +78,7 @@ Older semver-style identifiers such as `2.0.0_gtdb` are not accepted as publishe
 
 Newly formatted Ingredients directories store `"format_version": 1` in their manifest. This integer identifies the on-disk schema, and MetaCoOc rejects directories whose format version is missing or unsupported. Official filenames also include `format1`. The exact source release is stored separately as `data_release` in both the manifest and the in-memory `Ingredients` object.
 
-The release registry is refreshed from the MetaCoOc GitHub repository at most once per day, with a packaged registry as an offline fallback. This allows compatible data-only releases to become available without requiring a new MetaCoOc package release.
+The release registry is refreshed from the MetaCoOc GitHub repository at most once per day, with a packaged registry as an offline fallback. The registry records the exact CLI default, allowing compatible data-only releases and the default selection to change without requiring a new MetaCoOc package release.
 
 ---
 
@@ -87,19 +89,25 @@ The release registry is refreshed from the MetaCoOc GitHub repository at most on
 If you run:
 
 ```bash
-metacooc download --data-release R226_gtdb_rev1
+metacooc download
 ```
 
 MetaCoOc will:
 
-1. Resolve the exact published snapshot
+1. Resolve and report the registry-selected latest GlobDB snapshot
 2. Download and SHA-256 verify the raw and aggregated Ingredients archives
 3. Install them into the default user data directory for your operating system
 
 You can override the location using `--data_dir`:
 
 ```bash
-metacooc download --data-release R226_gtdb_rev1 --data_dir ./my_data
+metacooc download --data_dir ./my_data
+```
+
+To download GTDB instead, or to pin any exact snapshot, supply it explicitly:
+
+```bash
+metacooc download --data-release R226_gtdb_rev1
 ```
 
 You can also set `METACOOC_DATA_DIR` to choose a persistent default location
@@ -113,18 +121,18 @@ After the files are downloaded, all subsequent analyses reuse the local copies.
 
 #### What gets downloaded
 
-For a data release such as:
+For the current default data release:
 
 ```
-R226_gtdb_rev1
+R226_globdb_rev1
 ```
 
 The following files are retrieved from Zenodo and installed locally:
 
 ##### Variant-specific
 
-* `ingredients_raw_R226_gtdb_rev1_format1/`
-* `ingredients_aggregated_R226_gtdb_rev1_format1/`
+* `ingredients_raw_R226_globdb_rev1_format1/`
+* `ingredients_aggregated_R226_globdb_rev1_format1/`
 
 These are prebuilt **Ingredients** directories containing sparse matrices, labels, manifests, biome annotations, and cached taxonomic lookups.
 
@@ -147,7 +155,7 @@ In short:
 This potentially large file is not downloaded by default. Download it when you need metadata searches or metadata-based cohort construction:
 
 ```bash
-metacooc download --data-release R226_gtdb_rev1 --include-metadata
+metacooc download --include-metadata
 ```
 
 It is used for:
@@ -164,19 +172,18 @@ Biome classification data are stored inside each Ingredients directory. The publ
 ### 1) Download a dataset
 
 ```bash
-metacooc download --data-release R226_gtdb_rev1
+metacooc download
 ```
 
 
 ### 2) Run a complete pipeline
 
-Example: association of taxa with the metadata term “soil”, using a global null background.
+Example: association of taxa with the embedded biome term “soil”, using a global null background.
 (This assumes the above download command has been used and therefore uses the default data directory.)
 
 ```bash
 metacooc association \
-  --data-release R226_gtdb_rev1 \
-  --search_mode metadata \
+  --search_mode biome \
   --search_string soil \
   --output_dir results/soil_assoc
 ```
@@ -207,13 +214,14 @@ The three analysis pipelines (`association`, `cooccurrence`, and `structure`) fo
 4. define a **null/background** population (`--null_scope`, `--null_model`, …)
 5. compute statistics and write TSV outputs (and plots where applicable)
 
+The examples below use the registry-selected default release. Add an exact `--data-release` to pin a run or select GTDB.
+
 ### Co-occurrence
 
 **Purpose:** build a directed taxon–taxon network where edges represent conditional co-occurrence above `--min_conditional_probability`.
 
 ```bash
 metacooc cooccurrence \
-  --data-release R226_gtdb_rev1 \
   --search_mode taxa_context \
   --search_string "g__Nitrospira" \
   --ranks_for_search_inclusion genus \
@@ -245,7 +253,6 @@ Notes:
 
 ```bash
 metacooc association \
-  --data-release R226_gtdb_rev1 \
   --search_mode metadata \
   --search_string soil \
   --output_dir results/soil_assoc_globdb \
@@ -253,6 +260,8 @@ metacooc association \
   --min_taxa_count 50 \
   --min_sample_count 20
 ```
+
+This metadata-based example requires the optional metadata table; install it first with `metacooc download --include-metadata` for the same selected release.
 
 Outputs:
 
@@ -270,7 +279,6 @@ The primary ranking columns are `p_cohort_given_taxon` (specificity: among sampl
 
 ```bash
 metacooc structure \
-  --data-release R226_gtdb_rev1 \
   --search_mode biome \
   --search_string soil \
   --output_dir results/soil_structure \
@@ -302,7 +310,6 @@ If null computation is enabled (via `nm_n_reps > 0`), the TSV also includes null
 
 ```bash
 metacooc biome_distribution \
-  --data-release R226_gtdb_rev1 \
   --output_dir results/biomes
 ```
 
