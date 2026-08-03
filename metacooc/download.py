@@ -19,11 +19,10 @@ than downloaded as a separate file.
 Use the --force flag to re-download files even if they already exist.
 
 Usage (CLI):
-    metacooc download --data-release R226_gtdb_rev1 --data_dir /path/to/data [--force]
+    metacooc download [--data-release R226_gtdb_rev1] [--data_dir /path/to/data] [--force]
 """
 
 import os
-import argparse
 import hashlib
 import requests
 import gzip
@@ -36,6 +35,7 @@ from metacooc._data_config import (
     DataReleaseError,
     available_releases,
     describe_data_release,
+    get_default_data_release,
     is_current_release,
     load_registry,
     resolve_release,
@@ -112,7 +112,12 @@ def download_data(
             return
         print("Published data releases:")
         for release in releases:
-            marker = " [current]" if is_current_release(release, registry) else ""
+            labels = []
+            if is_current_release(release, registry):
+                labels.append("current")
+            if release == get_default_data_release(registry):
+                labels.append("default")
+            marker = f" [{', '.join(labels)}]" if labels else ""
             print(f"  {describe_data_release(release)}{marker}")
         return
 
@@ -205,37 +210,3 @@ def download_data(
             if os.path.exists(temp_path):
                 os.remove(temp_path)
                 print(f"Removed temporary file {temp_path}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Download metacooc data files")
-    parser.add_argument(
-        "--data_dir",
-        type=str,
-        default=str(default_data_dir()),
-        help="Target directory for data files (default: %(default)s)",
-    )
-    parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
-    parser.add_argument(
-        "--data-release",
-        default=None,
-        help="Specify the exact data release to download, such as R226_gtdb_rev1",
-    )
-    parser.add_argument("--list-data-releases", action="store_true", help="List available data releases")
-    parser.add_argument(
-        "--include-metadata",
-        action="store_true",
-        help="Also download the shared SRA metadata table",
-    )
-    args = parser.parse_args()
-    
-    download_data(
-        args.data_dir,
-        list_data_releases=args.list_data_releases,
-        data_release=args.data_release,
-        force=args.force,
-        include_metadata=args.include_metadata,
-    )
-
-if __name__ == "__main__":
-    main()

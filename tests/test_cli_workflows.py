@@ -104,10 +104,229 @@ def test_cli_uses_data_release_names_and_rejects_legacy_flags():
     assert "Traceback" not in invalid_release.stderr
     assert "must match R<number>_<variant>_rev<number>" in invalid_release.stderr
 
-    missing_release = run_cli_no_check("download")
-    assert missing_release.returncode != 0
-    assert "exact --data-release is required" in missing_release.stderr
 
+@pytest.mark.cli
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["download"],
+        [
+            "search",
+            "--search_mode",
+            "biome",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            "results",
+        ],
+        ["filter", "--output_dir", "results", "--min_taxa_count", "2"],
+        [
+            "cooccurrence",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            "results",
+        ],
+        [
+            "association",
+            "--search_mode",
+            "biome",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            "results",
+        ],
+        [
+            "structure",
+            "--search_mode",
+            "biome",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            "results",
+        ],
+        ["biome_distribution", "--output_dir", "results"],
+    ],
+)
+def test_cli_applies_registry_default_to_published_data_commands(
+    monkeypatch,
+    capsys,
+    registry_factory,
+    argv,
+):
+    import metacooc._data_config as config
+    from metacooc.cli import build_parser, prepare_cli_args
+
+    registry = registry_factory()
+    monkeypatch.setattr(config, "load_registry", lambda: registry)
+    args = build_parser().parse_args(argv)
+
+    prepare_cli_args(args)
+
+    assert args.data_release == "R226_globdb_rev1"
+    assert "Using default data release: R226_globdb_rev1" in capsys.readouterr().out
+
+
+@pytest.mark.cli
+def test_cli_custom_and_explicit_metadata_sources_suppress_default(
+    tmp_path,
+    capsys,
+    monkeypatch,
+    registry_factory,
+):
+    import metacooc._data_config as config
+    from metacooc.cli import build_parser, prepare_cli_args
+
+    custom = tmp_path / "ingredients"
+    custom.mkdir()
+    metadata = tmp_path / "metadata.tsv"
+    metadata.write_text("acc\tterm\n", encoding="utf-8")
+    parser = build_parser()
+
+    custom_args = parser.parse_args(
+        [
+            "search",
+            "--search_mode",
+            "biome",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            str(tmp_path / "biome"),
+            "--custom_ingredients",
+            str(custom),
+        ]
+    )
+    prepare_cli_args(custom_args)
+    assert custom_args.data_release is None
+
+    metadata_args = parser.parse_args(
+        [
+            "search",
+            "--search_mode",
+            "metadata",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            str(tmp_path / "metadata"),
+            "--metadata_file",
+            str(metadata),
+        ]
+    )
+    prepare_cli_args(metadata_args)
+    assert metadata_args.data_release is None
+    assert "Using default data release" not in capsys.readouterr().out
+
+    registry = registry_factory()
+    monkeypatch.setattr(config, "load_registry", lambda: registry)
+    workflow_args = parser.parse_args(
+        [
+            "association",
+            "--search_mode",
+            "metadata",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            str(tmp_path / "association"),
+            "--metadata_file",
+            str(metadata),
+        ]
+    )
+    prepare_cli_args(workflow_args)
+    assert workflow_args.data_release == "R226_globdb_rev1"
+
+    tax_profile = tmp_path / "profile.tsv"
+    tax_profile.write_text("sample\ttaxonomy\tcoverage\n", encoding="utf-8")
+    format_args = parser.parse_args(
+        [
+            "format",
+            "--tax_profile",
+            str(tax_profile),
+            "--output_dir",
+            str(tmp_path / "formatted"),
+        ]
+    )
+    prepare_cli_args(format_args)
+    assert format_args.data_release is None
+
+    list_args = parser.parse_args(["download", "--list-data-releases"])
+    prepare_cli_args(list_args)
+    assert list_args.data_release is None
+
+
+@pytest.mark.cli
+def test_cli_contract_rejects_incompatible_and_stale_options(tmp_path):
+    from metacooc.cli import build_parser, prepare_cli_args
+
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "plot",
+                "--analysis_file",
+                str(tmp_path / "analysis.tsv"),
+                "--output_dir",
+                str(tmp_path),
+                "--aggregated",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "analysis",
+                "--analysis_type",
+                "structure",
+                "--filtered_file",
+                str(tmp_path / "ingredients"),
+                "--output_dir",
+                str(tmp_path),
+                "--aggregated",
+            ]
+        )
+
+    custom = tmp_path / "ingredients"
+    custom.mkdir()
+    args = parser.parse_args(
+        [
+            "cooccurrence",
+            "--search_mode",
+            "taxa_context",
+            "--search_string",
+            "g__Rhizo",
+            "--output_dir",
+            str(tmp_path / "cooc"),
+            "--custom_ingredients",
+            str(custom),
+            "--null_scope",
+            "taxa",
+        ]
+    )
+    with pytest.raises(SystemExit):
+        prepare_cli_args(args)
+
+
+@pytest.mark.cli
+def test_cli_missing_custom_path_and_unknown_command_do_not_traceback(tmp_path):
+    missing = run_cli_no_check(
+        "search",
+        "--search_mode",
+        "biome",
+        "--search_string",
+        "soil",
+        "--output_dir",
+        tmp_path / "out",
+        "--custom_ingredients",
+        tmp_path / "missing",
+    )
+    assert missing.returncode != 0
+    assert "must be an existing directory" in missing.stderr
+    assert "Traceback" not in missing.stderr
+
+    unknown = run_cli_no_check("not-a-command")
+    assert unknown.returncode == 2
+    assert "Unknown command" in unknown.stderr
+    assert "Traceback" not in unknown.stderr
 
 @pytest.mark.cli
 def test_cli_conditional_probability_flags_parse_and_reject_old_names(tmp_path):
@@ -974,5 +1193,6 @@ def test_cli_invalid_query_grammar_fails_clearly(tmp_path, cli_formatted_dir):
         tmp_path / "bad_metadata",
     )
     assert missing_metadata_source.returncode != 0
-    assert "exact --data-release is required" in missing_metadata_source.stderr
-    assert "--metadata_file" in missing_metadata_source.stderr
+    assert "Traceback" not in missing_metadata_source.stderr
+    assert "R226_globdb_rev1" in missing_metadata_source.stderr
+    assert "--include-metadata" in missing_metadata_source.stderr

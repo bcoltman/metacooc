@@ -224,4 +224,6 @@ def test_download_listing_shows_all_snapshots_and_marks_current(
     assert "R226_globdb_rev1" in output
     assert "R226_gtdb_rev2" in output
     assert "R226_globdb_rev2" in output
-    assert output.count("[current]") == 2
+    assert output.count("[current") == 2
+    assert "R226_globdb_rev2 (GLOBDB" in output
+    assert "[current, default]" in output

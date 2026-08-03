@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 
+from metacooc._cli_validation import _subparser_error, prepare_cli_args
 from metacooc._paths import DATA_DIR_ENV_VAR, default_data_dir
 
 RANK_CHOICES = ["domain", "phylum", "class", "order", "family", "genus", "species"]
@@ -135,12 +136,6 @@ def add_subcommand(subparsers, name, help_text, func):
     return sub
 
 
-def check_required_args(args, required_args, subparser):
-    missing = [arg for arg in required_args if getattr(args, arg) is None]
-    if missing:
-        subparser.error(f"The following arguments are required: {', '.join(missing)}")
-
-
 # Argument group helpers
 def add_help(parser, group=None):
     (group or parser).add_argument(
@@ -182,8 +177,10 @@ def add_data_release(parser, group=None, mode: str = "load"):
     """
     if mode == "load":
         help_text = (
-            "Specify the exact data release to load, for example R226_gtdb_rev1. "
-            "Versions available for download can be listed with "
+            "Exact published data release to load. When omitted, commands that "
+            "need published data use the registry-selected latest GlobDB release. "
+            "The default is not applied when an explicit custom data source is "
+            "used. Published releases can be listed with "
             "'metacooc download --list-data-releases'."
         )
     elif mode == "format":
@@ -241,8 +238,8 @@ def add_metadata_file(parser, group=None):
     (group or parser).add_argument(
         "--metadata_file",
         help=(
-            "Explicit metadata TSV file to use for metadata search instead of "
-            "resolving one from --data_dir/--data-release."
+            "Explicit metadata TSV file to use instead of resolving metadata "
+            "from --data_dir and the selected data release."
         ),
     )
 
@@ -356,13 +353,6 @@ def add_null_scope_args(parser, group=None):
             "to be included during BFS expansion (default: %(default)s)."
         ),
     )
-
-
-def validate_null_scope_args(args, subparser):
-    if args.null_scope in ["biome", "biome_taxa"] and args.null_biome_query is None:
-        subparser.error("--null_biome_query is required when null_scope is 'biome' or 'biome_taxa'")
-    if args.null_scope in ["metadata", "metadata_taxa"] and args.null_metadata_query is None:
-        subparser.error("--null_metadata_query is required when null_scope is 'metadata' or 'metadata_taxa'")
 
 
 def add_count_filter_args(
@@ -532,7 +522,7 @@ def add_fisher_args(parser, group=None):
     )
 
 
-def add_large_and_max_pairs_args(parser, group=None):
+def add_large_and_max_pairs_args(parser, group=None, max_pairs_default=100000):
     (group or parser).add_argument(
         "--large",
         action="store_true",
@@ -542,7 +532,7 @@ def add_large_and_max_pairs_args(parser, group=None):
     (group or parser).add_argument(
         "--max_pairs",
         type=positive_int,
-        default=100000,
+        default=max_pairs_default,
         help="If the number of taxon pairs exceeds this value, cooccurrence will not be determined unless --large is used.",
     )
 
@@ -581,7 +571,7 @@ def add_list_column_names(parser, group=None):
     (group or parser).add_argument(
         "--list_column_names",
         action="store_true",
-        help="metadata mode only: WARNING: May produce lots of output. List available column names from NCBI metadata.",
+        help="List column names from the selected metadata TSV instead of running a search.",
     )
 
 
@@ -635,7 +625,7 @@ def add_tax_profile(parser, group=None):
 def add_sample_to_biome_file(parser, group=None):
     (group or parser).add_argument(
         "--sample_to_biome_file",
-        help="A CSV file linking SRA accessions to biome classifications.",
+        help="Optional TSV file linking SRA accessions to biome classifications.",
     )
 
 
@@ -726,20 +716,6 @@ def format_command(args):
 
 def search_command(args, subparser):
     from metacooc.search import search_data
-
-    if not args.list_column_names and not args.list_biomes:
-        missing = []
-        if not args.search_mode:
-            missing.append("--search_mode")
-        if not args.search_string:
-            missing.append("--search_string")
-        if not args.output_dir:
-            missing.append("--output_dir")
-        if missing:
-            subparser.error(
-                "The following arguments are required unless --list_column_names "
-                f"or --list_biomes is used: {', '.join(missing)}"
-            )
 
     args.tag = format_tag(args.tag, args.aggregated)
 
@@ -832,7 +808,7 @@ def analysis_command(args):
             tag=args.tag,
             filter_rank=args.filter_rank,
             large=args.large,
-            max_pairs=args.max_pairs,
+            max_pairs=100000 if args.max_pairs is None else args.max_pairs,
             min_conditional_probability=(
                 0.0
                 if args.min_conditional_probability is None
@@ -1095,7 +1071,7 @@ def build_parser():
         "ANALYSIS TYPE SPECIFIC",
         "Inputs required only by selected --analysis_type values.",
     )
-    output = argument_group(analysis_sub, "OUTPUT", "Set output filename labels and Ingredients variant labels.")
+    output = argument_group(analysis_sub, "OUTPUT", "Set output filename labels.")
     analysis_opts = argument_group(
         analysis_sub,
         "ANALYSIS",
@@ -1111,9 +1087,13 @@ def build_parser():
     add_filtered_file(analysis_sub, group=req)
     add_null_file(analysis_sub, group=mode_inputs, required=False)
     add_help(analysis_sub, group=general)
-    add_tag_and_aggregated(analysis_sub, group=output)
+    add_tag(analysis_sub, group=output)
     add_min_conditional_probability_arg(analysis_sub, group=analysis_opts, default=None)
-    add_large_and_max_pairs_args(analysis_sub, group=analysis_opts)
+    add_large_and_max_pairs_args(
+        analysis_sub,
+        group=analysis_opts,
+        max_pairs_default=None,
+    )
     analysis_opts.add_argument(
         "--filter_rank",
         choices=RANK_CHOICES,
@@ -1131,12 +1111,12 @@ def build_parser():
     )
     req = required_group(plot_sub, "Inputs and output location for plotting.")
     general = argument_group(plot_sub, "GENERAL", None)
-    output = argument_group(plot_sub, "OUTPUT", "Set output filename labels and Ingredients variant labels.")
+    output = argument_group(plot_sub, "OUTPUT", "Set output filename labels.")
     plot_opts = argument_group(plot_sub, "PLOT", "Control plot highlighting thresholds.")
     add_output_dir(plot_sub, group=req)
     add_analysis_file(plot_sub, group=req)
     add_help(plot_sub, group=general)
-    add_tag_and_aggregated(plot_sub, group=output)
+    add_tag(plot_sub, group=output)
     add_q_threshold_arg(plot_sub, group=plot_opts)
 
     # Cooccurrence
@@ -1378,31 +1358,21 @@ def parse_cli():
 
     parser = build_parser()
     args = parser.parse_args()
-
-    if getattr(args, "custom_ingredients", None) and getattr(
-        args, "data_release", None
-    ):
-        parser.error(
-            "--custom_ingredients and --data-release are mutually exclusive; "
-            "custom Ingredients use the identity stored in their manifest"
-        )
-    if (
-        getattr(args, "command", None) == "format"
-        and getattr(args, "tag", None)
-        and is_canonical_data_release(getattr(args, "data_release", None))
-    ):
-        parser.error(
-            "--tag cannot be combined with a canonical --data-release; official "
-            "filenames are deterministic"
-        )
-
-    if hasattr(args, "null_scope"):
-        validate_null_scope_args(args, args.func.__subparser__)
-
     try:
+        prepare_cli_args(args)
+        if (
+            getattr(args, "command", None) == "format"
+            and getattr(args, "tag", None)
+            and is_canonical_data_release(getattr(args, "data_release", None))
+        ):
+            _subparser_error(
+                args,
+                "--tag cannot be combined with a canonical --data-release; official "
+                "filenames are deterministic",
+            )
         args.func(args)
-    except (DataReleaseError, IngredientsFormatError) as e:
-        parser.error(str(e))
+    except (DataReleaseError, IngredientsFormatError, OSError, ValueError) as e:
+        _subparser_error(args, str(e))
 
 
 if __name__ == "__main__":
