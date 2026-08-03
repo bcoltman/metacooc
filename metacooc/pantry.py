@@ -16,9 +16,10 @@ import scipy.sparse as sp
 
 from metacooc._data_config import (
     DataReleaseError,
+    INGREDIENTS_FORMAT_VERSION,
     IngredientsFormatError,
-    LATEST_DATA_RELEASE,
     get_file_info,
+    is_canonical_data_release,
     missing_data_release_message,
 )
 from metacooc.utils import (
@@ -30,7 +31,6 @@ from metacooc.utils import (
     _deepest_rank_token
 )
 
-INGREDIENTS_FORMAT_VERSION = 1
 AGGREGATED_SUFFIX = " AGGREGATED"
 
 
@@ -997,8 +997,12 @@ def load_ingredients(
     
     # determine ingredients file path
     if not custom_ingredients:
-        defaulted_data_release = data_release is None
-        data_release = data_release or LATEST_DATA_RELEASE
+        if data_release is None:
+            raise DataReleaseError(
+                "An exact --data-release is required when loading published "
+                "Ingredients, for example 'R226_gtdb_rev1'. Use "
+                "'metacooc download --list-data-releases' to list published releases."
+            )
         filenames, _ = get_file_info(data_release)
         if not data_dir:
             raise ValueError(
@@ -1032,7 +1036,6 @@ def load_ingredients(
                 data_release=data_release,
                 missing_path=filepath,
                 file_kind="Ingredients",
-                defaulted=defaulted_data_release,
             )
         )
     ingredients = _ingredients_from_directory(filepath)
@@ -1063,8 +1066,17 @@ def save_ingredients(ingredients: "Ingredients",
         ingredients.data_release = data_release
         
     kind = "ingredients_aggregated" if aggregated else "ingredients_raw"
-    label = tag or data_release or getattr(ingredients, "data_release", None)
-    suffix = f"_{label}" if label else ""
+    identity = data_release or getattr(ingredients, "data_release", None)
+    if tag and is_canonical_data_release(identity):
+        raise DataReleaseError(
+            "--tag cannot be combined with a canonical data release; official "
+            "Ingredients filenames are determined by data release and format version."
+        )
+    label = tag or identity
+    if label and is_canonical_data_release(label):
+        suffix = f"_{label}_format{INGREDIENTS_FORMAT_VERSION}"
+    else:
+        suffix = f"_{label}" if label else ""
     dirpath = os.path.join(output_dir, f"{kind}{suffix}")
     path = _write_ingredients_directory(ingredients, dirpath, aggregated=aggregated)
     if archive:

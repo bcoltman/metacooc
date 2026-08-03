@@ -10,6 +10,55 @@ from metacooc.pantry import load_ingredients
 
 
 @pytest.fixture
+def registry_factory():
+    def make_registry(*, revisions=(1,), formats=(1,), current=None):
+        current_revision = current or max(revisions)
+        release_revisions = {}
+        for revision in revisions:
+            support = {
+                "zenodo_record": str(1000 + revision),
+                "sra_metadata": {
+                    "filename": f"sra_metadata_R226_rev{revision}.tsv.gz",
+                    "sha256": "a" * 64,
+                },
+                "sample_to_biome": {
+                    "filename": f"sample_to_biome_R226_rev{revision}.tsv.gz",
+                    "sha256": "b" * 64,
+                },
+            }
+            format_entries = {}
+            for format_version in formats:
+                entry = {"zenodo_record": str(2000 + revision * 10 + format_version)}
+                for variant in ("gtdb", "globdb"):
+                    entry[variant] = {}
+                    for kind, checksum in (("raw", "c"), ("aggregated", "d")):
+                        entry[variant][kind] = {
+                            "filename": (
+                                f"ingredients_{kind}_R226_{variant}_rev{revision}_"
+                                f"format{format_version}.tar.gz"
+                            ),
+                            "sha256": checksum * 64,
+                        }
+                format_entries[str(format_version)] = entry
+            release_revisions[str(revision)] = {
+                "support": support,
+                "ingredients_formats": format_entries,
+            }
+        return {
+            "registry_format_version": 1,
+            "updated": "2026-08-03",
+            "releases": {
+                "R226": {
+                    "current_revision": current_revision,
+                    "revisions": release_revisions,
+                }
+            },
+        }
+
+    return make_registry
+
+
+@pytest.fixture
 def fixture_dir() -> Path:
     return Path(__file__).parent / "data"
 

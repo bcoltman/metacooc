@@ -59,42 +59,47 @@ MetaCoOc uses prebuilt datasets hosted on **Zenodo**. Data releases identify the
 A complete data-release identifier must be:
 
 ```
-R<database_release>_<variant>
+R<database_release>_<variant>_rev<revision>
 ```
 
 Examples:
 
-* `R226_gtdb`
-* `R226_globdb`
+* `R226_gtdb_rev1`
+* `R226_globdb_rev1`
 
-If no data release is specified, MetaCoOc defaults to the latest available release with the default variant (`gtdb`).
+An exact data release must be specified when using published data; MetaCoOc does not silently select a latest revision. Available releases can be listed with `metacooc download --list-data-releases`.
+
+A revision is a complete publication snapshot. If any scientific input changes, both variants and the shared files are published under the next revision, even when some contents are unchanged. Previous revisions remain immutable and downloadable.
+
 The data release is separate from both the MetaCoOc Python package version and the internal Ingredients storage `format_version`.
-Older semver-style identifiers such as `2.0.0_gtdb` are not accepted.
+Older semver-style identifiers such as `2.0.0_gtdb` are not accepted as published-data selectors.
 
-Newly formatted Ingredients directories store `"format_version": 1` in their manifest. This integer identifies the on-disk schema, and MetaCoOc rejects directories whose format version is missing or unsupported. The source release is stored separately as `data_release` in both the manifest and the in-memory `Ingredients` object.
+Newly formatted Ingredients directories store `"format_version": 1` in their manifest. This integer identifies the on-disk schema, and MetaCoOc rejects directories whose format version is missing or unsupported. Official filenames also include `format1`. The exact source release is stored separately as `data_release` in both the manifest and the in-memory `Ingredients` object.
+
+The release registry is refreshed from the MetaCoOc GitHub repository at most once per day, with a packaged registry as an offline fallback. This allows compatible data-only releases to become available without requiring a new MetaCoOc package release.
 
 ---
 
 ### Downloading data
 
-#### Default behaviour
+#### Ingredients download
 
 If you run:
 
 ```bash
-metacooc download
+metacooc download --data-release R226_gtdb_rev1
 ```
 
 MetaCoOc will:
 
-1. Use the **latest available data release** (e.g. `R226_gtdb`)
-2. Download the raw and aggregated Ingredients archives
+1. Resolve the exact published snapshot
+2. Download and SHA-256 verify the raw and aggregated Ingredients archives
 3. Install them into the default user data directory for your operating system
 
 You can override the location using `--data_dir`:
 
 ```bash
-metacooc download --data_dir ./my_data
+metacooc download --data-release R226_gtdb_rev1 --data_dir ./my_data
 ```
 
 You can also set `METACOOC_DATA_DIR` to choose a persistent default location
@@ -111,15 +116,15 @@ After the files are downloaded, all subsequent analyses reuse the local copies.
 For a data release such as:
 
 ```
-R226_gtdb
+R226_gtdb_rev1
 ```
 
 The following files are retrieved from Zenodo and installed locally:
 
 ##### Variant-specific
 
-* `ingredients_raw_R226_gtdb/`
-* `ingredients_aggregated_R226_gtdb/`
+* `ingredients_raw_R226_gtdb_rev1_format1/`
+* `ingredients_aggregated_R226_gtdb_rev1_format1/`
 
 These are prebuilt **Ingredients** directories containing sparse matrices, labels, manifests, biome annotations, and cached taxonomic lookups.
 
@@ -137,12 +142,12 @@ In short:
 
 ##### Optional base-release metadata
 
-* `sra_metadata_R226.tsv`
+* `sra_metadata_R226_rev1.tsv`
 
 This potentially large file is not downloaded by default. Download it when you need metadata searches or metadata-based cohort construction:
 
 ```bash
-metacooc download --data-release R226_gtdb --include-metadata
+metacooc download --data-release R226_gtdb_rev1 --include-metadata
 ```
 
 It is used for:
@@ -150,7 +155,7 @@ It is used for:
 * metadata searches
 * cohort construction
 
-Biome classification data are stored inside each Ingredients directory and referenced from its manifest, rather than downloaded as a separate shared file.
+Biome classification data are stored inside each Ingredients directory. The publication also contains `sample_to_biome_R226_rev1.tsv.gz` for reproducibility, but MetaCoOc does not download it automatically.
 
 ---
 
@@ -159,17 +164,18 @@ Biome classification data are stored inside each Ingredients directory and refer
 ### 1) Download a dataset
 
 ```bash
-metacooc download
+metacooc download --data-release R226_gtdb_rev1
 ```
 
 
 ### 2) Run a complete pipeline
 
 Example: association of taxa with the metadata term “soil”, using a global null background.
-(This assumes the above download command has been used and therefore uses the default data directory and latest data release.)
+(This assumes the above download command has been used and therefore uses the default data directory.)
 
 ```bash
 metacooc association \
+  --data-release R226_gtdb_rev1 \
   --search_mode metadata \
   --search_string soil \
   --output_dir results/soil_assoc
@@ -207,6 +213,7 @@ The three analysis pipelines (`association`, `cooccurrence`, and `structure`) fo
 
 ```bash
 metacooc cooccurrence \
+  --data-release R226_gtdb_rev1 \
   --search_mode taxa_context \
   --search_string "g__Nitrospira" \
   --ranks_for_search_inclusion genus \
@@ -238,6 +245,7 @@ Notes:
 
 ```bash
 metacooc association \
+  --data-release R226_gtdb_rev1 \
   --search_mode metadata \
   --search_string soil \
   --output_dir results/soil_assoc_globdb \
@@ -262,6 +270,7 @@ The primary ranking columns are `p_cohort_given_taxon` (specificity: among sampl
 
 ```bash
 metacooc structure \
+  --data-release R226_gtdb_rev1 \
   --search_mode biome \
   --search_string soil \
   --output_dir results/soil_structure \
@@ -293,6 +302,7 @@ If null computation is enabled (via `nm_n_reps > 0`), the TSV also includes null
 
 ```bash
 metacooc biome_distribution \
+  --data-release R226_gtdb_rev1 \
   --output_dir results/biomes
 ```
 
@@ -605,7 +615,19 @@ metacooc format \
   --tag custom
 ```
 
-THis assumes 'profiles.tsv' is organised like concatenated singleM profiles (watch out for headers) and that sample_to_biome.tsv is a 2-level labelling of the respective accessions
+This assumes `profiles.tsv` is organised like concatenated SingleM profiles (watch out for headers) and that `sample_to_biome.tsv` is a two-level labelling of the respective accessions.
+
+For an official publication, omit `--tag` and provide the exact revision. The Ingredients schema version is added to the output names automatically:
+
+```bash
+metacooc format \
+  --tax_profile path/to/sandpiper.R226.gtdb.tsv \
+  --output_dir ./release \
+  --sample_to_biome_file path/to/sample_to_biome_R226_rev1.tsv \
+  --aggregated \
+  --data-release R226_gtdb_rev1 \
+  --archive_ingredients
+```
 
 
 ### Using custom Ingredients
@@ -617,12 +639,13 @@ metacooc association \
   --search_mode metadata \
   --search_string soil \
   --custom_ingredients path/to/ingredients_raw_custom \
+  --metadata_file path/to/sra_metadata.tsv \
   --output_dir results/custom_assoc
 ```
 
 ### Notes on metadata
 
-MetaCoOc can optionally download a parsed SRA metadata table (`sra_metadata_<base>.tsv`) for metadata queries by passing `--include-metadata` to `metacooc download`. Biome mappings are stored in Ingredients directories. If you build your own datasets, ensure the required metadata table and Ingredients biome mappings are present, or adjust your workflow to use only taxon-based searches.
+MetaCoOc can optionally download the parsed SRA metadata table belonging to an exact snapshot (`sra_metadata_<base>_rev<revision>.tsv`) by passing `--include-metadata` to `metacooc download`. Biome mappings are stored in Ingredients directories. If you build your own datasets, provide metadata explicitly with `--metadata_file` when needed.
 
 ---
 

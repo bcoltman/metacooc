@@ -80,12 +80,12 @@ def test_cli_uses_data_release_names_and_rejects_legacy_flags():
     from metacooc.cli import build_parser
 
     parser = build_parser()
-    args = parser.parse_args(["download", "--data-release", "R226_gtdb"])
-    assert args.data_release == "R226_gtdb"
+    args = parser.parse_args(["download", "--data-release", "R226_gtdb_rev1"])
+    assert args.data_release == "R226_gtdb_rev1"
     assert args.include_metadata is False
 
     args = parser.parse_args(
-        ["download", "--data-release", "R226_gtdb", "--include-metadata"]
+        ["download", "--data-release", "R226_gtdb_rev1", "--include-metadata"]
     )
     assert args.include_metadata is True
 
@@ -98,11 +98,15 @@ def test_cli_uses_data_release_names_and_rejects_legacy_flags():
     invalid_release = run_cli_no_check(
         "download",
         "--data-release",
-        "2.0.0_gtdb",
+        "R226_gtdb",
     )
     assert invalid_release.returncode != 0
     assert "Traceback" not in invalid_release.stderr
-    assert "must match R<number>_<variant>" in invalid_release.stderr
+    assert "must match R<number>_<variant>_rev<number>" in invalid_release.stderr
+
+    missing_release = run_cli_no_check("download")
+    assert missing_release.returncode != 0
+    assert "exact --data-release is required" in missing_release.stderr
 
 
 @pytest.mark.cli
@@ -445,6 +449,27 @@ def cli_formatted_dir(tmp_path, fixture_dir):
     assert (out / "ingredients_raw_cli").exists()
     assert (out / "ingredients_aggregated_cli").exists()
     return out
+
+
+@pytest.mark.cli
+def test_cli_rejects_custom_ingredients_with_data_release(
+    tmp_path, cli_formatted_dir
+):
+    result = run_cli_no_check(
+        "search",
+        "--search_mode",
+        "taxa_context",
+        "--search_string",
+        "g__Rhizo",
+        "--custom_ingredients",
+        cli_formatted_dir / "ingredients_raw_cli",
+        "--data-release",
+        "R226_gtdb_rev1",
+        "--output_dir",
+        tmp_path / "invalid",
+    )
+    assert result.returncode != 0
+    assert "mutually exclusive" in result.stderr
 
 
 @pytest.mark.cli
@@ -949,5 +974,5 @@ def test_cli_invalid_query_grammar_fails_clearly(tmp_path, cli_formatted_dir):
         tmp_path / "bad_metadata",
     )
     assert missing_metadata_source.returncode != 0
-    assert "Missing" in missing_metadata_source.stderr
-    assert "sra_metadata" in missing_metadata_source.stderr
+    assert "exact --data-release is required" in missing_metadata_source.stderr
+    assert "--metadata_file" in missing_metadata_source.stderr

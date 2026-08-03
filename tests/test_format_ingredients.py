@@ -197,6 +197,42 @@ def test_format_data_archive_option_writes_tarballs(tmp_path, fixture_dir):
     assert (out / "ingredients_aggregated_archive.tar.gz").exists()
 
 
+def test_format_official_release_uses_revision_and_schema_in_names(
+    tmp_path, fixture_dir
+):
+    out = tmp_path / "official"
+    format_data(
+        tax_profile=str(fixture_dir / "tax_profile.tsv"),
+        output_dir=str(out),
+        sample_to_biome_file=str(fixture_dir / "sample_to_biome.tsv"),
+        aggregated=True,
+        data_release="R226_gtdb_rev1",
+        archive_ingredients=True,
+    )
+
+    raw = out / "ingredients_raw_R226_gtdb_rev1_format1"
+    aggregated = out / "ingredients_aggregated_R226_gtdb_rev1_format1"
+    assert raw.is_dir()
+    assert aggregated.is_dir()
+    assert (out / f"{raw.name}.tar.gz").exists()
+    assert (out / f"{aggregated.name}.tar.gz").exists()
+    manifest = json.loads((raw / "manifest.json").read_text())
+    assert manifest["data_release"] == "R226_gtdb_rev1"
+    assert manifest["format_version"] == 1
+
+
+def test_format_rejects_tag_for_official_release_before_reading_input(tmp_path):
+    from metacooc._data_config import DataReleaseError
+
+    with pytest.raises(DataReleaseError, match="--tag cannot be combined"):
+        format_data(
+            tax_profile=str(tmp_path / "not-read.tsv"),
+            output_dir=str(tmp_path / "out"),
+            tag="custom",
+            data_release="R226_gtdb_rev1",
+        )
+
+
 def test_count_operations_do_not_overflow_uint8_presence():
     n_samples = 301
     matrix = sp.lil_matrix((2, n_samples), dtype=np.uint8)

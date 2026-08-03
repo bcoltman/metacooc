@@ -177,12 +177,12 @@ def add_data_release(parser, group=None, mode: str = "load"):
     Add --data-release CLI option.
 
     mode:
-        "load"   -> select which release to load (default: latest)
+        "load"   -> select an exact published release
         "format" -> label/release to stamp into generated files (default: none)
     """
     if mode == "load":
         help_text = (
-            "Specify which data release to load (default: latest). "
+            "Specify the exact data release to load, for example R226_gtdb_rev1. "
             "Versions available for download can be listed with "
             "'metacooc download --list-data-releases'."
         )
@@ -1370,10 +1370,31 @@ def build_parser():
 
 
 def parse_cli():
-    from metacooc._data_config import DataReleaseError, IngredientsFormatError
+    from metacooc._data_config import (
+        DataReleaseError,
+        IngredientsFormatError,
+        is_canonical_data_release,
+    )
 
     parser = build_parser()
     args = parser.parse_args()
+
+    if getattr(args, "custom_ingredients", None) and getattr(
+        args, "data_release", None
+    ):
+        parser.error(
+            "--custom_ingredients and --data-release are mutually exclusive; "
+            "custom Ingredients use the identity stored in their manifest"
+        )
+    if (
+        getattr(args, "command", None) == "format"
+        and getattr(args, "tag", None)
+        and is_canonical_data_release(getattr(args, "data_release", None))
+    ):
+        parser.error(
+            "--tag cannot be combined with a canonical --data-release; official "
+            "filenames are deterministic"
+        )
 
     if hasattr(args, "null_scope"):
         validate_null_scope_args(args, args.func.__subparser__)
