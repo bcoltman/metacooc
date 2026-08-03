@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from platformdirs import user_data_dir
+from platformdirs import user_cache_dir, user_data_dir
 
 
 DATA_DIR_ENV_VAR = "METACOOC_DATA_DIR"
@@ -14,3 +14,7 @@ def default_data_dir() -> Path:
     if configured:
         return Path(configured).expanduser()
     return Path(user_data_dir("metacooc", appauthor=False)) / "data"
+
+
+def default_cache_dir() -> Path:
+    return Path(user_cache_dir("metacooc", appauthor=False))

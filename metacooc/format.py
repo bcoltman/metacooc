@@ -16,6 +16,7 @@ from scipy.sparse import csr_matrix, vstack
 import warnings
 from typing import Optional
 
+from metacooc._data_config import DataReleaseError, is_canonical_data_release
 from metacooc.pantry import Ingredients, _read_sample_to_biome, save_ingredients
 
 
@@ -140,6 +141,11 @@ def format_data(
         tag: Optional filename suffix.
         data_release: Optional source release label to embed in Ingredients.
     """
+    if tag and is_canonical_data_release(data_release):
+        raise DataReleaseError(
+            "--tag cannot be combined with a canonical data release; official "
+            "Ingredients filenames are determined by data release and format version."
+        )
     
     # load biome mapping
     sample_to_biome = {}

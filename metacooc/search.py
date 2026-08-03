@@ -799,10 +799,14 @@ def search_data_obj(
             raise ValueError("'->' syntax is not supported in metadata mode")
 
         if metadata_file is None:
-            defaulted_data_release = data_release is None
             if not data_dir:
                 raise ValueError("data_dir must be provided if searching metadata without metadata_file")
-            data_release = data_release or LATEST_DATA_RELEASE
+            if data_release is None:
+                raise DataReleaseError(
+                    "An exact --data-release is required when resolving published "
+                    "metadata, for example 'R226_gtdb_rev1'; alternatively, "
+                    "provide an explicit --metadata_file."
+                )
             filenames, _ = get_file_info(data_release)
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
             if not os.path.exists(metadata_file):
@@ -812,7 +816,6 @@ def search_data_obj(
                         data_release=data_release,
                         missing_path=metadata_file,
                         file_kind="metadata",
-                        defaulted=defaulted_data_release,
                     )
                 )
         elif not os.path.exists(metadata_file):
@@ -960,10 +963,14 @@ def search_data(
 
     if list_column_names:
         if metadata_file is None:
-            defaulted_data_release = data_release is None
             if not data_dir:
                 raise ValueError("data_dir must be provided if listing metadata columns without metadata_file")
-            data_release = data_release or LATEST_DATA_RELEASE
+            if data_release is None:
+                raise DataReleaseError(
+                    "An exact --data-release is required when resolving published "
+                    "metadata, for example 'R226_gtdb_rev1'; alternatively, "
+                    "provide an explicit --metadata_file."
+                )
             filenames, _ = get_file_info(data_release)
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
             if not os.path.exists(metadata_file):
@@ -973,7 +980,6 @@ def search_data(
                         data_release=data_release,
                         missing_path=metadata_file,
                         file_kind="metadata",
-                        defaulted=defaulted_data_release,
                     )
                 )
         elif not os.path.exists(metadata_file):

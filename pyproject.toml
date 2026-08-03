@@ -61,3 +61,6 @@ metacooc = "metacooc.__main__:main"
 [tool.setuptools]
 packages = ["metacooc"]
 include-package-data = true
+
+[tool.setuptools.package-data]
+metacooc = ["data_registry.v1.json"]

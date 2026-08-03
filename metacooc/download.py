@@ -5,10 +5,10 @@ download.py
 Download initial data files for metacooc.
 
 This script downloads the following default files into the specified data directory:
-    - ingredients_raw_<data_release>/
-    - ingredients_aggregated_<data_release>/
+    - ingredients_raw_<data_release>_format<format_version>/
+    - ingredients_aggregated_<data_release>_format<format_version>/
 
-The shared sra_metadata_<base_release>.tsv file is downloaded only when
+The shared sra_metadata_<base_release>_rev<revision>.tsv file is downloaded only when
 --include-metadata is specified.
 
 Ingredients are downloaded as .tar.gz archives, extracted to Ingredients
@@ -19,11 +19,12 @@ than downloaded as a separate file.
 Use the --force flag to re-download files even if they already exist.
 
 Usage (CLI):
-    metacooc download --data_dir /path/to/data [--force]
+    metacooc download --data-release R226_gtdb_rev1 --data_dir /path/to/data [--force]
 """
 
 import os
 import argparse
+import hashlib
 import requests
 import gzip
 import shutil
@@ -31,32 +32,60 @@ import tarfile
 from tqdm import tqdm
 
 
-from metacooc._data_config import *
+from metacooc._data_config import (
+    DataReleaseError,
+    available_releases,
+    describe_data_release,
+    is_current_release,
+    load_registry,
+    resolve_release,
+)
 from metacooc._paths import default_data_dir
 
 CHUNK_SIZE = 8 * 1024 * 1024
 
 
-def _download_stream(url, temp_path):
+def _download_stream(url, temp_path, expected_sha256=None):
     """
     Stream a remote file to disk without materializing the full response in RAM.
     """
-    with requests.get(url, stream=True) as response:
-        response.raise_for_status()
-        total = int(response.headers.get("content-length") or 0)
+    digest = hashlib.sha256()
+    try:
+        with requests.get(url, stream=True, timeout=(5, 60)) as response:
+            response.raise_for_status()
+            total = int(response.headers.get("content-length") or 0)
 
-        with open(temp_path, "wb") as f, tqdm(
-            total=total or None,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-            desc=os.path.basename(temp_path),
-        ) as progress:
-            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                progress.update(len(chunk))
+            with open(temp_path, "wb") as f, tqdm(
+                total=total or None,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                desc=os.path.basename(temp_path),
+            ) as progress:
+                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    digest.update(chunk)
+                    progress.update(len(chunk))
+    except Exception:
+        try:
+            os.remove(temp_path)
+        except FileNotFoundError:
+            pass
+        raise
+    actual_sha256 = digest.hexdigest()
+    if expected_sha256 is not None and actual_sha256 != expected_sha256:
+        try:
+            os.remove(temp_path)
+        except FileNotFoundError:
+            pass
+        raise DataReleaseError(
+            f"Checksum mismatch for {os.path.basename(temp_path)}: expected "
+            f"{expected_sha256}, got {actual_sha256}. The temporary download "
+            "was removed."
+        )
+    return actual_sha256
 
 
 def download_data(
@@ -72,25 +101,33 @@ def download_data(
     Parameters:
         data_dir (str): Directory where data files will be saved.
         force (bool): If True, force re-download even if the file exists.
-        data_release (str): data release to download (default: latest available).
+        data_release (str): exact data release to download.
         include_metadata (bool): Also download the shared SRA metadata table.
     """
     if list_data_releases:
-        available = ", ".join(available_releases()) or "none"
-        print(f"Available: {available}")
+        registry = load_registry()
+        releases = available_releases(registry)
+        if not releases:
+            print("Available: none")
+            return
+        print("Published data releases:")
+        for release in releases:
+            marker = " [current]" if is_current_release(release, registry) else ""
+            print(f"  {describe_data_release(release)}{marker}")
         return
 
-    data_release = data_release or LATEST_DATA_RELEASE
+    if data_release is None:
+        raise DataReleaseError(
+            "An exact --data-release is required for downloads, for example "
+            "'R226_gtdb_rev1'. Use --list-data-releases to list published releases."
+        )
     data_dir = os.fspath(data_dir or default_data_dir())
 
-    filenames, download_urls = get_file_info(data_release)
-    if not include_metadata:
-        metadata_archive = filenames["sra_metadata"] + ".gz"
-        download_urls = {
-            name: url
-            for name, url in download_urls.items()
-            if name != metadata_archive
-        }
+    resolved = resolve_release(data_release)
+    selected_keys = ["ingredients_raw", "ingredients_aggregated"]
+    if include_metadata:
+        selected_keys.append("sra_metadata")
+    artifacts = {key: resolved.artifacts[key] for key in selected_keys}
         
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
@@ -98,7 +135,8 @@ def download_data(
         
     # Determine how many files need to be downloaded
     missing_files = 0
-    for final_name, url in download_urls.items():
+    for artifact in artifacts.values():
+        final_name = artifact.filename
         if final_name.endswith(".tar.gz"):
             target_name = final_name[:-7]
         elif final_name.endswith(".gz"):
@@ -123,7 +161,9 @@ def download_data(
         print("Download cancelled by user.")
         return
         
-    for final_name, url in download_urls.items():
+    for artifact in artifacts.values():
+        final_name = artifact.filename
+        url = artifact.url
         if final_name.endswith(".tar.gz"):
             target_name = final_name[:-7]
             temp_path = os.path.join(data_dir, target_name + ".tmp.tar.gz")
@@ -141,28 +181,30 @@ def download_data(
             continue
             
         print(f"Downloading {url} to {temp_path} ...")
-        _download_stream(url, temp_path)
+        _download_stream(url, temp_path, artifact.sha256)
         print(f"Downloaded {temp_path}")
         
-        if final_name.endswith(".tar.gz"):
-            print(f"Extracting {temp_path} to {data_dir} ...")
-            with tarfile.open(temp_path, "r:gz") as tar:
-                try:
-                    tar.extractall(path=data_dir, filter="data")
-                except TypeError:
-                    tar.extractall(path=data_dir)
-            print(f"Extracted to {target_path}")
-        elif final_name.endswith(".gz"):
-            print(f"Unzipping {temp_path} to {target_path} ...")
-            with gzip.open(temp_path, 'rb') as f_in, open(target_path, 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
-            print(f"Unzipped to {target_path}")
-        else:
-            shutil.move(temp_path, target_path)
-            print(f"Moved to {target_path}")
-        
-        os.remove(temp_path)
-        print(f"Removed temporary file {temp_path}")
+        try:
+            if final_name.endswith(".tar.gz"):
+                print(f"Extracting {temp_path} to {data_dir} ...")
+                with tarfile.open(temp_path, "r:gz") as tar:
+                    try:
+                        tar.extractall(path=data_dir, filter="data")
+                    except TypeError:
+                        tar.extractall(path=data_dir)
+                print(f"Extracted to {target_path}")
+            elif final_name.endswith(".gz"):
+                print(f"Unzipping {temp_path} to {target_path} ...")
+                with gzip.open(temp_path, 'rb') as f_in, open(target_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+                print(f"Unzipped to {target_path}")
+            else:
+                shutil.move(temp_path, target_path)
+                print(f"Moved to {target_path}")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                print(f"Removed temporary file {temp_path}")
 
 
 def main():
@@ -174,7 +216,11 @@ def main():
         help="Target directory for data files (default: %(default)s)",
     )
     parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
-    parser.add_argument("--data-release", default=None, help="Specify which data release to download (default: latest)")
+    parser.add_argument(
+        "--data-release",
+        default=None,
+        help="Specify the exact data release to download, such as R226_gtdb_rev1",
+    )
     parser.add_argument("--list-data-releases", action="store_true", help="List available data releases")
     parser.add_argument(
         "--include-metadata",
