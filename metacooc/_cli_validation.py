@@ -6,13 +6,13 @@ import os
 def validate_null_scope_args(args, subparser):
     scope = args.null_scope
     requirements = {
-        "biome": {"null_biome_query"},
-        "taxa": {"null_taxa_query"},
-        "metadata": {"null_metadata_query"},
-        "biome_taxa": {"null_biome_query", "null_taxa_query"},
-        "metadata_taxa": {"null_metadata_query", "null_taxa_query"},
+        "biome": ("null_biome_query",),
+        "taxa": ("null_taxa_query",),
+        "metadata": ("null_metadata_query",),
+        "biome_taxa": ("null_biome_query", "null_taxa_query"),
+        "metadata_taxa": ("null_metadata_query", "null_taxa_query"),
     }
-    required = requirements.get(scope, set())
+    required = requirements.get(scope, ())
     query_flags = {
         "null_biome_query": "--null_biome_query",
         "null_taxa_query": "--null_taxa_query",
@@ -20,8 +20,9 @@ def validate_null_scope_args(args, subparser):
     }
     missing = [query_flags[name] for name in required if getattr(args, name) is None]
     if missing:
+        verb = "is" if len(missing) == 1 else "are"
         subparser.error(
-            f"{', '.join(missing)} required when --null_scope is {scope!r}"
+            f"{', '.join(missing)} {verb} required when --null_scope is {scope!r}"
         )
     unused = [
         flag
@@ -48,10 +49,22 @@ def _apply_default_data_release(args):
 
 def _validate_search_mode_options(args):
     mode = args.search_mode
-    if mode != "metadata" and (args.column_names or args.strict):
+    if mode == "metadata" and args.column_names and args.strict:
         _subparser_error(
             args,
-            "--column_names and --strict are only valid with --search_mode metadata",
+            "--column_names and --strict are mutually exclusive metadata column selectors",
+        )
+    if mode != "metadata" and (args.column_names or args.strict):
+        incompatible = []
+        if args.column_names:
+            incompatible.append("--column_names")
+        if args.strict:
+            incompatible.append("--strict")
+        _subparser_error(
+            args,
+            f"{', '.join(incompatible)} is only valid with --search_mode metadata"
+            if len(incompatible) == 1
+            else f"{', '.join(incompatible)} are only valid with --search_mode metadata",
         )
     if mode != "taxa_context" and args.ranks_for_search_inclusion is not None:
         _subparser_error(
@@ -61,6 +74,14 @@ def _validate_search_mode_options(args):
         )
     if mode == "focal_taxa" and args.inverse:
         _subparser_error(args, "--inverse is not valid with --search_mode focal_taxa")
+    if "->" in args.search_string and not (
+        args.command == "cooccurrence" and mode == "focal_taxa"
+    ):
+        _subparser_error(
+            args,
+            "'LHS -> RHS' retrieval-target syntax is only valid with "
+            "metacooc cooccurrence --search_mode focal_taxa",
+        )
 
 
 def _validate_search_cli(args):

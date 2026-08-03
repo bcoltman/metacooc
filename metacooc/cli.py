@@ -160,7 +160,8 @@ def add_data_dir(parser, group=None):
     kwargs = {
         "default": default,
         "help": (
-            "Directory containing data files (default: %(default)s; "
+            "Directory where published data are downloaded or loaded "
+            "(default: %(default)s; "
             f"overridden by ${DATA_DIR_ENV_VAR})"
         ),
     }
@@ -179,8 +180,8 @@ def add_data_release(parser, group=None, mode: str = "load"):
         help_text = (
             "Exact published data release to load. When omitted, commands that "
             "need published data use the registry-selected latest GlobDB release. "
-            "The default is not applied when an explicit custom data source is "
-            "used. Published releases can be listed with "
+            "For a given data source, the default is not applied when that source "
+            "is supplied explicitly. Published releases can be listed with "
             "'metacooc download --list-data-releases'."
         )
     elif mode == "format":
@@ -200,7 +201,7 @@ def add_data_release(parser, group=None, mode: str = "load"):
 
 def add_tag_and_aggregated(parser, group=None):
     add_tag(parser, group=group)
-    add_aggregated(parser, group=group)
+    add_aggregated(parser, group=group, mode="format")
 
 
 def add_tag(parser, group=None):
@@ -211,18 +212,28 @@ def add_tag(parser, group=None):
     )
 
 
-def add_aggregated(parser, group=None):
+def add_aggregated(parser, group=None, mode="load"):
+    if mode == "load":
+        help_text = "Use aggregated Ingredients instead of raw Ingredients."
+    elif mode == "format":
+        help_text = "Also generate aggregated Ingredients in addition to raw Ingredients."
+    else:
+        raise ValueError("mode must be 'load' or 'format'")
+
     (group or parser).add_argument(
         "--aggregated",
         action="store_true",
-        help="Use the aggregated Ingredients object.",
+        help=help_text,
     )
 
 
 def add_custom_ingredients(parser, group=None):
     (group or parser).add_argument(
         "--custom_ingredients",
-        help="Path to an Ingredients directory to use instead of default.",
+        help=(
+            "Explicit Ingredients directory to use instead of published Ingredients "
+            "resolved from --data_dir and --data-release."
+        ),
     )
 
 
@@ -238,14 +249,51 @@ def add_metadata_file(parser, group=None):
     (group or parser).add_argument(
         "--metadata_file",
         help=(
-            "Explicit metadata TSV file to use instead of resolving metadata "
-            "from --data_dir and the selected data release."
+            "Explicit metadata TSV file; replaces metadata resolution from "
+            "--data_dir and --data-release only. Ingredients selection is unchanged."
         ),
     )
 
 
-def add_search_mode_and_string(parser, required=False, group=None, choices=None):
+def add_search_mode_and_string(
+    parser,
+    required=False,
+    group=None,
+    choices=None,
+    allow_retrieval_target=False,
+):
     choices = choices or COHORT_SEARCH_MODE_CHOICES
+
+    search_help = ["Cohort-selection query interpreted according to --search_mode."]
+    if "taxa_context" in choices:
+        search_help.append(
+            "taxa_context: use '|' between OR groups and '+' between AND terms."
+        )
+    if "focal_taxa" in choices:
+        focal_help = (
+            "focal_taxa: use commas between independent focal-taxon queries; "
+            "'|' and '+' are not supported"
+        )
+        if allow_retrieval_target:
+            focal_help += (
+                "; optional 'LHS -> RHS' syntax uses LHS to define the cohort and "
+                "RHS to restrict taxa reported downstream"
+            )
+        search_help.append(focal_help + ".")
+    if "metadata" in choices:
+        search_help.append(
+            "metadata: search for a literal substring, optionally within "
+            "--column_names or the predefined --strict columns."
+        )
+    if "biome" in choices:
+        search_help.append(
+            "biome: use exact biome names separated by commas or '|' for alternatives; "
+            "'+' is not supported."
+        )
+    search_help.append(
+        "Quote queries containing spaces or shell characters, for example "
+        "'s__Escherichia coli'."
+    )
 
     (group or parser).add_argument(
         "--search_mode",
@@ -258,17 +306,7 @@ def add_search_mode_and_string(parser, required=False, group=None, choices=None)
         "--search_string",
         type=str,
         required=required,
-        help=(
-            "Search string. "
-            "In taxa_context mode, use '|' to separate OR groups and '+' to separate AND terms. "
-            "In focal_taxa mode, use commas to separate independent focal taxa queries. "
-            "focal_taxa does not accept '|' or '+'. "
-            "focal_taxa also supports optional 'LHS -> RHS' syntax, where LHS defines the focal cohort "
-            "and RHS defines downstream retrieval-target taxa for cooccurrence reporting. "
-            "Quote search strings containing spaces or special characters, e.g. "
-            "'s__Escherichia coli', 'g__VFJL01 AGGREGATED', or "
-            "'g__VFJL01 -> s__Ignicoccus hospitalis'."
-        ),
+        help=" ".join(search_help),
     )
 
 
@@ -287,6 +325,7 @@ def add_search_args(parser, group=None):
         nargs="+",
         help=(
             "metadata mode only: Restrict metadata search to specified columns. "
+            "Mutually exclusive with --strict. "
             "Example: --column_names organism env_biome_sam"
         ),
     )
@@ -297,7 +336,8 @@ def add_search_args(parser, group=None):
         help=(
             "metadata mode only: Restrict metadata search to a predefined reduced "
             "set of columns: ['acc', 'organism', 'env_biome_sam', 'env_feature_sam', "
-            "'env_material_sam', 'biosamplemodel_sam']"
+            "'env_material_sam', 'biosamplemodel_sam']. Mutually exclusive with "
+            "--column_names."
         ),
     )
 
@@ -365,7 +405,10 @@ def add_count_filter_args(
         "--min_taxa_count",
         type=positive_int,
         default=min_taxa_count_default,
-        help="Minimum number of taxa a sample must have to be included (default: %(default)s).",
+        help=(
+            "Minimum number of taxa at --taxa_count_rank that a sample must have "
+            "to be included (default: %(default)s)."
+        ),
     )
 
     (group or parser).add_argument(
@@ -378,7 +421,10 @@ def add_count_filter_args(
     (group or parser).add_argument(
         "--filter_rank",
         choices=RANK_CHOICES,
-        help="Taxa identified at a rank higher than this rank are filtered out of results (default: all included).",
+        help=(
+            "Keep only taxa whose terminal rank exactly matches this rank "
+            "(default: retain all ranks)."
+        ),
     )
 
     (group or parser).add_argument(
@@ -386,8 +432,8 @@ def add_count_filter_args(
         choices=RANK_CHOICES,
         default="species",
         help=(
-            "Taxa identified at a rank higher than this rank are not used to determine "
-            "the number of unique taxa in a sample (default: %(default)s)"
+            "Count only taxa whose terminal rank exactly matches this rank when "
+            "applying --min_taxa_count (default: %(default)s)."
         ),
     )
 
@@ -461,7 +507,11 @@ def add_null_model_args(parser, group=None):
         "--null_model",
         choices=NULL_MODEL_CHOICES,
         default="FE",
-        help="Null model to use (default: %(default)s).",
+        help=(
+            "Null model: FF fixes row and column totals; FE fixes row totals; "
+            "EF fixes column totals; EE fixes only total fill "
+            "(default: %(default)s)."
+        ),
     )
 
     (group or parser).add_argument(
@@ -669,7 +719,10 @@ def add_return_all_taxa(parser, group=None):
     (group or parser).add_argument(
         "--return_all_taxa",
         action="store_true",
-        help="Return distributions of all taxa (not aggregated/original values).",
+        help=(
+            "Return distributions for all taxon rows in the selected Ingredients; "
+            "with --aggregated, this includes aggregated rows."
+        ),
     )
 
 
@@ -1097,7 +1150,7 @@ def build_parser():
     analysis_opts.add_argument(
         "--filter_rank",
         choices=RANK_CHOICES,
-        help="Taxa identified at a rank higher than this rank are filtered out of results.",
+        help="Keep only taxa whose terminal rank exactly matches this rank.",
     )
     add_fisher_args(analysis_sub, group=analysis_opts)
     add_null_model_args(analysis_sub, group=null_model)
@@ -1164,7 +1217,13 @@ def build_parser():
         "ANALYSIS",
         "Control statistical tests, reporting thresholds, and co-occurrence limits.",
     )
-    add_search_mode_and_string(cooc_sub, required=True, group=req, choices=COOCCURRENCE_SEARCH_MODE_CHOICES)
+    add_search_mode_and_string(
+        cooc_sub,
+        required=True,
+        group=req,
+        choices=COOCCURRENCE_SEARCH_MODE_CHOICES,
+        allow_retrieval_target=True,
+    )
     add_output_dir(cooc_sub, group=req)
     add_help(cooc_sub, group=general)
     add_data_dir(cooc_sub, group=data)

@@ -305,6 +305,41 @@ def test_cli_contract_rejects_incompatible_and_stale_options(tmp_path):
     with pytest.raises(SystemExit):
         prepare_cli_args(args)
 
+    args = parser.parse_args(
+        [
+            "search",
+            "--search_mode",
+            "focal_taxa",
+            "--search_string",
+            "g__Rhizo -> g__Micro",
+            "--output_dir",
+            str(tmp_path / "search"),
+        ]
+    )
+    with pytest.raises(SystemExit):
+        prepare_cli_args(args)
+
+    metadata = tmp_path / "metadata.tsv"
+    metadata.write_text("acc\torganism\n", encoding="utf-8")
+    args = parser.parse_args(
+        [
+            "search",
+            "--search_mode",
+            "metadata",
+            "--search_string",
+            "soil",
+            "--output_dir",
+            str(tmp_path / "metadata-search"),
+            "--metadata_file",
+            str(metadata),
+            "--strict",
+            "--column_names",
+            "organism",
+        ]
+    )
+    with pytest.raises(SystemExit):
+        prepare_cli_args(args)
+
 
 @pytest.mark.cli
 def test_cli_missing_custom_path_and_unknown_command_do_not_traceback(tmp_path):

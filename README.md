@@ -590,16 +590,19 @@ In `structure`:
 
 ### Search string grammar
 
-`--search_string` is parsed as a single token with:
+The meaning of `--search_string` depends on `--search_mode`:
 
-* `|` = OR
-* `+` = AND
+* `taxa_context`: `|` separates OR groups and `+` separates AND terms.
+* `focal_taxa`: commas separate independent focal-taxon queries; `|` and `+` are not supported. In `cooccurrence` only, `LHS -> RHS` defines the focal cohort on the left and restricts reported taxa on the right.
+* `metadata`: the query is a literal substring, optionally restricted with `--column_names` or `--strict` (these options are mutually exclusive).
+* `biome`: exact biome names may be separated by commas or `|` for alternatives; `+` is not supported.
 
 Examples:
 
-* `"soil|sediment"`
-* `"soil+forest"`
-* `"soil|forest+rhizosphere"`
+* `--search_mode taxa_context --search_string "g__Nitrospira|g__Nitrosomonas+s__Nitrosomonas europaea"`
+* `--search_mode biome --search_string "soil,marine"`
+* `--search_mode focal_taxa --search_string "g__Nitrospira,g__Nitrosomonas"`
+* `--search_mode focal_taxa --search_string "g__Nitrospira -> s__Nitrospira defluvii"` (co-occurrence only)
 
 If your string contains spaces or special characters, quote it:
 
