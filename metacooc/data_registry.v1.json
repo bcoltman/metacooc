@@ -1,4 +1,5 @@
 {
+  "default_data_release": "R226_globdb_rev1",
   "registry_format_version": 1,
   "releases": {
     "R226": {

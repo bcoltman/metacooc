@@ -27,7 +27,7 @@ REGISTRY_URL = (
 REGISTRY_CACHE_SECONDS = 24 * 60 * 60
 REGISTRY_TIMEOUT = (2, 5)
 VARIANTS = ("gtdb", "globdb")
-DEFAULT_VARIANT = "gtdb"
+DEFAULT_VARIANT = "globdb"
 
 _RELEASE_RE = re.compile(
     r"^R(?P<number>[0-9]+)_(?P<variant>gtdb|globdb)_rev(?P<revision>[1-9][0-9]*)$"
@@ -168,8 +168,8 @@ def validate_registry(registry: object) -> dict:
             f"{REGISTRY_FORMAT_VERSION}."
         )
     releases = registry.get("releases")
-    if not isinstance(releases, dict):
-        raise ValueError("Data registry 'releases' must be an object.")
+    if not isinstance(releases, dict) or not releases:
+        raise ValueError("Data registry 'releases' must be a non-empty object.")
     if not isinstance(registry.get("updated"), str):
         raise ValueError("Data registry 'updated' must be a string.")
 
@@ -244,6 +244,27 @@ def validate_registry(registry: object) -> dict:
                             zenodo_record=format_record,
                             expected_filename=expected,
                         )
+
+    default_release = registry.get("default_data_release")
+    try:
+        parsed_default = parse_data_release(default_release)
+    except ValueError as exc:
+        raise ValueError(
+            "Data registry 'default_data_release' must be an exact published "
+            "release selector."
+        ) from exc
+
+    latest_base = max(releases, key=_release_number)
+    latest_revision = releases[latest_base]["current_revision"]
+    expected_default = (
+        f"{latest_base}_{DEFAULT_VARIANT}_rev{latest_revision}"
+    )
+    if parsed_default.canonical != expected_default:
+        raise ValueError(
+            "Data registry 'default_data_release' must select the latest "
+            f"{DEFAULT_VARIANT.upper()} snapshot {expected_default!r}, got "
+            f"{default_release!r}."
+        )
     return registry
 
 
@@ -373,7 +394,8 @@ def load_registry(*, now: float | None = None) -> dict:
 
 
 def available_releases(registry: dict | None = None) -> list[str]:
-    registry = registry or load_registry()
+    if registry is None:
+        registry = load_registry()
     result = []
     for base in sorted(registry["releases"], key=_release_number):
         revisions = registry["releases"][base]["revisions"]
@@ -385,9 +407,17 @@ def available_releases(registry: dict | None = None) -> list[str]:
 
 def is_current_release(data_release: str, registry: dict | None = None) -> bool:
     parsed = parse_data_release(data_release)
-    registry = registry or load_registry()
+    if registry is None:
+        registry = load_registry()
     release = registry.get("releases", {}).get(parsed.base)
     return bool(release and release.get("current_revision") == parsed.revision)
+
+
+def get_default_data_release(registry: dict | None = None) -> str:
+    """Return the exact published release selected as the CLI default."""
+    if registry is None:
+        registry = load_registry()
+    return registry["default_data_release"]
 
 
 def describe_data_release(data_release: str, registry: dict | None = None) -> str:
@@ -471,7 +501,8 @@ def resolve_release(
         parsed = parse_data_release(data_release)
     except ValueError as exc:
         raise DataReleaseError(str(exc)) from exc
-    registry = registry or load_registry()
+    if registry is None:
+        registry = load_registry()
     release = registry.get("releases", {}).get(parsed.base)
     revision = (
         release.get("revisions", {}).get(str(parsed.revision)) if release else None

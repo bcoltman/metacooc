@@ -159,6 +159,7 @@ def test_packaged_registry_is_valid_and_contains_only_published_snapshots():
     registry = config._read_bundled_registry()
     assert config.validate_registry(registry) is registry
     assert registry["registry_format_version"] == 1
+    assert config.get_default_data_release(registry) == "R226_globdb_rev1"
 
     gtdb = config.resolve_release("R226_gtdb_rev1", registry=registry)
     globdb = config.resolve_release("R226_globdb_rev1", registry=registry)
@@ -171,3 +172,21 @@ def test_packaged_registry_is_valid_and_contains_only_published_snapshots():
     assert gtdb.artifacts["ingredients_raw"].sha256 == (
         "9c6abdee962553fcb9b04347efbb7eac8bb5b360cf38a54dd7677d697c4b2fb9"
     )
+
+
+@pytest.mark.parametrize(
+    "default_release",
+    [None, "R226_gtdb_rev2", "R226_globdb_rev1", "latest"],
+)
+def test_registry_rejects_invalid_or_nonlatest_default(
+    registry_factory,
+    default_release,
+):
+    registry = registry_factory(revisions=(1, 2), current=2)
+    if default_release is None:
+        registry.pop("default_data_release")
+    else:
+        registry["default_data_release"] = default_release
+
+    with pytest.raises(ValueError, match="default_data_release"):
+        config.validate_registry(registry)

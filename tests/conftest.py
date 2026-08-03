@@ -45,6 +45,7 @@ def registry_factory():
                 "ingredients_formats": format_entries,
             }
         return {
+            "default_data_release": f"R226_globdb_rev{current_revision}",
             "registry_format_version": 1,
             "updated": "2026-08-03",
             "releases": {
