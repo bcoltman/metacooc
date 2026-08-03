@@ -1,5 +1,49 @@
 {
   "registry_format_version": 1,
-  "releases": {},
+  "releases": {
+    "R226": {
+      "current_revision": 1,
+      "revisions": {
+        "1": {
+          "ingredients_formats": {
+            "1": {
+              "gtdb": {
+                "aggregated": {
+                  "filename": "ingredients_aggregated_R226_gtdb_rev1_format1.tar.gz",
+                  "sha256": "2dc033b19b1f5a37f53d91902ae47aca33c9c8cb63a48ed23d1277a479ea2f73"
+                },
+                "raw": {
+                  "filename": "ingredients_raw_R226_gtdb_rev1_format1.tar.gz",
+                  "sha256": "9c6abdee962553fcb9b04347efbb7eac8bb5b360cf38a54dd7677d697c4b2fb9"
+                }
+              },
+              "globdb": {
+                "aggregated": {
+                  "filename": "ingredients_aggregated_R226_globdb_rev1_format1.tar.gz",
+                  "sha256": "f2c36184d3fbaf8090c9425b48dbfd36bacba304b4643e5e3b28032f95a5ccf6"
+                },
+                "raw": {
+                  "filename": "ingredients_raw_R226_globdb_rev1_format1.tar.gz",
+                  "sha256": "1b659756621e10dbf0e4841541d6eb8aaa28383ee92e1fff87c353f1920f6384"
+                }
+              },
+              "zenodo_record": "20096010"
+            }
+          },
+          "support": {
+            "sample_to_biome": {
+              "filename": "sample_to_biome_R226_rev1.tsv.gz",
+              "sha256": "86f57213edf8f59530027fcdaa246c9cd4c62578a4c1113d75a4ece770e3cafc"
+            },
+            "sra_metadata": {
+              "filename": "sra_metadata_R226_rev1.tsv.gz",
+              "sha256": "69436b6ab784b582fdb3a7b37c2d4a821623e11c90ec63dff8268c97d10a86c3"
+            },
+            "zenodo_record": "20096010"
+          }
+        }
+      }
+    }
+  },
   "updated": "2026-08-03"
 }

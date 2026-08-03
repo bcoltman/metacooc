@@ -159,3 +159,15 @@ def test_packaged_registry_is_valid_and_contains_only_published_snapshots():
     registry = config._read_bundled_registry()
     assert config.validate_registry(registry) is registry
     assert registry["registry_format_version"] == 1
+
+    gtdb = config.resolve_release("R226_gtdb_rev1", registry=registry)
+    globdb = config.resolve_release("R226_globdb_rev1", registry=registry)
+    assert gtdb.current is True
+    assert globdb.current is True
+    assert {
+        artifact.zenodo_record
+        for artifact in (*gtdb.artifacts.values(), *globdb.artifacts.values())
+    } == {"20096010"}
+    assert gtdb.artifacts["ingredients_raw"].sha256 == (
+        "9c6abdee962553fcb9b04347efbb7eac8bb5b360cf38a54dd7677d697c4b2fb9"
+    )
