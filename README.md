@@ -21,7 +21,7 @@
   - [Association](#association)
   - [Structure](#structure)
   - [Biome distribution](#biome-distribution)
-  - [Output schemas and metadata sidecars](#output-schemas-and-metadata-sidecars)
+  - [Output schemas and null-run metadata](#output-schemas-and-null-run-metadata)
 - [Key concepts](#key-concepts)
   - [Cohort vs null/background](#cohort-vs-nullbackground)
   - [Output cutoff semantics](#output-cutoff-semantics)
@@ -190,10 +190,11 @@ metacooc association \
 
 This writes:
 
+* `global_association_summary.tsv`
 * `global_association.tsv`
 * `global_plot.png`
 
-With the default `FE` association null, no metadata sidecar is normally written because the association Jaccard null is handled analytically rather than by storing empirical null-run metadata.
+With the default analytical `FE` association null, the result tables record `null_model=FE`; replicate and seed fields are empty because no empirical simulation ran.
 
 ---
 
@@ -233,10 +234,10 @@ metacooc cooccurrence \
 
 Outputs:
 
+* `global_edges_summary.tsv` — reduced, interpretation-first edge table
 * `global_edges.tsv`
 * `global_nodes.tsv`
-* for large edge tables: `global_edges.parquet`, `global_edges_taxa.parquet`, and `global_edges_summary.tsv`
-* if an empirical null was run: `global_edges_metadata.tsv` and, for large edge tables, `global_edges_summary_metadata.tsv`
+* for large edge tables: `global_edges.parquet` and `global_edges_taxa.parquet` replace the detailed edge TSV
 
 Notes:
 
@@ -265,9 +266,9 @@ This metadata-based example requires the optional metadata table; install it fir
 
 Outputs:
 
+* `global_association_summary.tsv` — reduced, interpretation-first result table
 * `global_association.tsv`
 * `global_plot.png`
-* if an empirical null was run: `global_association_metadata.tsv`
 
 The primary ranking columns are `p_cohort_given_taxon` (specificity: among samples containing the taxon, how often is the cohort present?) and `p_taxon_given_cohort` (sensitivity: among cohort samples, how often is the taxon present?).
 
@@ -292,7 +293,6 @@ metacooc structure \
 Output:
 
 * `global_structure.tsv`
-* if null computation is enabled: `global_structure_metadata.tsv`
 
 Metrics include:
 
@@ -320,34 +320,53 @@ Outputs a TSV, with behaviour depending on flags:
 * `--aggregated` → export species and aggregated taxa
 * otherwise → export species to `taxa_biome_distribution_species.tsv`
 
-Biome distribution does not run a null model, so it does not write a metadata sidecar.
+Biome distribution does not run a null model, so it does not include null-run columns.
 
 ---
 
-### Output schemas and metadata sidecars
+### Output schemas and null-run metadata
 
-Result columns are ordered so that the most useful fields are near the left: identifiers first, then primary ranking metrics, supporting counts, effect-size/statistical metrics, optional Fisher tests, and optional empirical null summaries. The old run-level null columns are no longer repeated on every result row. When null-run metadata exists, it is written once to a sidecar TSV with columns `key` and `value`.
+Association and co-occurrence write both a reduced summary TSV and a detailed result. Summary tables retain identifiers, effect strength, directional probabilities, direct support counts, and adjusted significance. Detailed tables retain every computed metric. Structure, nodes, and biome distribution are already focused outputs and are not duplicated.
 
-Null metadata sidecars use the same basename as the result file:
+Association summaries contain every reported taxon. Co-occurrence summaries contain every edge up to 100,000 rows. Larger simulated-null results retain the 100,000 edges with the lowest empirical BH-adjusted q-values; otherwise they use analytical chi-square q-values. Ties at the cap are resolved by absolute phi, support, and identifiers. Summary rows use the same ordering, with missing q-values last.
 
-* `global_association.tsv` → `global_association_metadata.tsv`
-* `global_edges.tsv` → `global_edges_metadata.tsv`
-* `global_structure.tsv` → `global_structure_metadata.tsv`
-* `global_edges_summary.tsv` → `global_edges_summary_metadata.tsv`
-
-Sidecar keys are:
+Association summary and detailed files, co-occurrence summary and detailed files, and structure files end with four compact run-level columns:
 
 ```text
 null_model
-null_replicates_requested
-null_replicates_completed
-null_replicates_ok
-null_replicates_error
+null_replicates
+null_replicates_failed
 null_seed
-null_seed_source
 ```
 
-#### Association TSV
+`null_replicates` is the number of successful empirical replicates used in the statistics; `null_replicates_failed` records unsuccessful replicates. For analytical association/co-occurrence `FE` results, only `null_model=FE` is populated. If no null calculation ran, all four values are empty.
+
+These values are intentionally repeated so each result file is self-describing. Parquet stores the repeated values efficiently. Separate metadata sidecars are no longer generated; use a clean output directory when replacing results from a version that created `*_metadata.tsv` files.
+
+#### Association summary TSV
+
+`global_association_summary.tsv` contains one row per reported taxon:
+
+```text
+taxon
+phi_coefficient
+p_cohort_given_taxon
+p_taxon_given_cohort
+taxon_in_cohort_count
+cohort_sample_count
+taxon_in_background_not_cohort_count
+background_not_cohort_sample_count
+chi2_q_value_bh
+```
+
+With a simulated null model, these columns are appended:
+
+```text
+jaccard_null_ses
+jaccard_null_p_empirical
+```
+
+#### Detailed association TSV
 
 `global_association.tsv` contains one row per reported taxon. Base columns, in order:
 
@@ -400,7 +419,31 @@ jaccard_null_ses
 jaccard_null_p_empirical
 ```
 
-#### Co-occurrence TSV
+#### Co-occurrence summary TSV
+
+`global_edges_summary.tsv` contains the reduced readable edge result:
+
+```text
+source_taxon
+target_taxon
+phi_coefficient
+p_target_given_source
+p_source_given_target
+shared_sample_count
+source_taxon_sample_count
+target_taxon_sample_count
+chi2_q_value_bh
+```
+
+For focal workflows, `focal_query` and `focal_taxon` appear first. With a simulated null model, these columns are appended:
+
+```text
+jaccard_null_ses
+jaccard_null_p_empirical
+jaccard_null_q_value_bh
+```
+
+#### Detailed co-occurrence output
 
 `global_edges.tsv` contains one row per reported directed edge. For focal workflows, `focal_query` and `focal_taxon` appear first. Base edge columns, in order:
 
@@ -460,18 +503,16 @@ taxon_sample_count
 out_degree_p_target_given_source_gt_<threshold>
 ```
 
-For very large edge tables, the full output is written compactly as `global_edges.parquet` with integer taxon IDs:
+For very large edge tables, the complete detailed output is written in bounded-memory batches as `global_edges.parquet`. To avoid repeating long taxon names, its first identifiers are integer IDs:
 
 ```text
 source_taxon_index
 target_taxon_index
-shared_sample_count
-jaccard_taxon_pair
-chi2_log_p_value
-chi2_log_q_value_bh
 ```
 
-When simulated nulls are computed, compact parquet also stores the row-level null columns held in the edge arrays, including `jaccard_null_mean`, `jaccard_null_sd`, `jaccard_null_ses`, `jaccard_null_p_empirical`, and `jaccard_null_log_q_value_bh`. Fisher columns and derived `jaccard_null_q_value_bh` are reconstructed in readable TSV outputs rather than stored in the compact parquet edge table. `global_edges_taxa.parquet` maps `taxon_id` to `taxon` and `total_count`; `global_edges_summary.tsv` contains the highest-priority readable subset using the normal co-occurrence TSV schema.
+These are followed by every numeric detailed edge column listed for `global_edges.tsv`, starting with `p_target_given_source`; the repeated `source_taxon` and `target_taxon` strings are the only substitutions. Focal identifiers remain at the start when present. Simulated-null columns, including derived empirical q-values, are stored for every edge. With `--compute_fisher`, all three Fisher columns are calculated and stored for every edge; this can substantially increase large-export time and emits a warning before calculation.
+
+`global_edges_taxa.parquet` maps `taxon_id` to `taxon` and `total_count`. Together these two Parquet files are the complete detailed result, while `global_edges_summary.tsv` remains the reduced readable result.
 
 #### Structure TSV
 
