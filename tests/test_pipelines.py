@@ -233,23 +233,19 @@ def test_run_structure_pipeline(tmp_path, raw_ingredients_path):
     )
     pipelines.run_structure(args)
     out = tmp_path / "test_global_structure.tsv"
-    metadata = tmp_path / "test_global_structure_metadata.tsv"
     assert out.exists()
     structure_df = pd.read_csv(out, sep="\t")
-    metadata_df = pd.read_csv(metadata, sep="\t")
     assert structure_df["metric"].tolist() == ["c_score", "mean_jaccard", "nodf"]
     assert "observed_value" in structure_df.columns
     assert "null_mean" in structure_df.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(structure_df.columns)
-    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
-        "null_model": "FE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "7",
-        "null_seed_source": "user",
-    }
+    _assert_compact_null_metadata(
+        structure_df,
+        model="FE",
+        replicates=1,
+        failed=0,
+        seed=7,
+    )
+    assert not (tmp_path / "test_global_structure_metadata.tsv").exists()
 
 
 def test_run_biome_distribution_pipeline(tmp_path, raw_ingredients_path):

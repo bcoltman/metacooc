@@ -13,7 +13,7 @@ from metacooc.null_models import (
 )
 
 from metacooc.pantry import load_ingredients, presence_for_counts
-from metacooc.output import null_metadata_from_reduction, write_result_metadata_sidecar
+from metacooc.output import null_metadata_from_reduction, with_compact_null_metadata
 
 
 _LARGE_STRUCTURE_PAIR_WARNING = 100_000_000
@@ -531,13 +531,11 @@ def structure(
     )
     
     output_path = os.path.join(output_dir, f"{tag}structure.tsv")
-    structure_df.to_csv(output_path, sep="\t", index=False)
-    print(f"Structure analysis saved to {output_path}")
-    metadata_path = write_result_metadata_sidecar(
-        output_path,
+    structure_output = with_compact_null_metadata(
+        structure_df,
         structure_df.attrs.get("null_metadata"),
     )
-    if metadata_path is not None:
-        print(f"Structure metadata saved to {metadata_path}")
+    structure_output.to_csv(output_path, sep="\t", index=False)
+    print(f"Structure analysis saved to {output_path}")
     
     return structure_df

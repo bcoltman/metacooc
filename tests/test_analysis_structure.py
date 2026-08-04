@@ -713,7 +713,7 @@ def test_structure_core_all_null_models(raw_ingredients):
         }
 
 
-def test_structure_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredients):
+def test_structure_wrapper_embeds_compact_null_metadata(tmp_path, raw_ingredients):
     structure(
         raw_ingredients,
         output_dir=str(tmp_path),
@@ -724,19 +724,37 @@ def test_structure_wrapper_writes_null_metadata_sidecar(tmp_path, raw_ingredient
     )
 
     structure_df = pd.read_csv(tmp_path / "direct_structure.tsv", sep="\t")
-    metadata_df = pd.read_csv(tmp_path / "direct_structure_metadata.tsv", sep="\t")
 
     assert "null_mean" in structure_df.columns
-    assert {"null_seed", "null_seed_source", "null_model"}.isdisjoint(structure_df.columns)
-    assert dict(zip(metadata_df["key"], metadata_df["value"].astype(str))) == {
-        "null_model": "EE",
-        "null_replicates_requested": "1",
-        "null_replicates_completed": "1",
-        "null_replicates_ok": "1",
-        "null_replicates_error": "0",
-        "null_seed": "5",
-        "null_seed_source": "user",
-    }
+    _assert_compact_null_metadata(
+        structure_df,
+        model="EE",
+        replicates=1,
+        failed=0,
+        seed=5,
+    )
+    assert not (tmp_path / "direct_structure_metadata.tsv").exists()
+
+
+def test_structure_wrapper_without_null_leaves_compact_metadata_empty(
+    tmp_path,
+    raw_ingredients,
+):
+    structure(
+        raw_ingredients,
+        output_dir=str(tmp_path),
+        tag="observed_",
+        compute_null=False,
+    )
+
+    structure_df = pd.read_csv(tmp_path / "observed_structure.tsv", sep="\t")
+    _assert_compact_null_metadata(
+        structure_df,
+        model=None,
+        replicates=None,
+        failed=None,
+        seed=None,
+    )
 
 
 def test_biome_distribution(raw_ingredients):

@@ -36,7 +36,7 @@ from metacooc.analysis import (
     select_taxa_universe,
     export_cooccurrence_outputs,
 )
-from metacooc.output import with_compact_null_metadata, write_result_metadata_sidecar
+from metacooc.output import with_compact_null_metadata
 from metacooc.plot import plot_analysis_obj
 from metacooc.clustering import determine_taxa_context
 from metacooc.structure import structure_obj
@@ -413,14 +413,12 @@ def run_structure(args):
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
     output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_structure.tsv")
-    structure_df.to_csv(output_path, sep="\t", index=False)
-    print(f"Pipeline: {null_scope_prefix} structure analysis saved to {output_path}")
-    metadata_path = write_result_metadata_sidecar(
-        output_path,
+    structure_output = with_compact_null_metadata(
+        structure_df,
         structure_df.attrs.get("null_metadata"),
     )
-    if metadata_path is not None:
-        print(f"Pipeline: {null_scope_prefix} structure metadata saved to {metadata_path}")
+    structure_output.to_csv(output_path, sep="\t", index=False)
+    print(f"Pipeline: {null_scope_prefix} structure analysis saved to {output_path}")
 
 
 def run_association(args):
