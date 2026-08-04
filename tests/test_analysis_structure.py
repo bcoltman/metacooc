@@ -360,7 +360,7 @@ def test_cooccurrence_large_export_embeds_compact_null_metadata(
     assert edge_arrays is not None
     assert edge_arrays.n_rows > 1
 
-    export_cooccurrence_outputs(
+    detailed_path = export_cooccurrence_outputs(
         edge_arrays=edge_arrays,
         nodes_df=nodes_df,
         taxa_universe=taxa_universe,
@@ -371,6 +371,7 @@ def test_cooccurrence_large_export_embeds_compact_null_metadata(
         summary_n=1,
     )
 
+    assert detailed_path == str(tmp_path / "large_edges.parquet")
     assert (tmp_path / "large_nodes.tsv").exists()
     assert (tmp_path / "large_edges.parquet").exists()
     assert (tmp_path / "large_edges_taxa.parquet").exists()

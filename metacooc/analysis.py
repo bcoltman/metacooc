@@ -1455,9 +1455,9 @@ def export_cooccurrence_outputs(
     nodes_base: str,
     null_model: str = "FE",
     summary_n: int = 100_000,
-) -> None:
+) -> str | None:
     """
-    Export co-occurrence outputs with a user-friendly policy.
+    Export co-occurrence outputs and return the detailed edge result path.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1468,7 +1468,7 @@ def export_cooccurrence_outputs(
 
     if edge_arrays is None or edge_arrays.n_rows == 0:
         print("No co-occurrence edges above min_conditional_probability; no edge file written.")
-        return
+        return None
 
     n_rows = edge_arrays.n_rows
     metadata = edge_arrays.meta.get("null_metadata")
@@ -1513,7 +1513,7 @@ def export_cooccurrence_outputs(
             float_format="%.6g",
         )
         print(f"Taxon edges summary saved to {summary_path}")
-        return
+        return edges_tsv_path
 
     parquet_path = os.path.join(output_dir, f"{edges_base}")
     _write_full_edges_parquet_from_arrays(
@@ -1549,6 +1549,7 @@ def export_cooccurrence_outputs(
         f"Summary taxon edges analysis saved to {summary_path} "
         f"({len(summary_df):,} of {n_rows:,} rows)"
     )
+    return f"{parquet_path}.parquet"
 
 
 def cooccurrence(

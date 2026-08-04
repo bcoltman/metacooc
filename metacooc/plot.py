@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
-
 _DEFAULT_Q_THRESHOLD = 0.10
 _DEFAULT_LABEL_TOP_N = 10
+_PLOT_CHUNK_SIZE = 100_000
 
 
 def _validate_plot_options(
@@ -43,7 +43,8 @@ def _validate_plot_options(
     if x_metric is not None:
         numeric_columns.extend([x_metric, y_metric])
     nonnumeric = [
-        column for column in dict.fromkeys(numeric_columns)
+        column
+        for column in dict.fromkeys(numeric_columns)
         if not is_numeric_dtype(df[column])
     ]
     if nonnumeric:
@@ -53,7 +54,9 @@ def _validate_plot_options(
 
     finite_q = df[q_metric].replace([np.inf, -np.inf], np.nan).dropna()
     if ((finite_q < 0.0) | (finite_q > 1.0)).any():
-        raise ValueError(f"Significance metric '{q_metric}' must contain values in [0, 1]")
+        raise ValueError(
+            f"Significance metric '{q_metric}' must contain values in [0, 1]"
+        )
 
 
 def _short_taxon_label(value: object) -> str:
@@ -314,6 +317,290 @@ def _plot_association(
     plt.close(fig)
 
 
+def _cooccurrence_q_metric(columns, requested: str | None) -> str:
+    if requested is not None:
+        return requested
+    if "jaccard_null_q_value_bh" in columns:
+        return "jaccard_null_q_value_bh"
+    return "chi2_q_value_bh"
+
+
+def _cooccurrence_identifier_columns(columns) -> tuple[str, str]:
+    if {"source_taxon", "target_taxon"}.issubset(columns):
+        return "source_taxon", "target_taxon"
+    if {"source_taxon_index", "target_taxon_index"}.issubset(columns):
+        return "source_taxon_index", "target_taxon_index"
+    raise ValueError(
+        "Co-occurrence plot input must contain source/target taxon names or indices"
+    )
+
+
+def _top_cooccurrence_rows(
+    df: pd.DataFrame,
+    *,
+    significant: pd.Series,
+    q_metric: str,
+    label_top_n: int,
+    x_metric: str,
+    y_metric: str,
+    source_column: str,
+    target_column: str,
+) -> pd.DataFrame:
+    if label_top_n <= 0:
+        return df.iloc[:0]
+
+    candidates = df.loc[significant].copy()
+    candidates = candidates[
+        np.isfinite(candidates[x_metric].to_numpy(dtype=float, copy=False))
+        & np.isfinite(candidates[y_metric].to_numpy(dtype=float, copy=False))
+    ]
+    candidates["_abs_phi"] = candidates["phi_coefficient"].abs()
+    candidates["_support"] = (
+        candidates["shared_sample_count"] if "shared_sample_count" in candidates else 0
+    )
+    candidates["_source_sort"] = candidates[source_column].astype(str)
+    candidates["_target_sort"] = candidates[target_column].astype(str)
+    candidates.sort_values(
+        [q_metric, "_abs_phi", "_support", "_source_sort", "_target_sort"],
+        ascending=[True, False, False, True, True],
+        kind="mergesort",
+        inplace=True,
+    )
+    return candidates.head(int(label_top_n))
+
+
+def _edge_label(
+    row: pd.Series,
+    *,
+    source_column: str,
+    target_column: str,
+    taxa_by_id: dict[int, str] | None,
+) -> str:
+    source = row[source_column]
+    target = row[target_column]
+    if taxa_by_id is not None:
+        source = taxa_by_id.get(int(source), source)
+        target = taxa_by_id.get(int(target), target)
+    label = f"{_short_taxon_label(source)} → {_short_taxon_label(target)}"
+    if "focal_query" in row and pd.notna(row["focal_query"]):
+        label = f"{row['focal_query']}: {label}"
+    return label
+
+
+def _plot_cooccurrence_chunks(
+    chunks,
+    columns,
+    out_file: str,
+    *,
+    q_thresh: float,
+    q_metric: str | None,
+    plot_all: bool,
+    label_top_n: int,
+    x_metric: str | None,
+    y_metric: str | None,
+    taxa_by_id: dict[int, str] | None = None,
+    report_progress: bool = False,
+) -> None:
+    q_metric = _cooccurrence_q_metric(columns, q_metric)
+    x_metric = x_metric or "p_target_given_source"
+    y_metric = y_metric or "phi_coefficient"
+    source_column, target_column = _cooccurrence_identifier_columns(set(columns))
+
+    required = {q_metric, "phi_coefficient", x_metric, y_metric}
+    missing = sorted(required.difference(columns))
+    if missing:
+        raise ValueError(
+            "Co-occurrence plot input is missing required column(s): "
+            + ", ".join(missing)
+        )
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    total_rows = 0
+    significant_rows = 0
+    label_candidates = []
+    try:
+        for chunk_number, chunk in enumerate(chunks, start=1):
+            if chunk.empty:
+                continue
+            if report_progress:
+                print(
+                    "INFO: Plotting co-occurrence chunk "
+                    f"{chunk_number:,} ({len(chunk):,} rows)."
+                )
+            _validate_plot_options(
+                chunk,
+                q_metric=q_metric,
+                q_thresh=q_thresh,
+                label_top_n=label_top_n,
+                x_metric=x_metric,
+                y_metric=y_metric,
+            )
+            clean = chunk.replace([np.inf, -np.inf], np.nan)
+            significant = (
+                clean[q_metric].notna()
+                & (clean[q_metric] <= q_thresh)
+                & (clean["phi_coefficient"] > 0)
+            )
+            _draw_points(
+                ax,
+                clean,
+                x=x_metric,
+                y=y_metric,
+                significant=significant,
+                plot_all=plot_all,
+            )
+            total_rows += len(clean)
+            significant_rows += int(significant.sum())
+            if label_top_n > 0:
+                label_candidates.append(
+                    _top_cooccurrence_rows(
+                        clean,
+                        significant=significant,
+                        q_metric=q_metric,
+                        label_top_n=label_top_n,
+                        x_metric=x_metric,
+                        y_metric=y_metric,
+                        source_column=source_column,
+                        target_column=target_column,
+                    )
+                )
+    except Exception:
+        plt.close(fig)
+        raise
+
+    if total_rows == 0:
+        plt.close(fig)
+        raise ValueError("Co-occurrence result is empty — nothing to plot.")
+    if significant_rows == 0 and not plot_all:
+        plt.close(fig)
+        _save_empty_plot(
+            out_file,
+            f"No positive co-occurrence results at {q_metric} ≤ {q_thresh:g}",
+        )
+        return
+
+    if label_candidates:
+        candidates = pd.concat(label_candidates, ignore_index=True)
+        candidates["_abs_phi"] = candidates["phi_coefficient"].abs()
+        candidates.sort_values(
+            [q_metric, "_abs_phi", "_support", "_source_sort", "_target_sort"],
+            ascending=[True, False, False, True, True],
+            kind="mergesort",
+            inplace=True,
+        )
+        for offset, (_, row) in enumerate(candidates.head(label_top_n).iterrows()):
+            ax.annotate(
+                _edge_label(
+                    row,
+                    source_column=source_column,
+                    target_column=target_column,
+                    taxa_by_id=taxa_by_id,
+                ),
+                (row[x_metric], row[y_metric]),
+                xytext=(4, 5 + (offset % 3) * 4),
+                textcoords="offset points",
+                fontsize=7,
+            )
+
+    ax.axhline(0, color="black", linewidth=0.8, alpha=0.7)
+    ax.grid(True, linestyle="--", alpha=0.25)
+    ax.set_xlabel(
+        "P(target | source)" if x_metric == "p_target_given_source" else x_metric
+    )
+    ax.set_ylabel("Phi coefficient" if y_metric == "phi_coefficient" else y_metric)
+    ax.set_title(f"Co-occurrence: {x_metric} vs {y_metric}")
+    fig.suptitle(
+        f"Co-occurrence results: {significant_rows:,} positive co-occurrences of "
+        f"{total_rows:,} (q ≤ {q_thresh:g})"
+    )
+    fig.tight_layout()
+    fig.savefig(out_file, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _cooccurrence_file_columns(df_file: str) -> list[str]:
+    if df_file.lower().endswith(".parquet"):
+        import pyarrow.parquet as pq
+
+        return pq.ParquetFile(df_file).schema_arrow.names
+    if df_file.lower().endswith(".tsv"):
+        return pd.read_csv(df_file, sep="\t", nrows=0).columns.tolist()
+    raise ValueError("Plot input must be a .tsv or .parquet file")
+
+
+def _cooccurrence_file_chunks(df_file: str, columns: list[str]):
+    if df_file.lower().endswith(".parquet"):
+        import pyarrow.parquet as pq
+
+        parquet = pq.ParquetFile(df_file)
+        for batch in parquet.iter_batches(
+            batch_size=_PLOT_CHUNK_SIZE,
+            columns=columns,
+        ):
+            yield batch.to_pandas()
+        return
+
+    yield from pd.read_csv(
+        df_file,
+        sep="\t",
+        usecols=columns,
+        chunksize=_PLOT_CHUNK_SIZE,
+    )
+
+
+def _cooccurrence_taxa_mapping(df_file: str) -> dict[int, str] | None:
+    if not df_file.lower().endswith(".parquet"):
+        return None
+    taxa_path = f"{os.path.splitext(df_file)[0]}_taxa.parquet"
+    if not os.path.exists(taxa_path):
+        return None
+    taxa = pd.read_parquet(taxa_path, columns=["taxon_id", "taxon"])
+    return dict(zip(taxa["taxon_id"].astype(int), taxa["taxon"].astype(str)))
+
+
+def _plot_cooccurrence_file(
+    df_file: str,
+    out_file: str,
+    *,
+    q_thresh: float,
+    q_metric: str | None,
+    plot_all: bool,
+    label_top_n: int,
+    x_metric: str | None,
+    y_metric: str | None,
+) -> None:
+    available = _cooccurrence_file_columns(df_file)
+    selected_q = _cooccurrence_q_metric(available, q_metric)
+    selected_x = x_metric or "p_target_given_source"
+    selected_y = y_metric or "phi_coefficient"
+    source_column, target_column = _cooccurrence_identifier_columns(set(available))
+    selected = {
+        selected_q,
+        selected_x,
+        selected_y,
+        "phi_coefficient",
+        source_column,
+        target_column,
+    }
+    for optional in ("shared_sample_count", "focal_query"):
+        if optional in available:
+            selected.add(optional)
+
+    _plot_cooccurrence_chunks(
+        _cooccurrence_file_chunks(df_file, sorted(selected)),
+        available,
+        out_file,
+        q_thresh=q_thresh,
+        q_metric=selected_q,
+        plot_all=plot_all,
+        label_top_n=label_top_n,
+        x_metric=selected_x,
+        y_metric=selected_y,
+        taxa_by_id=_cooccurrence_taxa_mapping(df_file),
+        report_progress=True,
+    )
+
+
 def plot_analysis_obj(
     df: pd.DataFrame,
     out_file: str,
@@ -329,19 +616,31 @@ def plot_analysis_obj(
     """Plot an in-memory association or co-occurrence result."""
     if df.empty:
         raise ValueError("DataFrame is empty — nothing to plot.")
-    if analysis_type != "association":
+    if analysis_type == "association":
+        _plot_association(
+            df,
+            out_file,
+            q_thresh=q_thresh,
+            q_metric=q_metric,
+            plot_all=plot_all,
+            label_top_n=label_top_n,
+            x_metric=x_metric,
+            y_metric=y_metric,
+        )
+    elif analysis_type == "cooccurrence":
+        _plot_cooccurrence_chunks(
+            [df],
+            df.columns,
+            out_file,
+            q_thresh=q_thresh,
+            q_metric=q_metric,
+            plot_all=plot_all,
+            label_top_n=label_top_n,
+            x_metric=x_metric,
+            y_metric=y_metric,
+        )
+    else:
         raise ValueError(f"Unsupported analysis_type: {analysis_type!r}")
-
-    _plot_association(
-        df,
-        out_file,
-        q_thresh=q_thresh,
-        q_metric=q_metric,
-        plot_all=plot_all,
-        label_top_n=label_top_n,
-        x_metric=x_metric,
-        y_metric=y_metric,
-    )
     print(f"[plot_analysis] Saved: {out_file}")
 
 
@@ -362,18 +661,37 @@ def plot_analysis(
         raise FileNotFoundError(df_file)
 
     os.makedirs(output_dir, exist_ok=True)
-    df = pd.read_csv(df_file, sep="\t")
     out_file = os.path.join(output_dir, f"{tag}{analysis_type}_plot.png")
-
-    plot_analysis_obj(
-        df,
-        out_file,
-        q_thresh=q_thresh,
-        analysis_type=analysis_type,
-        q_metric=q_metric,
-        plot_all=plot_all,
-        label_top_n=label_top_n,
-        x_metric=x_metric,
-        y_metric=y_metric,
-    )
+    if analysis_type == "association":
+        if df_file.lower().endswith(".parquet"):
+            df = pd.read_parquet(df_file)
+        elif df_file.lower().endswith(".tsv"):
+            df = pd.read_csv(df_file, sep="\t")
+        else:
+            raise ValueError("Plot input must be a .tsv or .parquet file")
+        plot_analysis_obj(
+            df,
+            out_file,
+            q_thresh=q_thresh,
+            analysis_type=analysis_type,
+            q_metric=q_metric,
+            plot_all=plot_all,
+            label_top_n=label_top_n,
+            x_metric=x_metric,
+            y_metric=y_metric,
+        )
+    elif analysis_type == "cooccurrence":
+        _plot_cooccurrence_file(
+            df_file,
+            out_file,
+            q_thresh=q_thresh,
+            q_metric=q_metric,
+            plot_all=plot_all,
+            label_top_n=label_top_n,
+            x_metric=x_metric,
+            y_metric=y_metric,
+        )
+        print(f"[plot_analysis] Saved: {out_file}")
+    else:
+        raise ValueError(f"Unsupported analysis_type: {analysis_type!r}")
     return out_file
