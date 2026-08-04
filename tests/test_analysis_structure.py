@@ -14,6 +14,7 @@ from metacooc.analysis import (
     _write_full_edges_parquet_from_arrays,
     association,
     association_obj,
+    bh_logq_from_logp,
     cooccurrence_obj,
     export_cooccurrence_outputs,
 )
@@ -145,6 +146,16 @@ def _reference_nodf(X):
     if pairs == 0:
         return np.nan
     return float((row_total + col_total) / pairs)
+
+
+def test_bh_logq_caps_adjusted_probabilities_at_one():
+    log_q = bh_logq_from_logp(
+        np.log(np.array([0.8, 0.9, np.nan])),
+        m_total=10,
+    )
+
+    np.testing.assert_allclose(np.exp(log_q[:2]), [1.0, 1.0])
+    assert np.isnan(log_q[2])
 
 
 def test_association_obj_fe_and_ee(raw_ingredients):

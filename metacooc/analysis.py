@@ -1969,6 +1969,7 @@ def bh_logq_from_logp(
 
     log_q = np.empty_like(sorted_log_q)
     log_q[order] = sorted_log_q
+    np.minimum(log_q, 0.0, out=log_q)
 
     if nan_mask.any():
         log_q[nan_mask] = np.nan
