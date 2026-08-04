@@ -7,6 +7,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from adjustText import adjust_text
 from pandas.api.types import is_numeric_dtype
 
 _DEFAULT_Q_THRESHOLD = 0.10
@@ -141,21 +142,39 @@ def _top_association_rows(
     return candidates.head(int(label_top_n))
 
 
-def _annotate_association_rows(
-    ax,
+def _annotate_points(ax, labels: list[tuple[str, float, float]]) -> None:
+    if not labels:
+        return
+
+    texts = [ax.text(x, y, label, fontsize=7) for label, x, y in labels]
+    adjust_text(
+        texts,
+        target_x=[x for _, x, _ in labels],
+        target_y=[y for _, _, y in labels],
+        ax=ax,
+        expand=(1.2, 1.4),
+        force_text=(0.2, 0.4),
+        force_static=(0.2, 0.4),
+        arrowprops={"arrowstyle": "-", "color": "#666666", "lw": 0.5},
+    )
+
+
+def _association_labels(
     rows: pd.DataFrame,
     *,
     x_metric: str,
     y_metric: str,
-) -> None:
-    for offset, (_, row) in enumerate(rows.iterrows()):
-        ax.annotate(
-            _short_taxon_label(row["taxon"]),
-            (row[x_metric], row[y_metric]),
-            xytext=(4, 5 + (offset % 3) * 4),
-            textcoords="offset points",
-            fontsize=7,
+) -> list[tuple[str, float, float]]:
+    labels = []
+    for _, row in rows.iterrows():
+        labels.append(
+            (
+                _short_taxon_label(row["taxon"]),
+                float(row[x_metric]),
+                float(row[y_metric]),
+            )
         )
+    return labels
 
 
 def _save_empty_plot(out_file: str, message: str) -> None:
@@ -232,12 +251,16 @@ def _plot_association(
             x_metric=x_metric,
             y_metric=y_metric,
         )
-        _annotate_association_rows(
-            ax,
-            labels,
-            x_metric=x_metric,
-            y_metric=y_metric,
-        )
+        label_sets = [
+            (
+                ax,
+                _association_labels(
+                    labels,
+                    x_metric=x_metric,
+                    y_metric=y_metric,
+                ),
+            )
+        ]
         ax.set_xlabel(x_metric)
         ax.set_ylabel(y_metric)
         ax.set_title(f"Association: {x_metric} vs {y_metric}")
@@ -259,12 +282,6 @@ def _plot_association(
             significant=significant,
             q_metric=q_metric,
             label_top_n=label_top_n,
-            x_metric="p_cohort_given_taxon",
-            y_metric="p_taxon_given_cohort",
-        )
-        _annotate_association_rows(
-            axes[1],
-            labels,
             x_metric="p_cohort_given_taxon",
             y_metric="p_taxon_given_cohort",
         )
@@ -304,6 +321,38 @@ def _plot_association(
         axes[2].set_ylabel("Phi coefficient")
         axes[2].set_title("Association strength by specificity rank")
 
+        ranked_by_taxon = ranked.set_index("taxon")["specificity_rank"]
+        labels_with_rank = labels.copy()
+        labels_with_rank["specificity_rank"] = labels_with_rank["taxon"].map(
+            ranked_by_taxon
+        )
+        label_sets = [
+            (
+                axes[0],
+                _association_labels(
+                    labels,
+                    x_metric="p_cohort_given_taxon",
+                    y_metric="phi_coefficient",
+                ),
+            ),
+            (
+                axes[1],
+                _association_labels(
+                    labels,
+                    x_metric="p_cohort_given_taxon",
+                    y_metric="p_taxon_given_cohort",
+                ),
+            ),
+            (
+                axes[2],
+                _association_labels(
+                    labels_with_rank,
+                    x_metric="specificity_rank",
+                    y_metric="phi_coefficient",
+                ),
+            ),
+        ]
+
     for ax in axes:
         ax.axhline(0, color="black", linewidth=0.8, alpha=0.7)
         ax.grid(True, linestyle="--", alpha=0.25)
@@ -313,6 +362,8 @@ def _plot_association(
         f"{len(clean):,} (q ≤ {q_thresh:g})"
     )
     fig.tight_layout()
+    for label_axis, labels in label_sets:
+        _annotate_points(label_axis, labels)
     fig.savefig(out_file, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -488,20 +539,20 @@ def _plot_cooccurrence_chunks(
             kind="mergesort",
             inplace=True,
         )
-        for offset, (_, row) in enumerate(candidates.head(label_top_n).iterrows()):
-            ax.annotate(
-                _edge_label(
-                    row,
-                    source_column=source_column,
-                    target_column=target_column,
-                    taxa_by_id=taxa_by_id,
-                ),
-                (row[x_metric], row[y_metric]),
-                xytext=(4, 5 + (offset % 3) * 4),
-                textcoords="offset points",
-                fontsize=7,
+        labels = []
+        for _, row in candidates.head(label_top_n).iterrows():
+            labels.append(
+                (
+                    _edge_label(
+                        row,
+                        source_column=source_column,
+                        target_column=target_column,
+                        taxa_by_id=taxa_by_id,
+                    ),
+                    float(row[x_metric]),
+                    float(row[y_metric]),
+                )
             )
-
     ax.axhline(0, color="black", linewidth=0.8, alpha=0.7)
     ax.grid(True, linestyle="--", alpha=0.25)
     ax.set_xlabel(
@@ -514,6 +565,8 @@ def _plot_cooccurrence_chunks(
         f"{total_rows:,} (q ≤ {q_thresh:g})"
     )
     fig.tight_layout()
+    if label_candidates:
+        _annotate_points(ax, labels)
     fig.savefig(out_file, dpi=300, bbox_inches="tight")
     plt.close(fig)
 

@@ -87,7 +87,11 @@ def test_association_default_plot_has_three_focused_panels(
     assert axes[1].get_ylabel() == "P(taxon | cohort)"
     assert axes[2].get_xlabel() == "Taxon rank by P(cohort | taxon)"
     assert sum(len(collection.get_offsets()) for collection in axes[0].collections) == 1
-    assert [text.get_text() for text in axes[1].texts] == ["s__one"]
+    assert [text.get_text() for axis in axes for text in axis.texts] == [
+        "s__one",
+        "s__one",
+        "s__one",
+    ]
 
 
 def test_association_custom_metrics_switch_to_one_panel(
