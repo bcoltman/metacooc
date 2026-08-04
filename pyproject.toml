@@ -47,6 +47,7 @@ Tracker = "https://github.com/bcoltman/metacooc/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "black", "isort", "mypy"]
+docs = ["myst-parser", "sphinx", "sphinx-argparse", "sphinx-rtd-theme"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
