@@ -20,7 +20,16 @@ can be restricted to a biome, metadata query, or taxon neighbourhood.
 - `taxa_context` uses `|` for OR groups and `+` for terms that must occur together.
 - `focal_taxa` accepts comma-separated focal queries. Its optional `LHS -> RHS` form uses the left side to define the cohort and the right side to restrict the reported taxa.
 
-Quote queries containing spaces or shell characters. The cohort query and the null/background query are independent.
+The search mode is part of the scientific comparison, not only a retrieval
+setting. Biome labels provide broad, harmonized cohorts. Metadata can describe
+more specific host or environmental contexts, but its wording and study
+coverage are less uniform. Taxa-context searches define a community through
+its members, while focal-taxa searches restrict co-occurrence reporting to the
+taxon relationships under investigation.
+
+Quote queries containing spaces or shell characters. The cohort query and
+null/background query are separate inputs, but the selected background must
+contain the cohort samples that you intend to compare.
 
 Use `--min_taxa_count` and `--min_sample_count` to remove very small samples or rare taxa. `--min_coverage` and `--min_relative_abundance` convert abundance or coverage to presence before binary analyses; rank-specific variants are available when one threshold is not suitable for every rank. `--min_conditional_probability` removes weakly directional results from the written analysis output.
 

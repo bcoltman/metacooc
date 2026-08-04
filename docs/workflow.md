@@ -1,31 +1,71 @@
 # Recommended workflow
 
-## 1. Pin the data and define the question
+The sequence below is intended to keep the biological comparison visible while
+the command-line options are chosen. The [terminology guide](terminology.md)
+defines the CLI terms.
 
-Use an exact `--data_release` for analyses that will be compared or published. Write down the cohort query, the filters, and the null/background query. A changed cohort or background is a changed analysis, even if the package version is unchanged.
+## 1. Define the comparison
 
-Start with a small search or a custom Ingredients directory to check that the selected samples and taxa are sensible. The `search` command and the analysis progress messages are useful for this check.
+Write down the biological question before selecting a search mode. Identify the
+cohort, the background it should be compared with, the taxonomic rank, and what
+would count as a meaningful effect. A changed cohort or background is a changed
+analysis, even if every other option stays the same.
 
-## 2. Run a fast FE baseline
+Use an exact `--data_release` for analyses that will be compared or published.
+Omitting it is convenient for exploration because the CLI selects the registry
+default, but that default can move to a later scientific snapshot.
 
-For association and co-occurrence, FE is the default analytical baseline. It preserves taxon row totals and uses the analytical chi-square calculation, so it is quick and useful for finding problems with the query or thresholds. It does not mean that FE is the universally correct ecological null.
+## 2. Check the selected data
 
-For sparse or small contingency tables, add `--compute_fisher` and compare the Fisher result with the chi-square result.
+Use `metacooc search` or a small pilot run to inspect the samples and taxa
+selected by the query. This catches spelling, taxonomy, overly broad metadata
+terms, and thresholds that remove most of the cohort before computationally
+expensive analysis begins.
 
-Structure analysis is different: it computes empirical matrix-level null summaries when null simulation is enabled, including when `--null_model FE` is selected.
+Decide whether raw or aggregated Ingredients match the question. Aggregation
+is useful for whole-clade questions but changes what one taxon row represents.
+Likewise, presence thresholds define which profile observations contribute to
+every downstream metric.
 
-## 3. Inspect the compact outputs
+## 3. Run a fast first analysis
 
-Read the summary TSV and the automatic plot before opening the full table. Association summaries contain the taxon, phi, the two directional probabilities, support counts, and adjusted analytical significance. Co-occurrence summaries contain the directed source/target pair, both conditional probabilities, shared counts, phi, and adjusted significance.
+For association and co-occurrence, begin with FE, the default analytical
+baseline. It quickly reports contingency-table evidence and effect sizes,
+making it useful for checking the cohort, background, and filters. FE is not a
+universally correct ecological model. Add `--compute_fisher` when an exact
+2-by-2 test is useful for sparse or small tables.
 
-The default plots select significant positive-phi results at `q <= 0.10` and label the strongest points. Use `--plot_all` when you need the nonsignificant context, or `--label_top_n` and paired `--x_metric`/`--y_metric` options for a focused view.
+Structure analysis differs: it generates empirical matrix-level null summaries
+when null simulation is enabled, including with `--null_model FE`.
 
-## 4. Check a structure-aware null
+## 4. Inspect effect size and support
 
-Rerun the key analysis with FF when fixing both taxon prevalence and sample richness is a defensible representation of the sampling process. Set `--nm_seed` and choose an explicit `--nm_n_reps` so that the run can be repeated. EF and EE are available when their weaker or different constraints match the biological question; they are not automatic upgrades over FE.
+Read the summary TSV and automatic plot before opening the full table. Check
+phi, both directional probabilities, support counts, and adjusted significance
+together. A very specific association supported by few samples and a widespread
+association with modest specificity may lead to different follow-up questions.
 
-For association, keep the cohort query separate from the null scope. `--null_scope` changes the background used for the null calculation; it does not redefine the cohort itself.
+The default plots show significant positive-phi results at `q <= 0.10` and
+label the strongest points. Use `--plot_all` when the nonsignificant context is
+important, or change `--label_top_n` and the paired axis metrics for a focused
+view.
 
-## 5. Preserve the context
+## 5. Test sensitivity to ecological structure
 
-Keep the release identifier, command, seed, null model, replicate count, and output directory alongside any result you report. The result files repeat four compact run-level fields (`null_model`, `null_replicates`, `null_replicates_failed`, and `null_seed`) so that a table remains self-describing.
+Rerun important association or co-occurrence results with FF when preserving
+both taxon prevalence and sample richness is a defensible null hypothesis.
+Start with 1,000 replicates and an explicit `--nm_seed`. This gives a minimum
+empirical p-value of approximately `1 / 1001`; use more replicates when the
+tail probability needs finer resolution.
+
+EF and EE are available when their different constraints match the question.
+They are alternative null hypotheses, not automatic upgrades. Confirm that the
+selected background still contains the intended cohort before comparing null
+models.
+
+## 6. Preserve the analysis context
+
+Keep the package version, data release, complete command, cohort and background
+queries, filters, null model, seed, replicate count, and output directory with
+any reported result. Result tables repeat the compact run-level null metadata,
+but they cannot record the biological reasoning behind the selected comparison.
