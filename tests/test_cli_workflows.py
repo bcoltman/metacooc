@@ -278,6 +278,8 @@ def test_cli_contract_rejects_incompatible_and_stale_options(tmp_path):
                 str(tmp_path / "analysis.tsv"),
                 "--output_dir",
                 str(tmp_path),
+                "--analysis_type",
+                "association",
                 "--aggregated",
             ]
         )
@@ -416,11 +418,53 @@ def test_cli_conditional_probability_flags_parse_and_reject_old_names(tmp_path):
             str(tmp_path / "analysis.tsv"),
             "--output_dir",
             str(tmp_path / "plot"),
+            "--analysis_type",
+            "cooccurrence",
             "--q_threshold",
             "0.4",
+            "--q_metric",
+            "chi2_q_value_bh",
+            "--plot_all",
+            "--label_top_n",
+            "4",
+            "--x_metric",
+            "p_target_given_source",
+            "--y_metric",
+            "phi_coefficient",
         ]
     )
     assert plot_args.q_threshold == 0.4
+    assert plot_args.analysis_type == "cooccurrence"
+    assert plot_args.q_metric == "chi2_q_value_bh"
+    assert plot_args.plot_all is True
+    assert plot_args.label_top_n == 4
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "plot",
+                "--analysis_file",
+                str(tmp_path / "analysis.tsv"),
+                "--output_dir",
+                str(tmp_path / "missing_type"),
+            ]
+        )
+
+    unpaired_plot_args = parser.parse_args(
+        [
+            "plot",
+            "--analysis_file",
+            str(tmp_path / "analysis.tsv"),
+            "--output_dir",
+            str(tmp_path / "unpaired"),
+            "--analysis_type",
+            "association",
+            "--x_metric",
+            "phi_coefficient",
+        ]
+    )
+    with pytest.raises(SystemExit):
+        unpaired_plot_args.func(unpaired_plot_args)
 
     with pytest.raises(SystemExit):
         parser.parse_args(
@@ -460,6 +504,8 @@ def test_cli_conditional_probability_flags_parse_and_reject_old_names(tmp_path):
                 str(tmp_path / "analysis.tsv"),
                 "--output_dir",
                 str(tmp_path / "old_plot"),
+                "--analysis_type",
+                "association",
                 "--threshold",
                 "0.1",
             ]
@@ -948,6 +994,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
         failed=0,
         seed=7,
     )
+    assert (assoc_out / "cli_global_association_plot.png").exists()
     assert not (assoc_out / "cli_global_association_metadata.tsv").exists()
 
     cooc_out = tmp_path / "workflow_cooc"
@@ -975,6 +1022,7 @@ def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     )
     assert (cooc_out / "cli_global_nodes.tsv").exists()
     assert (cooc_out / "cli_global_edges_summary.tsv").exists()
+    assert (cooc_out / "cli_global_cooccurrence_plot.png").exists()
 
     structure_out = tmp_path / "workflow_structure"
     run_cli(

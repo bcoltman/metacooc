@@ -31,7 +31,12 @@ def _assert_compact_null_metadata(
 
 
 def test_run_association_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
-    monkeypatch.setattr(pipelines, "plot_analysis_obj", lambda *args, **kwargs: None)
+    plot_calls = []
+    monkeypatch.setattr(
+        pipelines,
+        "plot_analysis_obj",
+        lambda *args, **kwargs: plot_calls.append((args, kwargs)),
+    )
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
@@ -44,6 +49,10 @@ def test_run_association_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
     summary = tmp_path / "test_global_association_summary.tsv"
     assert out.exists()
     assert summary.exists()
+    assert plot_calls[0][1]["out_file"] == str(
+        tmp_path / "test_global_association_plot.png"
+    )
+    assert plot_calls[0][1]["analysis_type"] == "association"
     association = pd.read_csv(out, sep="\t")
     association_summary = pd.read_csv(summary, sep="\t")
     assert not association.empty
@@ -107,7 +116,36 @@ def test_run_association_pipeline_embeds_compact_null_metadata(
     assert not (tmp_path / "test_global_association_metadata.tsv").exists()
 
 
-def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
+def test_run_association_pipeline_can_skip_plot(
+    tmp_path,
+    raw_ingredients_path,
+    monkeypatch,
+):
+    def unexpected_plot(*args, **kwargs):
+        raise AssertionError("plotting should be disabled")
+
+    monkeypatch.setattr(pipelines, "plot_analysis_obj", unexpected_plot)
+    args = pipeline_args(
+        custom_ingredients=str(raw_ingredients_path),
+        output_dir=str(tmp_path),
+        search_mode="taxa_context",
+        search_string="g__Rhizo",
+        null_model="FE",
+        no_plot=True,
+    )
+
+    pipelines.run_association(args)
+
+    assert (tmp_path / "test_global_association.tsv").exists()
+
+
+def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path, monkeypatch):
+    plot_calls = []
+    monkeypatch.setattr(
+        pipelines,
+        "plot_analysis",
+        lambda *args, **kwargs: plot_calls.append((args, kwargs)),
+    )
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
@@ -117,6 +155,9 @@ def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
         min_conditional_probability=0.0,
     )
     pipelines.run_cooccurrence(args)
+    assert plot_calls[0][0][0] == str(tmp_path / "test_global_edges.tsv")
+    assert plot_calls[0][1]["analysis_type"] == "cooccurrence"
+    assert plot_calls[0][1]["tag"] == "test_global_"
     assert (tmp_path / "test_global_nodes.tsv").exists()
     assert (tmp_path / "test_global_edges.tsv").exists()
     edges = pd.read_csv(tmp_path / "test_global_edges.tsv", sep="\t")
@@ -153,7 +194,9 @@ def test_run_cooccurrence_pipeline(tmp_path, raw_ingredients_path):
 def test_run_cooccurrence_pipeline_embeds_compact_null_metadata(
     tmp_path,
     raw_ingredients_path,
+    monkeypatch,
 ):
+    monkeypatch.setattr(pipelines, "plot_analysis", lambda *args, **kwargs: None)
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),
@@ -201,7 +244,9 @@ def test_run_cooccurrence_pipeline_embeds_compact_null_metadata(
 def test_run_cooccurrence_pipeline_compute_fisher_outputs_readable_columns(
     tmp_path,
     raw_ingredients_path,
+    monkeypatch,
 ):
+    monkeypatch.setattr(pipelines, "plot_analysis", lambda *args, **kwargs: None)
     args = pipeline_args(
         custom_ingredients=str(raw_ingredients_path),
         output_dir=str(tmp_path),

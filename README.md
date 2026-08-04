@@ -21,6 +21,7 @@
   - [Association](#association)
   - [Structure](#structure)
   - [Biome distribution](#biome-distribution)
+  - [Plotting](#plotting)
   - [Output schemas and null-run metadata](#output-schemas-and-null-run-metadata)
 - [Key concepts](#key-concepts)
   - [Cohort vs null/background](#cohort-vs-nullbackground)
@@ -192,7 +193,7 @@ This writes:
 
 * `global_association_summary.tsv`
 * `global_association.tsv`
-* `global_plot.png`
+* `global_association_plot.png`
 
 With the default analytical `FE` association null, the result tables record `null_model=FE`; replicate and seed fields are empty because no empirical simulation ran.
 
@@ -237,6 +238,7 @@ Outputs:
 * `global_edges_summary.tsv` — reduced, interpretation-first edge table
 * `global_edges.tsv`
 * `global_nodes.tsv`
+* `global_cooccurrence_plot.png`
 * for large edge tables: `global_edges.parquet` and `global_edges_taxa.parquet` replace the detailed edge TSV
 
 Notes:
@@ -268,7 +270,7 @@ Outputs:
 
 * `global_association_summary.tsv` — reduced, interpretation-first result table
 * `global_association.tsv`
-* `global_plot.png`
+* `global_association_plot.png`
 
 The primary ranking columns are `p_cohort_given_taxon` (specificity: among samples containing the taxon, how often is the cohort present?) and `p_taxon_given_cohort` (sensitivity: among cohort samples, how often is the taxon present?).
 
@@ -321,6 +323,37 @@ Outputs a TSV, with behaviour depending on flags:
 * otherwise → export species to `taxa_biome_distribution_species.tsv`
 
 Biome distribution does not run a null model, so it does not include null-run columns.
+
+---
+
+### Plotting
+
+The full association and co-occurrence workflows plot positive-phi results at q ≤ 0.10 by default. Association shows specificity against phi, specificity against sensitivity, and phi by specificity rank; its labels prioritize taxa with the best balance of specificity and sensitivity. Co-occurrence shows `p_target_given_source` against phi. Use `--plot_all` to add negative-phi and insignificant rows in faint gray, `--label_top_n` to change the number of labels, or `--no_plot` to skip automatic plotting.
+
+Custom numeric axes must be supplied together:
+
+```bash
+metacooc association \
+  --search_mode biome \
+  --search_string soil \
+  --output_dir results/soil_assoc \
+  --x_metric lift_taxon_cohort \
+  --y_metric phi_coefficient
+```
+
+Use `--q_metric` to select another probability column for filtering. The column must contain values between zero and one.
+
+Existing detailed TSV or Parquet results can be replotted explicitly:
+
+```bash
+metacooc plot \
+  --analysis_type cooccurrence \
+  --analysis_file results/cooc/global_edges.parquet \
+  --output_dir results/cooc/replots \
+  --plot_all
+```
+
+Large co-occurrence files are read in chunks, but `--plot_all` still renders every detailed edge and may take substantial time. Structure is intentionally not plotted because its three raw metrics have incompatible scales; its focused TSV remains the clearer output.
 
 ---
 
@@ -626,7 +659,7 @@ In `structure`:
 | `association`        | Full in-memory association pipeline                                             |
 | `structure`          | Full in-memory structure pipeline                                               |
 | `analysis`           | Compute association/cooccurrence/structure from explicit input files (advanced) |
-| `plot`               | Plot TSV outputs from pipelines/analysis                                        |
+| `plot`               | Plot association or co-occurrence TSV/Parquet outputs                           |
 | `biome_distribution` | Export taxa occurrence by biome                                                 |
 
 ### Search string grammar

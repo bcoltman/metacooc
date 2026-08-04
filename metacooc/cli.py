@@ -604,9 +604,43 @@ def add_q_threshold_arg(parser, group=None):
     (group or parser).add_argument(
         "--q_threshold",
         type=validate_threshold,
-        default=0.0,
-        help="Maximum q-value to highlight in plots (default: %(default)s).",
+        default=0.10,
+        help="Maximum significance value included by default (default: %(default)s).",
     )
+
+
+def add_plot_args(parser, group=None, *, include_no_plot=False):
+    target = group or parser
+    add_q_threshold_arg(parser, group=group)
+    target.add_argument(
+        "--q_metric",
+        help="Numeric probability column used to select significant points.",
+    )
+    target.add_argument(
+        "--plot_all",
+        action="store_true",
+        help="Also plot insignificant rows as faint gray context.",
+    )
+    target.add_argument(
+        "--label_top_n",
+        type=nonnegative_int,
+        default=10,
+        help="Number of strongest significant results to label (default: %(default)s).",
+    )
+    target.add_argument(
+        "--x_metric",
+        help="Numeric x-axis column; must be combined with --y_metric.",
+    )
+    target.add_argument(
+        "--y_metric",
+        help="Numeric y-axis column; must be combined with --x_metric.",
+    )
+    if include_no_plot:
+        target.add_argument(
+            "--no_plot",
+            action="store_true",
+            help="Do not create the automatic analysis plot.",
+        )
 
 
 def add_output_dir(parser, required=True, group=None):
@@ -921,25 +955,42 @@ def analysis_command(args):
         )
 
 
+def _validate_plot_metric_pair(args, subparser):
+    if (args.x_metric is None) != (args.y_metric is None):
+        subparser.error("--x_metric and --y_metric must be provided together")
+
+
 def plot_command(args):
     from metacooc.plot import plot_analysis
+
+    _validate_plot_metric_pair(args, plot_command.__subparser__)
     args.tag = format_tag(args.tag, False)
     plot_analysis(
         df_file=args.analysis_file,
         output_dir=args.output_dir,
         tag=args.tag,
         q_thresh=args.q_threshold,
+        analysis_type=args.analysis_type,
+        q_metric=args.q_metric,
+        plot_all=args.plot_all,
+        label_top_n=args.label_top_n,
+        x_metric=args.x_metric,
+        y_metric=args.y_metric,
     )
 
 
 def cooccurrence_command(args):
     from metacooc.pipelines import run_cooccurrence
+
+    _validate_plot_metric_pair(args, cooccurrence_command.__subparser__)
     args.tag = format_tag(args.tag, args.aggregated)
     run_cooccurrence(args)
 
 
 def association_command(args):
     from metacooc.pipelines import run_association
+
+    _validate_plot_metric_pair(args, association_command.__subparser__)
     args.tag = format_tag(args.tag, args.aggregated)
     run_association(args)
 
@@ -1165,12 +1216,18 @@ def build_parser():
     req = required_group(plot_sub, "Inputs and output location for plotting.")
     general = argument_group(plot_sub, "GENERAL", None)
     output = argument_group(plot_sub, "OUTPUT", "Set output filename labels.")
-    plot_opts = argument_group(plot_sub, "PLOT", "Control plot highlighting thresholds.")
+    plot_opts = argument_group(plot_sub, "PLOT", "Control plot metrics and filtering.")
     add_output_dir(plot_sub, group=req)
     add_analysis_file(plot_sub, group=req)
+    req.add_argument(
+        "--analysis_type",
+        choices=["association", "cooccurrence"],
+        required=True,
+        help="Result schema to plot.",
+    )
     add_help(plot_sub, group=general)
     add_tag(plot_sub, group=output)
-    add_q_threshold_arg(plot_sub, group=plot_opts)
+    add_plot_args(plot_sub, group=plot_opts)
 
     # Cooccurrence
     cooc_sub = add_subcommand(
@@ -1217,6 +1274,11 @@ def build_parser():
         "ANALYSIS",
         "Control statistical tests, reporting thresholds, and co-occurrence limits.",
     )
+    plot_opts = argument_group(
+        cooc_sub,
+        "PLOT",
+        "Control the automatic co-occurrence plot.",
+    )
     add_search_mode_and_string(
         cooc_sub,
         required=True,
@@ -1240,6 +1302,7 @@ def build_parser():
     add_fisher_args(cooc_sub, group=analysis_opts)
     add_large_and_max_pairs_args(cooc_sub, group=analysis_opts)
     add_min_conditional_probability_arg(cooc_sub, group=analysis_opts)
+    add_plot_args(cooc_sub, group=plot_opts, include_no_plot=True)
 
     # Association
     assoc_sub = add_subcommand(
@@ -1286,6 +1349,11 @@ def build_parser():
         "ANALYSIS",
         "Control statistical tests and reporting thresholds.",
     )
+    plot_opts = argument_group(
+        assoc_sub,
+        "PLOT",
+        "Control the automatic association plot.",
+    )
     add_search_mode_and_string(assoc_sub, required=True, group=req, choices=COHORT_SEARCH_MODE_CHOICES)
     add_output_dir(assoc_sub, group=req)
     add_help(assoc_sub, group=general)
@@ -1302,6 +1370,7 @@ def build_parser():
     add_null_model_args(assoc_sub, group=null_model)
     add_fisher_args(assoc_sub, group=analysis_opts)
     add_min_conditional_probability_arg(assoc_sub, group=analysis_opts)
+    add_plot_args(assoc_sub, group=plot_opts, include_no_plot=True)
 
     # Structure
     structure_sub = add_subcommand(

@@ -37,7 +37,7 @@ from metacooc.analysis import (
     export_cooccurrence_outputs,
 )
 from metacooc.output import with_compact_null_metadata
-from metacooc.plot import plot_analysis_obj
+from metacooc.plot import plot_analysis, plot_analysis_obj
 from metacooc.clustering import determine_taxa_context
 from metacooc.structure import structure_obj
 
@@ -458,9 +458,23 @@ def run_association(args):
         null_model=args.null_model,
     )
 
-    output_plot_file = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_plot.png")
-    plot_analysis_obj(single_df, out_file=output_plot_file)
-    print(f"Pipeline: Plotting {output_plot_file} complete.")
+    if not getattr(args, "no_plot", False):
+        output_plot_file = os.path.join(
+            out_dir,
+            f"{args.tag}{null_scope_prefix}_association_plot.png",
+        )
+        plot_analysis_obj(
+            single_df,
+            out_file=output_plot_file,
+            q_thresh=getattr(args, "q_threshold", 0.10),
+            analysis_type="association",
+            q_metric=getattr(args, "q_metric", None),
+            plot_all=getattr(args, "plot_all", False),
+            label_top_n=getattr(args, "label_top_n", 10),
+            x_metric=getattr(args, "x_metric", None),
+            y_metric=getattr(args, "y_metric", None),
+        )
+        print(f"Pipeline: Plotting {output_plot_file} complete.")
 
 
 def run_cooccurrence(args):
@@ -508,7 +522,7 @@ def run_cooccurrence(args):
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
 
-    export_cooccurrence_outputs(
+    detailed_path = export_cooccurrence_outputs(
         edge_arrays=edge_arrays,
         nodes_df=nodes_df,
         taxa_universe=taxa_universe,
@@ -518,6 +532,19 @@ def run_cooccurrence(args):
         null_model=args.null_model,
         summary_n=100_000,
     )
+    if detailed_path is not None and not getattr(args, "no_plot", False):
+        plot_analysis(
+            detailed_path,
+            out_dir,
+            tag=f"{args.tag}{null_scope_prefix}_",
+            q_thresh=getattr(args, "q_threshold", 0.10),
+            analysis_type="cooccurrence",
+            q_metric=getattr(args, "q_metric", None),
+            plot_all=getattr(args, "plot_all", False),
+            label_top_n=getattr(args, "label_top_n", 10),
+            x_metric=getattr(args, "x_metric", None),
+            y_metric=getattr(args, "y_metric", None),
+        )
 
 
 def run_biome_distribution(args):
