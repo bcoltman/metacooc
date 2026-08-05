@@ -141,7 +141,7 @@ def _validate_search_cli(args):
             if args.metadata_file and args.data_release:
                 _subparser_error(
                     args,
-                    "--metadata_file and --data-release are alternative metadata "
+                    "--metadata_file and --data_release are alternative metadata "
                     "sources for --list_column_names",
                 )
             if args.metadata_file is None and args.data_release is None:
@@ -187,7 +187,7 @@ def _validate_search_cli(args):
         if args.metadata_file and args.data_release:
             _subparser_error(
                 args,
-                "--metadata_file and --data-release are alternative metadata sources",
+                "--metadata_file and --data_release are alternative metadata sources",
             )
         if args.metadata_file is None and args.data_release is None:
             _apply_default_data_release(args)
@@ -296,7 +296,7 @@ def prepare_cli_args(args):
     ):
         _subparser_error(
             args,
-            "--custom_ingredients and --data-release are mutually exclusive; "
+            "--custom_ingredients and --data_release are mutually exclusive; "
             "custom Ingredients use the identity stored in their manifest",
         )
     if hasattr(args, "null_scope"):
@@ -306,16 +306,16 @@ def prepare_cli_args(args):
         if args.list_data_releases:
             incompatible = []
             if args.data_release:
-                incompatible.append("--data-release")
+                incompatible.append("--data_release")
             if args.include_metadata:
-                incompatible.append("--include-metadata")
+                incompatible.append("--include_metadata")
             if args.force:
                 incompatible.append("--force")
             if incompatible:
                 _subparser_error(
                     args,
                     f"{', '.join(incompatible)} cannot be used with "
-                    "--list-data-releases",
+                    "--list_data_releases",
                 )
         elif args.data_release is None:
             _apply_default_data_release(args)

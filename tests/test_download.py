@@ -207,7 +207,7 @@ def test_download_include_metadata_adds_only_sra_metadata(monkeypatch, tmp_path)
 
 
 def test_download_requires_exact_release(tmp_path):
-    with pytest.raises(DataReleaseError, match="exact --data-release"):
+    with pytest.raises(DataReleaseError, match="exact --data_release"):
         download.download_data(tmp_path)
 
 

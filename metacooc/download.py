@@ -9,7 +9,7 @@ This script downloads the following default files into the specified data direct
     - ingredients_aggregated_<data_release>_format<format_version>/
 
 The shared sra_metadata_<base_release>_rev<revision>.tsv file is downloaded only when
---include-metadata is specified.
+--include_metadata is specified.
 
 Ingredients are downloaded as .tar.gz archives, extracted to Ingredients
 directories, and the temporary archives are removed. Metadata files are
@@ -19,7 +19,7 @@ than downloaded as a separate file.
 Use the --force flag to re-download files even if they already exist.
 
 Usage (CLI):
-    metacooc download [--data-release R226_gtdb_rev1] [--data_dir /path/to/data] [--force]
+    metacooc download [--data_release R226_gtdb_rev1] [--data_dir /path/to/data] [--force]
 """
 
 import os
@@ -123,8 +123,8 @@ def download_data(
 
     if data_release is None:
         raise DataReleaseError(
-            "An exact --data-release is required for downloads, for example "
-            "'R226_gtdb_rev1'. Use --list-data-releases to list published releases."
+            "An exact --data_release is required for downloads, for example "
+            "'R226_gtdb_rev1'. Use --list_data_releases to list published releases."
         )
     data_dir = os.fspath(data_dir or default_data_dir())
 
@@ -159,7 +159,7 @@ def download_data(
         return
     
     print(f"This script is looking for the download files of {data_release}. If you want an alternative release, "
-          "please specify it with --data-release. To see which releases are available, please use --list-data-releases")
+          "please specify it with --data_release. To see which releases are available, please use --list_data_releases")
     # Prompt user for confirmation
     user_input = input(f"Do you want to download {missing_files} missing files to {data_dir}? (y/n): ").strip().lower()
     if user_input != 'y':

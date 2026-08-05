@@ -803,7 +803,7 @@ def search_data_obj(
                 raise ValueError("data_dir must be provided if searching metadata without metadata_file")
             if data_release is None:
                 raise DataReleaseError(
-                    "An exact --data-release is required when resolving published "
+                    "An exact --data_release is required when resolving published "
                     "metadata, for example 'R226_gtdb_rev1'; alternatively, "
                     "provide an explicit --metadata_file."
                 )
@@ -967,7 +967,7 @@ def search_data(
                 raise ValueError("data_dir must be provided if listing metadata columns without metadata_file")
             if data_release is None:
                 raise DataReleaseError(
-                    "An exact --data-release is required when resolving published "
+                    "An exact --data_release is required when resolving published "
                     "metadata, for example 'R226_gtdb_rev1'; alternatively, "
                     "provide an explicit --metadata_file."
                 )

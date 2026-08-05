@@ -170,7 +170,7 @@ def add_data_dir(parser, group=None):
 
 def add_data_release(parser, group=None, mode: str = "load"):
     """
-    Add --data-release CLI option.
+    Add --data_release CLI option.
 
     mode:
         "load"   -> select an exact published release
@@ -182,7 +182,7 @@ def add_data_release(parser, group=None, mode: str = "load"):
             "need published data use the registry-selected latest GlobDB release. "
             "For a given data source, the default is not applied when that source "
             "is supplied explicitly. Published releases can be listed with "
-            "'metacooc download --list-data-releases'."
+            "'metacooc download --list_data_releases'."
         )
     elif mode == "format":
         help_text = (
@@ -196,7 +196,7 @@ def add_data_release(parser, group=None, mode: str = "load"):
         "default": None,
         "help": help_text,
     }
-    (group or parser).add_argument("--data-release", dest="data_release", **kwargs)
+    (group or parser).add_argument("--data_release", **kwargs)
 
 
 def add_tag_and_aggregated(parser, group=None):
@@ -232,7 +232,7 @@ def add_custom_ingredients(parser, group=None):
         "--custom_ingredients",
         help=(
             "Explicit Ingredients directory to use instead of published Ingredients "
-            "resolved from --data_dir and --data-release."
+            "resolved from --data_dir and --data_release."
         ),
     )
 
@@ -250,7 +250,7 @@ def add_metadata_file(parser, group=None):
         "--metadata_file",
         help=(
             "Explicit metadata TSV file; replaces metadata resolution from "
-            "--data_dir and --data-release only. Ingredients selection is unchanged."
+            "--data_dir and --data_release only. Ingredients selection is unchanged."
         ),
     )
 
@@ -684,7 +684,7 @@ def add_force(parser, group=None):
 
 def add_list_data_releases(parser, group=None):
     (group or parser).add_argument(
-        "--list-data-releases",
+        "--list_data_releases",
         action="store_true",
         help="List available data releases.",
     )
@@ -692,7 +692,7 @@ def add_list_data_releases(parser, group=None):
 
 def add_include_metadata(parser, group=None):
     (group or parser).add_argument(
-        "--include-metadata",
+        "--include_metadata",
         action="store_true",
         help="Also download the shared SRA metadata table.",
     )
@@ -1495,7 +1495,7 @@ def parse_cli():
         ):
             _subparser_error(
                 args,
-                "--tag cannot be combined with a canonical --data-release; official "
+                "--tag cannot be combined with a canonical --data_release; official "
                 "filenames are deterministic",
             )
         args.func(args)

@@ -62,7 +62,7 @@ def test_cli_data_dir_default_uses_env_var(monkeypatch, tmp_path):
     monkeypatch.setenv("METACOOC_DATA_DIR", str(expected))
 
     parser = build_parser()
-    args = parser.parse_args(["download", "--list-data-releases"])
+    args = parser.parse_args(["download", "--list_data_releases"])
 
     assert args.data_dir == str(expected)
 
@@ -80,22 +80,22 @@ def test_cli_data_dir_default_uses_platformdirs(monkeypatch, tmp_path):
     )
 
     parser = build_parser()
-    args = parser.parse_args(["download", "--list-data-releases"])
+    args = parser.parse_args(["download", "--list_data_releases"])
 
     assert args.data_dir == str(tmp_path / "share" / "metacooc" / "data")
 
 
 @pytest.mark.cli
-def test_cli_uses_data_release_names_and_rejects_legacy_flags():
+def test_cli_uses_underscore_option_names_and_rejects_legacy_flags():
     from metacooc.cli import build_parser
 
     parser = build_parser()
-    args = parser.parse_args(["download", "--data-release", "R226_gtdb_rev1"])
+    args = parser.parse_args(["download", "--data_release", "R226_gtdb_rev1"])
     assert args.data_release == "R226_gtdb_rev1"
     assert args.include_metadata is False
 
     args = parser.parse_args(
-        ["download", "--data-release", "R226_gtdb_rev1", "--include-metadata"]
+        ["download", "--data_release", "R226_gtdb_rev1", "--include_metadata"]
     )
     assert args.include_metadata is True
 
@@ -105,9 +105,17 @@ def test_cli_uses_data_release_names_and_rejects_legacy_flags():
     with pytest.raises(SystemExit):
         parser.parse_args(["download", "--list_data_versions"])
 
+    for argv in (
+        ["download", "--data-release", "R226_gtdb_rev1"],
+        ["download", "--list-data-releases"],
+        ["download", "--include-metadata"],
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args(argv)
+
     invalid_release = run_cli_no_check(
         "download",
-        "--data-release",
+        "--data_release",
         "R226_gtdb",
     )
     assert invalid_release.returncode != 0
@@ -260,7 +268,7 @@ def test_cli_custom_and_explicit_metadata_sources_suppress_default(
     prepare_cli_args(format_args)
     assert format_args.data_release is None
 
-    list_args = parser.parse_args(["download", "--list-data-releases"])
+    list_args = parser.parse_args(["download", "--list_data_releases"])
     prepare_cli_args(list_args)
     assert list_args.data_release is None
 
@@ -753,7 +761,7 @@ def cli_formatted_dir(tmp_path, fixture_dir):
         "--aggregated",
         "--tag",
         "cli",
-        "--data-release",
+        "--data_release",
         "test",
     )
     assert (out / "ingredients_raw_cli").exists()
@@ -773,7 +781,7 @@ def test_cli_rejects_custom_ingredients_with_data_release(
         "g__Rhizo",
         "--custom_ingredients",
         cli_formatted_dir / "ingredients_raw_cli",
-        "--data-release",
+        "--data_release",
         "R226_gtdb_rev1",
         "--output_dir",
         tmp_path / "invalid",
@@ -1306,4 +1314,4 @@ def test_cli_invalid_query_grammar_fails_clearly(tmp_path, cli_formatted_dir):
     assert missing_metadata_source.returncode != 0
     assert "Traceback" not in missing_metadata_source.stderr
     assert "R226_globdb_rev1" in missing_metadata_source.stderr
-    assert "--include-metadata" in missing_metadata_source.stderr
+    assert "--include_metadata" in missing_metadata_source.stderr

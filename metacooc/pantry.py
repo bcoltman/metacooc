@@ -999,9 +999,9 @@ def load_ingredients(
     if not custom_ingredients:
         if data_release is None:
             raise DataReleaseError(
-                "An exact --data-release is required when loading published "
+                "An exact --data_release is required when loading published "
                 "Ingredients, for example 'R226_gtdb_rev1'. Use "
-                "'metacooc download --list-data-releases' to list published releases."
+                "'metacooc download --list_data_releases' to list published releases."
             )
         filenames, _ = get_file_info(data_release)
         if not data_dir:

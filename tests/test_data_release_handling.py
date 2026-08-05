@@ -146,7 +146,7 @@ def test_load_published_ingredients_requires_exact_release(monkeypatch, tmp_path
     )
     assert ingredients.data_release == "R226_globdb_rev1"
 
-    with pytest.raises(DataReleaseError, match="exact --data-release"):
+    with pytest.raises(DataReleaseError, match="exact --data_release"):
         load_ingredients(data_dir=str(tmp_path))
 
 
