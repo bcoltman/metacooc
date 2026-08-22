@@ -30,6 +30,13 @@ metacooc association \
   --output_dir results/examples/bee-gut-association
 ```
 
+```{figure} ../../examples/poster_plots/bee_gut_association.png
+:alt: Bee-gut association plot
+:width: 90%
+
+Species associated with the bee-gut metadata cohort.
+```
+
 ## Human gut
 
 The second cohort uses the metadata term `human gut metagenome`. Additional
@@ -49,6 +56,13 @@ metacooc association \
   --q_threshold 0.10 \
   --label_top_n 6 \
   --output_dir results/examples/human-gut-association
+```
+
+```{figure} ../../examples/poster_plots/human_gut_association.png
+:alt: Human-gut association plot
+:width: 90%
+
+Species associated with the human-gut metadata cohort after count filtering.
 ```
 
 ## Reading the results

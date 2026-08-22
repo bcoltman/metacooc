@@ -38,6 +38,13 @@ metacooc cooccurrence \
   --output_dir results/examples/smithii-cooccurrence/neighbourhood
 ```
 
+```{figure} ../../examples/poster_plots/smithii_human_gut_cooccurrence.png
+:alt: Methanocatella smithii co-occurrence plot
+:width: 90%
+
+The species-level *M. smithii* neighbourhood in the human-gut background.
+```
+
 ## 2. Test *Christensenella* species
 
 The `LHS -> RHS` form uses *Christensenella* species to define the focal cohort
