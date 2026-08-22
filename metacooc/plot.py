@@ -666,7 +666,20 @@ def plot_analysis_obj(
     x_metric: str | None = None,
     y_metric: str | None = None,
 ) -> None:
-    """Plot an in-memory association or co-occurrence result."""
+    """Plot an in-memory association or co-occurrence result.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Detailed association or co-occurrence results.
+    out_file : str
+        PNG path to write.
+    analysis_type : {"association", "cooccurrence"}
+        Selects the analysis-specific panel layout and default metrics.
+    q_metric : str, optional
+        Probability column used for the significance filter. ``x_metric`` and
+        ``y_metric`` must be supplied together when custom axes are wanted.
+    """
     if df.empty:
         raise ValueError("DataFrame is empty — nothing to plot.")
     if analysis_type == "association":
@@ -710,6 +723,12 @@ def plot_analysis(
     x_metric: str | None = None,
     y_metric: str | None = None,
 ) -> str:
+    """Read a TSV or Parquet result and write an analysis-specific plot.
+
+    ``analysis_type`` must be ``"association"`` or ``"cooccurrence"``.
+    Co-occurrence Parquet files are read in chunks; the returned string is the
+    generated PNG path.
+    """
     if not os.path.exists(df_file):
         raise FileNotFoundError(df_file)
 

@@ -96,13 +96,21 @@ def download_data(
     include_metadata=False,
 ):
     """
-    Download data files for a specific Sandpiper data_release into data_dir.
-    
-    Parameters:
-        data_dir (str): Directory where data files will be saved.
-        force (bool): If True, force re-download even if the file exists.
-        data_release (str): exact data release to download.
-        include_metadata (bool): Also download the shared SRA metadata table.
+    Download a published data release into ``data_dir``.
+
+    Parameters
+    ----------
+    data_dir : str, optional
+        Directory where data files will be saved.
+    list_data_releases : bool
+        Print releases from the registry instead of downloading files.
+    data_release : str, optional
+        Exact release identifier, such as ``R226_globdb_rev1``. Required for
+        downloads; omit only when ``list_data_releases`` is true.
+    force : bool
+        Re-download files even when matching files already exist.
+    include_metadata : bool
+        Also download the shared SRA metadata table.
     """
     if list_data_releases:
         registry = load_registry()

@@ -993,7 +993,12 @@ def load_ingredients(
     custom_ingredients=None,
     data_release: Optional[str] = None,
     sample_to_biome_file=None) -> Ingredients:
-    """Load an Ingredients object and associated biome mapping."""
+    """Load an Ingredients object and associated biome mapping.
+
+    Published Ingredients require an explicit ``data_release`` and
+    ``data_dir``. For custom work, pass an Ingredients directory or an existing
+    ``Ingredients`` object through ``custom_ingredients``.
+    """
     
     # determine ingredients file path
     if not custom_ingredients:

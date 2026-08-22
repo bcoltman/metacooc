@@ -393,6 +393,13 @@ def association_obj(
     nm_steps_per_rep: int | None = None,
     nm_progress_every: int = 25,
 ) -> pd.DataFrame:
+    """Calculate taxon-to-cohort association metrics in memory.
+
+    ``filtered_ingredients`` supplies the cohort and ``null_ingredients``
+    supplies the comparison background. The returned table contains detailed
+    metrics; use :func:`export_association_outputs` when summary and detailed
+    files are required.
+    """
     out = _association_core(
         null_ingredients=null_ingredients,
         filtered_ingredients=filtered_ingredients,
@@ -725,7 +732,14 @@ def association(
     nm_burn_in_steps: int | None = None,
     nm_steps_per_rep: int | None = None,
     nm_progress_every: int = 25,
-) -> pd.DataFrame:
+) -> None:
+    """Run association analysis and write detailed and summary TSV files.
+
+    ``null_ingredients`` and ``filtered_ingredients`` may be Ingredients
+    objects or values accepted by :func:`metacooc.pantry.load_ingredients`.
+    The detailed and summary result files are written below ``output_dir``.
+    The file-writing wrapper currently returns ``None``.
+    """
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
@@ -1280,6 +1294,10 @@ def cooccurrence_obj(
     """
     Pairwise co-occurrence of taxa.
 
+    ``null_ingredients`` defines the sample/background matrix and
+    ``taxa_universe`` defines the taxa considered. Focal and RHS mappings are
+    optional restrictions for focal-taxa workflows.
+
     If focal_query_to_taxa is provided, computation is restricted to focal-anchored
     pairs only, using the union of resolved focal taxa across queries.
 
@@ -1574,6 +1592,11 @@ def cooccurrence(
 ):
     """
     Run taxon–taxon co-occurrence analysis and write edge/node tables to disk.
+
+    Inputs may be Ingredients objects or values accepted by
+    :func:`metacooc.pantry.load_ingredients`. The output directory receives a
+    reduced edge summary, detailed edges, and node results; very large edge
+    tables use Parquet output. The file-writing wrapper returns ``None``.
     """
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir, exist_ok=True)
