@@ -54,6 +54,22 @@ metacooc download \
 Metadata is the larger, optional part of the download. Analyses based only on
 biome labels or taxa do not require it.
 
+## How the workflow fits together
+
+```{figure} _images/metacooc-workflow.svg
+:alt: MetaCoOc workflow from published profiles through cohort selection, filtering, analysis, and reporting, with background and null-model choices feeding the analysis.
+:width: 100%
+
+The main MetaCoOc workflow and the choices that define its comparison.
+```
+
+The search defines the cohort and therefore the biological question. Presence
+thresholds and count filters decide which observations enter the analysis. The
+background is selected separately because it defines the relevant comparison
+population. For an important result, empirical null constraints can then test
+whether the pattern remains unusual after selected properties of the community
+matrix are explained.
+
 ## First association: bee gut
 
 Biome labels provide broad, consistently named environments. Metadata is more
