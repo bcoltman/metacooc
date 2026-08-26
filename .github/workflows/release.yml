@@ -41,6 +41,18 @@ jobs:
         run: python -m build
       - name: Check distributions
         run: python -m twine check dist/*
+      - name: Smoke-test wheel
+        run: |
+          python -m venv /tmp/metacooc-wheel
+          /tmp/metacooc-wheel/bin/python -m pip install dist/*.whl
+          /tmp/metacooc-wheel/bin/python -c "import metacooc, metacooc.plot; assert metacooc.__version__ == '0.1.0'"
+          /tmp/metacooc-wheel/bin/metacooc --version
+      - name: Smoke-test source distribution
+        run: |
+          python -m venv /tmp/metacooc-sdist
+          /tmp/metacooc-sdist/bin/python -m pip install dist/*.tar.gz
+          /tmp/metacooc-sdist/bin/python -c "import metacooc, metacooc.plot; assert metacooc.__version__ == '0.1.0'"
+          /tmp/metacooc-sdist/bin/metacooc --help
       - uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions
