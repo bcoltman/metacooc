@@ -27,6 +27,7 @@ requirements:
     - pandas
     - scipy
     - matplotlib
+    - adjusttext
     - requests
     - pyarrow
     - platformdirs
@@ -37,6 +38,7 @@ test:
     - metacooc
   commands:
     - metacooc --help
+    - python -c "import metacooc.plot"
     - pip check
   requires:
     - pip
