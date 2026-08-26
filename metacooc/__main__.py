@@ -21,13 +21,13 @@ import sys
 from metacooc import __author__, __copyright__, __version__
 from metacooc.cli import parse_cli
 
-def print_help():
+def print_help(file=None):
     print('''\
 
   metacooc v%s
 
   Starter:
-    download -> Download required files with metagenome metadata and taxonomic profiles.
+    download -> Download the default published Ingredients release and optional metadata.
 
   Main dishes:
     cooccurrence -> Identify co-occurring prokaryotes across shotgun metagenomes.
@@ -35,15 +35,15 @@ def print_help():
     structure    -> Quantify community structure (e.g. nestedness, overlap, checkerboard patterns) in taxonomic profiles.
 
   Sides:
-    search -> Query the metagenome metadata and taxonomic profiles.
-    filter -> Filter the taxonomic profiles by keyword or sample list.
+    search -> Query published or custom Ingredients and metadata.
+    filter -> Filter Ingredients by sample, count, rank, or presence thresholds.
     analysis -> Perform association, cooccurrence or structural analysis.
     format -> Format sandpiper output, or other taxonomic profiles, to metacooc input.
     plot -> Generate plots based on the output of other menu items.
     biome_distribution -> Output a TSV file of taxa occurrence per pre-determined biomes.
 
-  Use: metacooc <command> -h for command specific help
-    ''' % __version__)
+  Use: metacooc <command> -h for command-specific help
+    ''' % __version__, file=file)
 
 
 def main():
@@ -58,9 +58,9 @@ def main():
         print_help()
         sys.exit(0)
     elif sys.argv[1] not in {'download', 'cooccurrence', 'association', 'structure', 'search', 'filter', 'analysis', 'format', 'plot', 'biome_distribution'}:
-        print(f"program not on the menu, choose from the options listed below ")
-        print_help()
-        sys.exit(0)
+        print(f"Unknown command: {sys.argv[1]!r}", file=sys.stderr)
+        print_help(file=sys.stderr)
+        sys.exit(2)
     else:
         parse_cli()
 

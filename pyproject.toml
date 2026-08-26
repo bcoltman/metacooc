@@ -12,14 +12,17 @@ authors = [
     {name = "Benjamin Coltman", email = "benjamin.coltman@univie.ac.at"},
 	{name = "Daan Speth", email = "daan.speth@univie.ac.at"}
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "pandas",
 	"scipy",
     "matplotlib",
+	"adjustText",
 	"requests",
-	"pyarrow"
+	"pyarrow",
+    "platformdirs",
+    "tqdm"
 ]
 keywords = ["metagenomics","co-occurrence","bioinformatics"]
 
@@ -27,6 +30,9 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
 
@@ -41,6 +47,15 @@ Tracker = "https://github.com/bcoltman/metacooc/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "black", "isort", "mypy"]
+docs = ["myst-parser", "sphinx", "sphinx-argparse", "sphinx-rtd-theme"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: end-to-end workflow tests",
+    "cli: subprocess tests for command-line entrypoints",
+    "nullmodels: null model sampler tests",
+]
 
 [project.scripts]
 metacooc = "metacooc.__main__:main"
@@ -48,3 +63,6 @@ metacooc = "metacooc.__main__:main"
 [tool.setuptools]
 packages = ["metacooc"]
 include-package-data = true
+
+[tool.setuptools.package-data]
+metacooc = ["data_registry.v1.json"]
