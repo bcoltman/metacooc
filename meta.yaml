@@ -1,5 +1,5 @@
 {% set name = "metacooc" %}
-{% set version = "1.1.0" %}
+{% set version = "0.1.0" %}
 
 package:
   name: {{ name|lower }}
@@ -27,6 +27,7 @@ requirements:
     - pandas
     - scipy
     - matplotlib
+    - adjusttext
     - requests
     - pyarrow
     - platformdirs
@@ -37,6 +38,7 @@ test:
     - metacooc
   commands:
     - metacooc --help
+    - python -c "import metacooc.plot"
     - pip check
   requires:
     - pip
