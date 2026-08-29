@@ -25,8 +25,7 @@ from metacooc.format import format_data  # noqa: E402
 from metacooc.null_models import make_null_sampler  # noqa: E402
 
 
-MODELS = ("FE", "EF", "EE")
-EE_VARIANTS = ("auto", "legacy", "oversample", "chunked", "numpy-choice", "floyd")
+MODELS = ("FE", "EF", "EE", "FF")
 SCENARIOS = (
     "fixture",
     "ingredients",
@@ -44,13 +43,6 @@ SCENARIOS = (
 
 def _positive_int(value: str) -> int:
     parsed = int(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return parsed
-
-
-def _positive_float(value: str) -> float:
-    parsed = float(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
     return parsed
@@ -233,6 +225,9 @@ def _validate_output(X: sp.csr_matrix, Y: sp.csr_matrix, model: str, sort_indice
         checks["col_totals"] = bool(np.array_equal(Y.getnnz(axis=0), X.getnnz(axis=0)))
     elif model == "EE":
         checks["nnz"] = int(Y.nnz) == int(X.nnz)
+    elif model == "FF":
+        checks["row_totals"] = bool(np.array_equal(Y.getnnz(axis=1), X.getnnz(axis=1)))
+        checks["col_totals"] = bool(np.array_equal(Y.getnnz(axis=0), X.getnnz(axis=0)))
     return checks
 
 
@@ -258,7 +253,6 @@ def _run_benchmark(case: dict, model: str, args: argparse.Namespace, *, ee_varia
         "nnz": int(X.nnz),
         "density": _density(X),
         "sort_indices": bool(args.sort_indices),
-        "memory_mb": args.memory_mb,
         "timings_sec": [],
         "algorithm_counts": {},
         "estimated_temp_mb": 0.0,
@@ -272,11 +266,11 @@ def _run_benchmark(case: dict, model: str, args: argparse.Namespace, *, ee_varia
         sampler = make_null_sampler(
             X,
             model,
-            random_state=args.seed,
+            seed=args.seed,
             sort_indices=args.sort_indices,
-            memory_mb=args.memory_mb,
-            ee_strategy=ee_variant,
-            debug_callback=debug_events,
+            burn_in_steps=args.burn_in_steps if model == "FF" else None,
+            steps_per_rep=args.steps_per_rep if model == "FF" else None,
+            _debug_callback=debug_events,
         )
         result["construct_sec"] = time.perf_counter() - construct_start
 
@@ -314,7 +308,7 @@ def _run_benchmark(case: dict, model: str, args: argparse.Namespace, *, ee_varia
 
 def _markdown_summary(results: list[dict]) -> str:
     lines = [
-        "# Direct Null Sampler Benchmark",
+        "# Null Sampler Benchmark",
         "",
         "| case | model | EE variant | shape | nnz | density | reps | algorithms | mean s/rep | ok |",
         "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- |",
@@ -352,10 +346,10 @@ def _write_results(path: Path, results: list[dict], args: argparse.Namespace) ->
         "metadata": {
             "reps": int(args.reps),
             "seed": int(args.seed),
-            "memory_mb": args.memory_mb,
             "sort_indices": bool(args.sort_indices),
             "scenarios": list(args.scenario),
-            "ee_variants": list(args.ee_variant),
+            "burn_in_steps": args.burn_in_steps,
+            "steps_per_rep": args.steps_per_rep,
         },
         "results": results,
     }
@@ -365,7 +359,7 @@ def _write_results(path: Path, results: list[dict], args: argparse.Namespace) ->
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark FE/EF/EE direct null samplers.")
+    parser = argparse.ArgumentParser(description="Benchmark MetaCoOc null samplers.")
     parser.add_argument("--ingredients", action="append", default=[], help="Path to an Ingredients pickle. Repeat for multiple HPC inputs.")
     parser.add_argument(
         "--scenario",
@@ -374,19 +368,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Benchmark scenario to run. Defaults to ingredients when --ingredients is set, otherwise fixture.",
     )
     parser.add_argument("--model", action="append", choices=MODELS, help="Restrict to one or more models. Defaults to each case's models.")
-    parser.add_argument(
-        "--ee-variant",
-        action="append",
-        choices=EE_VARIANTS,
-        default=None,
-        help=(
-            "EE implementation variant to benchmark. Repeat for multiple variants. "
-            "Use with --model EE to compare EE variants directly."
-        ),
-    )
     parser.add_argument("--reps", type=_positive_int, default=3, help="Replicates per case/model.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--memory-mb", type=_positive_float, default=None, help="Temporary-memory budget passed to direct samplers.")
+    parser.add_argument("--burn-in-steps", type=_positive_int, default=None, help="FF burn-in steps.")
+    parser.add_argument("--steps-per-rep", type=_positive_int, default=None, help="FF Curveball steps per replicate.")
     parser.add_argument("--sort-indices", action="store_true", help="Request sorted CSR output and validate sorted indices.")
     parser.add_argument("--out", type=Path, help="Detailed output path. Use .jsonl for JSON Lines, otherwise JSON.")
     return parser.parse_args(argv)
@@ -396,8 +381,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.scenario is None:
         args.scenario = ["ingredients"] if args.ingredients else ["fixture"]
-    if args.ee_variant is None:
-        args.ee_variant = ["auto"]
     if "ingredients" in args.scenario and not args.ingredients:
         raise SystemExit("--scenario ingredients requires --ingredients PATH")
 
@@ -406,11 +389,7 @@ def main(argv: list[str] | None = None) -> int:
     for case in _build_cases(args):
         for model in case["models"]:
             if model in model_filter:
-                if model == "EE":
-                    for ee_variant in args.ee_variant:
-                        results.append(_run_benchmark(case, model, args, ee_variant=ee_variant))
-                else:
-                    results.append(_run_benchmark(case, model, args))
+                results.append(_run_benchmark(case, model, args))
 
     print(_markdown_summary(results))
     if args.out is not None:
