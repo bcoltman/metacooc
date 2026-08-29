@@ -26,16 +26,18 @@ import os
 import numpy as np
 import pandas as pd
 
-from metacooc.search import search_data_obj
+from metacooc.search import resolve_focal_taxa_queries, search_data_obj
 from metacooc.filter import filter_data_obj
-from metacooc.pantry import load_ingredients
+from metacooc.pantry import load_ingredients, threshold_ingredients_presence
 from metacooc.analysis import (
     association_obj,
     cooccurrence_obj,
+    export_association_outputs,
     select_taxa_universe,
     export_cooccurrence_outputs,
 )
-from metacooc.plot import plot_analysis_obj
+from metacooc.output import with_compact_null_metadata
+from metacooc.plot import plot_analysis, plot_analysis_obj
 from metacooc.clustering import determine_taxa_context
 from metacooc.structure import structure_obj
 
@@ -75,6 +77,47 @@ def _rows_to_taxa_in_universe(
 
     return out if out else None
 
+
+def _taxa_indices_from_query(ingredients, taxa_query):
+    rows_by_query = resolve_focal_taxa_queries(ingredients, taxa_query)
+    rows = set()
+    for query_rows in rows_by_query.values():
+        rows.update(query_rows)
+    return sorted(rows)
+
+
+def _biome_distribution_filter_requested(args):
+    return any(
+        getattr(args, name, None) is not None
+        for name in ("min_taxa_count", "min_sample_count", "filter_rank")
+    )
+
+
+def _biome_distribution_taxa_frame(presence, biomes, taxa, indices):
+    selected_taxa = [taxa[i] for i in indices]
+    out = pd.DataFrame(
+        data=presence[:, indices].toarray(),
+        columns=selected_taxa,
+        index=biomes,
+    ).T
+    out.index.name = "taxon"
+    return out.reset_index()
+
+
+def _threshold_ingredients_from_args(ingredients, args):
+    return threshold_ingredients_presence(
+        ingredients,
+        min_coverage=getattr(args, "min_coverage", None),
+        min_coverage_by_rank=getattr(args, "min_coverage_by_rank", None),
+        min_relative_abundance=getattr(args, "min_relative_abundance", None),
+        min_relative_abundance_by_rank=getattr(
+            args,
+            "min_relative_abundance_by_rank",
+            None,
+        ),
+    )
+
+
 def run_shared_pipeline_setup(args):
     """
     Shared setup for cooccurrence, association, and structure pipelines.
@@ -105,8 +148,9 @@ def run_shared_pipeline_setup(args):
         args.data_dir,
         args.aggregated,
         args.custom_ingredients,
-        args.data_version,
+        args.data_release,
     )
+    ingredients = _threshold_ingredients_from_args(ingredients, args)
 
     focal_query_to_taxa = None
     rhs_query_to_taxa = None
@@ -121,7 +165,7 @@ def run_shared_pipeline_setup(args):
             column_names=args.column_names,
             inverse=args.inverse,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
             return_details=True,
@@ -137,7 +181,7 @@ def run_shared_pipeline_setup(args):
             column_names=args.column_names,
             inverse=args.inverse,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
         )
@@ -202,7 +246,7 @@ def run_shared_pipeline_setup(args):
             search_string=search_string,
             data_dir=args.data_dir,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
         )
@@ -227,7 +271,7 @@ def run_shared_pipeline_setup(args):
             search_string=search_string,
             data_dir=args.data_dir,
             custom_ingredients=ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
         )
@@ -275,7 +319,7 @@ def run_shared_pipeline_setup(args):
             column_names=args.column_names,
             inverse=False,
             custom_ingredients=filtered_ingredients,
-            data_version=args.data_version,
+            data_release=args.data_release,
             aggregated=args.aggregated,
             metadata_file=getattr(args, "metadata_file", None),
             return_details=True,
@@ -359,12 +403,21 @@ def run_structure(args):
         filt_ing,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
-        nm_random_state=args.nm_random_state,
+        nm_seed=args.nm_seed,
+        nm_n_workers=getattr(args, "nm_n_workers", None),
+        nm_mp_start=getattr(args, "nm_mp_start", None),
+        nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),
+        nm_steps_per_rep=getattr(args, "nm_steps_per_rep", None),
+        nm_progress_every=getattr(args, "nm_progress_every", 25),
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
     output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_structure.tsv")
-    structure_df.to_csv(output_path, sep="\t", index=False)
+    structure_output = with_compact_null_metadata(
+        structure_df,
+        structure_df.attrs.get("null_metadata"),
+    )
+    structure_output.to_csv(output_path, sep="\t", index=False)
     print(f"Pipeline: {null_scope_prefix} structure analysis saved to {output_path}")
 
 
@@ -385,21 +438,43 @@ def run_association(args):
     single_df = association_obj(
         null_ing,
         filt_ing,
-        threshold=args.threshold,
+        min_conditional_probability=args.min_conditional_probability,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
         compute_fisher=args.compute_fisher,
-        nm_random_state=args.nm_random_state,
+        nm_seed=args.nm_seed,
+        nm_n_workers=getattr(args, "nm_n_workers", None),
+        nm_mp_start=getattr(args, "nm_mp_start", None),
+        nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),
+        nm_steps_per_rep=getattr(args, "nm_steps_per_rep", None),
+        nm_progress_every=getattr(args, "nm_progress_every", 25),
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
     output_path = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_association.tsv")
-    single_df.to_csv(output_path, sep="\t", index=False)
-    print(f"Pipeline: {null_scope_prefix} association analysis saved to {output_path}")
+    export_association_outputs(
+        single_df,
+        output_path,
+        null_model=args.null_model,
+    )
 
-    output_plot_file = os.path.join(out_dir, f"{args.tag}{null_scope_prefix}_plot.png")
-    plot_analysis_obj(single_df, out_file=output_plot_file)
-    print(f"Pipeline: Plotting {output_plot_file} complete.")
+    if not getattr(args, "no_plot", False):
+        output_plot_file = os.path.join(
+            out_dir,
+            f"{args.tag}{null_scope_prefix}_association_plot.png",
+        )
+        plot_analysis_obj(
+            single_df,
+            out_file=output_plot_file,
+            q_thresh=getattr(args, "q_threshold", 0.10),
+            analysis_type="association",
+            q_metric=getattr(args, "q_metric", None),
+            plot_all=getattr(args, "plot_all", False),
+            label_top_n=getattr(args, "label_top_n", 10),
+            x_metric=getattr(args, "x_metric", None),
+            y_metric=getattr(args, "y_metric", None),
+        )
+        print(f"Pipeline: Plotting {output_plot_file} complete.")
 
 
 def run_cooccurrence(args):
@@ -431,17 +506,23 @@ def run_cooccurrence(args):
         taxa_universe,
         large=args.large,
         max_pairs=args.max_pairs,
-        threshold=args.threshold,
+        min_conditional_probability=args.min_conditional_probability,
         null_model=args.null_model,
         nm_n_reps=args.nm_n_reps,
-        nm_random_state=args.nm_random_state,
+        nm_seed=args.nm_seed,
+        compute_fisher=getattr(args, "compute_fisher", False),
+        nm_n_workers=getattr(args, "nm_n_workers", None),
+        nm_mp_start=getattr(args, "nm_mp_start", None),
+        nm_burn_in_steps=getattr(args, "nm_burn_in_steps", None),
+        nm_steps_per_rep=getattr(args, "nm_steps_per_rep", None),
+        nm_progress_every=getattr(args, "nm_progress_every", 25),
         focal_query_to_taxa=focal_query_to_taxa,
         rhs_query_to_taxa=rhs_query_to_taxa,
     )
 
     null_scope_prefix = "global" if args.null_scope is None else str(args.null_scope)
 
-    export_cooccurrence_outputs(
+    detailed_path = export_cooccurrence_outputs(
         edge_arrays=edge_arrays,
         nodes_df=nodes_df,
         taxa_universe=taxa_universe,
@@ -451,6 +532,19 @@ def run_cooccurrence(args):
         null_model=args.null_model,
         summary_n=100_000,
     )
+    if detailed_path is not None and not getattr(args, "no_plot", False):
+        plot_analysis(
+            detailed_path,
+            out_dir,
+            tag=f"{args.tag}{null_scope_prefix}_",
+            q_thresh=getattr(args, "q_threshold", 0.10),
+            analysis_type="cooccurrence",
+            q_metric=getattr(args, "q_metric", None),
+            plot_all=getattr(args, "plot_all", False),
+            label_top_n=getattr(args, "label_top_n", 10),
+            x_metric=getattr(args, "x_metric", None),
+            y_metric=getattr(args, "y_metric", None),
+        )
 
 
 def run_biome_distribution(args):
@@ -459,24 +553,45 @@ def run_biome_distribution(args):
     """
     os.makedirs(args.output_dir, exist_ok=True)
 
-    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_version)
-    biomes, presence, coverage, n_dropped = ingredients.biome_distribution()
-    biome_by_taxa_df = pd.DataFrame(data=presence.todense(), columns=ingredients.taxa, index=biomes)
+    ingredients = load_ingredients(args.data_dir, args.aggregated, args.custom_ingredients, args.data_release)
+    ingredients = _threshold_ingredients_from_args(ingredients, args)
+    if _biome_distribution_filter_requested(args):
+        ingredients, is_successful = filter_data_obj(
+            ingredients,
+            min_taxa_count=getattr(args, "min_taxa_count", None),
+            min_sample_count=getattr(args, "min_sample_count", None),
+            filter_rank=getattr(args, "filter_rank", None),
+            taxa_count_rank=getattr(args, "taxa_count_rank", "species"),
+        )
+        if not is_successful:
+            return
 
-    if args.return_all_taxa:
+    biome_level = getattr(args, "biome_level", "level_1")
+    biomes, presence, n_dropped = ingredients.biome_distribution(level=biome_level)
+
+    taxa_query = getattr(args, "taxa_query", None)
+    if taxa_query:
+        indices = _taxa_indices_from_query(ingredients, taxa_query)
+        biome_by_query_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        biome_by_taxa_df.to_csv(output_path, sep="\t")
+        biome_by_query_df.to_csv(output_path, sep="\t", index=False)
+
+    elif getattr(args, "return_all_taxa", False):
+        indices = list(range(len(ingredients.taxa)))
+        biome_by_taxa_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
+        output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
+        biome_by_taxa_df.to_csv(output_path, sep="\t", index=False)
 
     elif args.aggregated:
-        if not [i for i in biome_by_taxa_df.columns if "AGGREGATED" in i]:
+        if not [i for i in ingredients.taxa if "AGGREGATED" in i]:
             print("WARNING: Ingredients did not contain aggregated taxa. Only species will be output")
-        indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v or "AGGREGATED" in v]
-        biome_by_agg_df = biome_by_taxa_df.iloc[:, indices].T
+        indices = [i for i, v in enumerate(ingredients.taxa) if "s__" in v or "AGGREGATED" in v]
+        biome_by_agg_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution.tsv")
-        biome_by_agg_df.to_csv(output_path, sep="\t")
+        biome_by_agg_df.to_csv(output_path, sep="\t", index=False)
 
     else:
-        indices = [i for i, v in enumerate(biome_by_taxa_df.columns) if "s__" in v]
-        biome_by_species_df = biome_by_taxa_df.iloc[:, indices].T
+        indices = [i for i, v in enumerate(ingredients.taxa) if "s__" in v]
+        biome_by_species_df = _biome_distribution_taxa_frame(presence, biomes, ingredients.taxa, indices)
         output_path = os.path.join(args.output_dir, f"{args.tag}taxa_biome_distribution_species.tsv")
-        biome_by_species_df.to_csv(output_path, sep="\t")
+        biome_by_species_df.to_csv(output_path, sep="\t", index=False)

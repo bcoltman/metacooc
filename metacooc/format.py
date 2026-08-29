@@ -11,13 +11,13 @@ Converts a raw sandpiper taxonomic profile (TSV file) into two sparse matrix rep
 import numpy as np
 import os
 import pandas as pd
-import pickle
 import re
 from scipy.sparse import csr_matrix, vstack
 import warnings
 from typing import Optional
 
-from metacooc.pantry import Ingredients, save_ingredients
+from metacooc._data_config import DataReleaseError, is_canonical_data_release
+from metacooc.pantry import Ingredients, _read_sample_to_biome, save_ingredients
 
 
 def build_indices(tax_profile: str):
@@ -98,8 +98,9 @@ def create_sparse_matrices(tax_profile: str, sample_to_index: dict, taxon_to_ind
     presence_matrix = csr_matrix(
         (data_presence, (row_indices, col_indices)),
         shape=(num_taxa, num_samples),
-        dtype=int
+        dtype=np.uint8,
     )
+    presence_matrix.data[:] = 1
     coverage_matrix = csr_matrix(
         (data_coverage, (row_indices, col_indices)),
         shape=(num_taxa, num_samples),
@@ -126,7 +127,8 @@ def format_data(
     sample_to_biome_file: Optional[str] = None,
     aggregated: bool = False,
     tag: str = "",
-    data_version: Optional[str] = None,
+    data_release: Optional[str] = None,
+    archive_ingredients: bool = False,
 ):
     """
     Process the sandpiper TSV file and save Ingredients objects.
@@ -137,18 +139,19 @@ def format_data(
         sample_to_biome_file: Optional biome mapping TSV.
         aggregated: Whether to also generate aggregated ingredients.
         tag: Optional filename suffix.
-        data_version: Dataset/schema version to embed in Ingredients.
+        data_release: Optional source release label to embed in Ingredients.
     """
+    if tag and is_canonical_data_release(data_release):
+        raise DataReleaseError(
+            "--tag cannot be combined with a canonical data release; official "
+            "Ingredients filenames are determined by data release and format version."
+        )
     
     # load biome mapping
     sample_to_biome = {}
     if sample_to_biome_file:
         if os.path.exists(sample_to_biome_file):
-            df = pd.read_csv(sample_to_biome_file, dtype=str, sep="\t")
-            sample_to_biome = {
-                row["accession"]: (row["level_1"], row["level_2"])
-                for _, row in df.iterrows()
-            }
+            sample_to_biome = _read_sample_to_biome(sample_to_biome_file)
         else:
             warnings.warn(
                 f"Biome mapping file '{sample_to_biome_file}' not found",
@@ -161,7 +164,7 @@ def format_data(
         sample_to_biome,
     )
     
-    raw_ingredients.data_version = data_version
+    raw_ingredients.data_release = data_release
     
     # save raw
     save_ingredients(
@@ -169,18 +172,22 @@ def format_data(
         output_dir,
         aggregated=False,
         tag=tag,
+        data_release=data_release,
+        archive=archive_ingredients,
     )
     
     # aggregated
     if aggregated:
         agg = add_taxa_levels_to_ingredients(raw_ingredients.copy())
-        agg.data_version = data_version
+        agg.data_release = data_release
         
         save_ingredients(
             agg,
             output_dir,
             aggregated=True,
             tag=tag,
+            data_release=data_release,
+            archive=archive_ingredients,
         )
 
 
@@ -280,4 +287,5 @@ def add_taxa_levels_to_ingredients(ingredients: Ingredients) -> Ingredients:
         presence_matrix=full_P,
         coverage_matrix=full_C,
         sample_to_biome=ingredients.sample_to_biome,
+        data_release=getattr(ingredients, "data_release", None),
     )

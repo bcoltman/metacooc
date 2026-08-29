@@ -13,7 +13,6 @@ Usage (file-based):
     metacooc filter --accessions_file path/to/accessions.txt --data_dir /path/to/data --output_dir /path/to/out --min_taxa_count 5 --min_sample_count 10
 """
 import os
-import pickle
 import numpy as np
 from metacooc.pantry import *
 from metacooc.utils import _RANK_PREFIXES
@@ -222,8 +221,12 @@ def filter_data(accessions_file,
                 taxa_degree=1,
                 min_shared_samples_between_taxa=1,
                 custom_ingredients=None,
-                data_version=None,
-                metadata_file=None):
+                data_release=None,
+                metadata_file=None,
+                min_coverage=None,
+                min_coverage_by_rank=None,
+                min_relative_abundance=None,
+                min_relative_abundance_by_rank=None):
                 
     
     os.makedirs(output_dir, exist_ok=True)
@@ -232,7 +235,14 @@ def filter_data(accessions_file,
     ingredients = load_ingredients(data_dir, 
                                    aggregated, 
                                    custom_ingredients, 
-                                   data_version)
+                                   data_release)
+    ingredients = threshold_ingredients_presence(
+        ingredients,
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
+    )
     
     if null_scope is None:
         
@@ -269,7 +279,7 @@ def filter_data(accessions_file,
                                               search_string=search_string,
                                               data_dir=data_dir,
                                               custom_ingredients=ingredients,
-                                              data_version=data_version,
+                                              data_release=data_release,
                                               aggregated=aggregated,
                                               metadata_file=metadata_file)
         
@@ -292,7 +302,7 @@ def filter_data(accessions_file,
                                               search_string=search_string,
                                               data_dir=data_dir,
                                               custom_ingredients=ingredients,
-                                              data_version=data_version,
+                                              data_release=data_release,
                                               aggregated=aggregated,
                                               metadata_file=metadata_file)
         
@@ -311,9 +321,8 @@ def filter_data(accessions_file,
                                                   degree=taxa_degree,
                                                   min_shared_samples_between_taxa=min_shared_samples_between_taxa)
     
-    intermediate_path = os.path.join(output_dir, f"{tag}ingredients_null.pkl")
-    with open(intermediate_path, "wb") as f:
-        pickle.dump(null_ingredients, f)
+    intermediate_path = os.path.join(output_dir, f"{tag}ingredients_null")
+    save_ingredients_directory(null_ingredients, intermediate_path, aggregated=aggregated)
     print(f"Null Ingredients saved to {intermediate_path}")
     
     # If an accessions file is provided, load it and filter.
@@ -326,9 +335,8 @@ def filter_data(accessions_file,
                                                   accession_set=accession_set)
         
         if is_successful:
-            final_path = os.path.join(output_dir, f"{tag}ingredients_filtered.pkl")
-            with open(final_path, "wb") as f:
-                pickle.dump(filtered, f)
+            final_path = os.path.join(output_dir, f"{tag}ingredients_filtered")
+            save_ingredients_directory(filtered, final_path, aggregated=aggregated)
             print(f"Final filtered Ingredients saved to {final_path}")
     else:
         print(

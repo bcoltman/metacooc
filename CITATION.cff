@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use MetaCoOc, please cite this software."
+type: software
+title: MetaCoOc
+version: 0.1.0
+date-released: 2026-08-26
+abstract: >-
+  Co-occurrence, association, and community-structure analysis of
+  microorganisms in shotgun metagenomes.
+authors:
+  - given-names: Benjamin
+    family-names: Coltman
+    email: benjamin.coltman@univie.ac.at
+  - given-names: Daan
+    family-names: Speth
+    email: daan.speth@univie.ac.at
+repository-code: https://github.com/bcoltman/metacooc
+license: GPL-3.0-or-later
+keywords:
+  - metagenomics
+  - microbial ecology
+  - co-occurrence analysis

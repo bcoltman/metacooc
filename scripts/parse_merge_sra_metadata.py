@@ -459,4 +459,3 @@ if __name__ == '__main__':
     main(json_dir=args.json_dir, output_file=args.output_file, threads=args.threads, debug=args.debug, quiet=args.quiet)
 
 
-

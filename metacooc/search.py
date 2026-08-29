@@ -53,12 +53,12 @@ Modes
 """
 
 import os
-import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
-from metacooc.pantry import load_ingredients
+from metacooc.pantry import load_ingredients, threshold_ingredients_presence
 from metacooc.utils import (
     _RANK_PREFIXES,
     _PREFIX_TO_RANK,
@@ -68,6 +68,11 @@ from metacooc.utils import (
     _deepest_rank_token,
 )
 from metacooc._data_config import *
+
+
+METADATA_SEARCH_BACKEND_ENV = "METACOOC_METADATA_SEARCH_BACKEND"
+METADATA_SEARCH_BACKENDS = {"auto", "external", "python"}
+_EXTERNAL_METADATA_SEARCH_PROBE = {}
 
 
 @dataclass(frozen=True)
@@ -485,36 +490,227 @@ def get_column_indices(metadata_file, column_names, delimiter="\t"):
     return indices
 
 
+def _external_metadata_search_mode(column_names=None) -> str:
+    return "columns" if column_names else "full"
+
+
+def _external_metadata_search_tools(mode):
+    return ("awk",) if mode == "columns" else ("grep",)
+
+
+def _metadata_search_env():
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    return env
+
+
+def _external_metadata_search_probe(mode):
+    if mode == "columns":
+        cmd = [
+            "awk",
+            "-F",
+            "\t",
+            "-v",
+            "needle=soil",
+            "NR==1{next} index(tolower($2), needle)>0 {print $1}",
+        ]
+    else:
+        cmd = ["grep", "-i", "-F", "-e", "soil"]
+
+    probe = subprocess.run(
+        cmd,
+        input="acc\tfield\nS001\tSOIL\n",
+        capture_output=True,
+        text=True,
+        env=_metadata_search_env(),
+    )
+    return (
+        probe.returncode == 0
+        and "S001" in {line.split("\t", 1)[0] for line in probe.stdout.splitlines()}
+    )
+
+
+def _metadata_search_backend(column_names=None) -> str:
+    global _EXTERNAL_METADATA_SEARCH_PROBE
+
+    backend = os.environ.get(METADATA_SEARCH_BACKEND_ENV, "auto").strip().lower()
+    if backend not in METADATA_SEARCH_BACKENDS:
+        raise ValueError(
+            f"{METADATA_SEARCH_BACKEND_ENV} must be one of "
+            f"{', '.join(sorted(METADATA_SEARCH_BACKENDS))}; got {backend!r}"
+        )
+
+    if backend == "python":
+        return "python"
+
+    mode = _external_metadata_search_mode(column_names)
+    required = _external_metadata_search_tools(mode)
+    missing = [tool for tool in required if shutil.which(tool) is None]
+    if missing:
+        if backend == "external":
+            raise RuntimeError(
+                "Metadata search backend 'external' was requested, but required "
+                f"tool(s) are missing: {', '.join(missing)}. Install the tools or "
+                f"set {METADATA_SEARCH_BACKEND_ENV}=python."
+            )
+        return "python"
+
+    if mode not in _EXTERNAL_METADATA_SEARCH_PROBE:
+        _EXTERNAL_METADATA_SEARCH_PROBE[mode] = _external_metadata_search_probe(mode)
+
+    if _EXTERNAL_METADATA_SEARCH_PROBE[mode]:
+        return "external"
+
+    if backend == "external":
+        raise RuntimeError(
+            "Metadata search backend 'external' was requested, but the external "
+            "metadata search command probe failed. Install a POSIX-compatible "
+            "shell environment with the required tools or "
+            f"set {METADATA_SEARCH_BACKEND_ENV}=python."
+        )
+
+    return "python"
+
+
+def _field_matches(fields, indices, needle_lower, inverse):
+    matched = any(
+        idx < len(fields) and needle_lower in fields[idx].casefold()
+        for idx in indices
+    )
+    return not matched if inverse else matched
+
+
+def _python_metadata_search(
+    search_string,
+    metadata_file,
+    column_names=None,
+    delimiter="\t",
+    inverse=False,
+):
+    needle_lower = search_string.strip().casefold()
+    out = set()
+
+    if not column_names:
+        with open(metadata_file, "r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                line = line.rstrip("\n")
+                matched = needle_lower in line.casefold()
+                if inverse:
+                    matched = not matched
+                if matched:
+                    first = line.split(delimiter, 1)[0]
+                    if first:
+                        out.add(first)
+        return out
+
+    zero_based_indices = [
+        idx - 1 for idx in get_column_indices(metadata_file, column_names, delimiter)
+    ]
+    with open(metadata_file, "r", encoding="utf-8", errors="replace") as handle:
+        next(handle, None)
+        for line in handle:
+            fields = line.rstrip("\n").split(delimiter)
+            if fields and _field_matches(
+                fields, zero_based_indices, needle_lower, inverse
+            ):
+                out.add(fields[0])
+    return out
+
+
+def _external_metadata_search(
+    search_string,
+    metadata_file,
+    column_names=None,
+    delimiter="\t",
+    inverse=False,
+):
+    needle = search_string.strip()
+
+    if not column_names:
+        cmd = ["grep", "-i", "-F"]
+        if inverse:
+            cmd.append("-v")
+        cmd.extend(["-e", needle, metadata_file])
+
+        result = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=_metadata_search_env(),
+        )
+        out = set()
+        for line in result.stdout:
+            first = line.rstrip("\n").split(delimiter, 1)[0]
+            if first:
+                out.add(first)
+        stderr = result.stderr.read()
+        returncode = result.wait()
+        if returncode not in (0, 1):
+            raise RuntimeError(
+                f"Metadata search command failed with exit code {returncode}: "
+                f"{stderr.strip()}"
+            )
+        return out
+
+    col_idxs = get_column_indices(metadata_file, column_names, delimiter)
+    needle_lower = needle.lower()
+    if inverse:
+        conds = [f"index(tolower(${i}), needle)==0" for i in col_idxs]
+        cond = " && ".join(conds)
+    else:
+        conds = [f"index(tolower(${i}), needle)>0" for i in col_idxs]
+        cond = " || ".join(conds)
+
+    cmd = [
+        "awk",
+        "-F",
+        delimiter,
+        "-v",
+        f"needle={needle_lower}",
+        f"NR==1{{next}} {cond} {{print $1}}",
+        metadata_file,
+    ]
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=_metadata_search_env(),
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"Metadata search command failed with exit code {result.returncode}: "
+            f"{result.stderr.strip()}"
+        )
+    return set(line for line in result.stdout.splitlines() if line)
+
+
 def grep_metadata(search_string, metadata_file, column_names=None, delimiter="\t", inverse=False):
     if not os.path.exists(metadata_file):
         raise FileNotFoundError(f"Metadata file '{metadata_file}' not found.")
 
-    needle = search_string.strip()
-
-    if not column_names:
-        flag = "-ivF" if inverse else "-iF"
-        cmd = f"LC_ALL=C grep {flag} {shlex.quote(needle)} {shlex.quote(metadata_file)} | cut -f1"
-    else:
-        col_idxs = get_column_indices(metadata_file, column_names, delimiter)
-        if inverse:
-            conds = [f'index(${i}, needle)==0' for i in col_idxs]
-            cond = " && ".join(conds)
-        else:
-            conds = [f'index(${i}, needle)>0' for i in col_idxs]
-            cond = " || ".join(conds)
-
-        cmd = (
-            f"LC_ALL=C awk -F'{delimiter}' -v IGNORECASE=1 -v needle={shlex.quote(needle)} "
-            f"'NR==1{{next}} {cond} {{print $1}}' {shlex.quote(metadata_file)}"
+    backend = _metadata_search_backend(column_names)
+    if backend == "external":
+        return _external_metadata_search(
+            search_string,
+            metadata_file,
+            column_names=column_names,
+            delimiter=delimiter,
+            inverse=inverse,
         )
-
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    return set(line for line in result.stdout.splitlines() if line)
+    return _python_metadata_search(
+        search_string,
+        metadata_file,
+        column_names=column_names,
+        delimiter=delimiter,
+        inverse=inverse,
+    )
 
 
 def search_in_metadata(metadata, search_string, strict=False, column_names=None, inverse=False):
     """
-    Search for a token in a metadata file using grep, with optional column restriction
+    Search for a token in a metadata file with optional column restriction
     and inverse search capability.
     """
     if strict:
@@ -569,10 +765,14 @@ def search_data_obj(
     column_names=None,
     inverse=False,
     custom_ingredients=None,
-    data_version=None,
+    data_release=None,
     aggregated: bool = False,
     metadata_file=None,
     return_details: bool = False,
+    min_coverage=None,
+    min_coverage_by_rank=None,
+    min_relative_abundance=None,
+    min_relative_abundance_by_rank=None,
 ):
     """
     Object-based search interface.
@@ -599,12 +799,26 @@ def search_data_obj(
             raise ValueError("'->' syntax is not supported in metadata mode")
 
         if metadata_file is None:
-            data_version = data_version or LATEST_VERSION
-            filenames, _ = get_file_info(data_version)
             if not data_dir:
                 raise ValueError("data_dir must be provided if searching metadata without metadata_file")
+            if data_release is None:
+                raise DataReleaseError(
+                    "An exact --data_release is required when resolving published "
+                    "metadata, for example 'R226_gtdb_rev1'; alternatively, "
+                    "provide an explicit --metadata_file."
+                )
+            filenames, _ = get_file_info(data_release)
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
-        if not os.path.exists(metadata_file):
+            if not os.path.exists(metadata_file):
+                raise DataReleaseError(
+                    missing_data_release_message(
+                        data_dir=data_dir,
+                        data_release=data_release,
+                        missing_path=metadata_file,
+                        file_kind="metadata",
+                    )
+                )
+        elif not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
 
         if return_details:
@@ -642,7 +856,14 @@ def search_data_obj(
         data_dir,
         aggregated=aggregated,
         custom_ingredients=custom_ingredients,
-        data_version=data_version,
+        data_release=data_release,
+    )
+    ingredients = threshold_ingredients_presence(
+        ingredients,
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
     )
 
     if search_mode == "focal_taxa":
@@ -701,10 +922,15 @@ def search_data(
     tag="",
     inverse=False,
     custom_ingredients=None,
-    data_version=None,
+    data_release=None,
     list_column_names=False,
+    list_biomes=False,
     aggregated=False,
     metadata_file=None,
+    min_coverage=None,
+    min_coverage_by_rank=None,
+    min_relative_abundance=None,
+    min_relative_abundance_by_rank=None,
 ):
     """
     File-based search wrapper for metacooc.
@@ -725,14 +951,38 @@ def search_data(
     The results (one accession per line) are written to:
         {output_dir}/{tag}search_results.txt
     """
+    if list_biomes:
+        ingredients = load_ingredients(
+            data_dir=data_dir,
+            aggregated=aggregated,
+            custom_ingredients=custom_ingredients,
+            data_release=data_release,
+        )
+        print(format_available_biomes(ingredients))
+        return
+
     if list_column_names:
         if metadata_file is None:
-            data_version = data_version or LATEST_VERSION
-            filenames, _ = get_file_info(data_version)
             if not data_dir:
                 raise ValueError("data_dir must be provided if listing metadata columns without metadata_file")
+            if data_release is None:
+                raise DataReleaseError(
+                    "An exact --data_release is required when resolving published "
+                    "metadata, for example 'R226_gtdb_rev1'; alternatively, "
+                    "provide an explicit --metadata_file."
+                )
+            filenames, _ = get_file_info(data_release)
             metadata_file = os.path.join(data_dir, filenames["sra_metadata"])
-        if not os.path.exists(metadata_file):
+            if not os.path.exists(metadata_file):
+                raise DataReleaseError(
+                    missing_data_release_message(
+                        data_dir=data_dir,
+                        data_release=data_release,
+                        missing_path=metadata_file,
+                        file_kind="metadata",
+                    )
+                )
+        elif not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Missing '{metadata_file}'")
         with open(metadata_file, "r") as f:
             headers = f.readline().strip().split("\t")
@@ -748,9 +998,13 @@ def search_data(
         column_names=column_names,
         inverse=inverse,
         custom_ingredients=custom_ingredients,
-        data_version=data_version,
+        data_release=data_release,
         aggregated=aggregated,
         metadata_file=metadata_file,
+        min_coverage=min_coverage,
+        min_coverage_by_rank=min_coverage_by_rank,
+        min_relative_abundance=min_relative_abundance,
+        min_relative_abundance_by_rank=min_relative_abundance_by_rank,
     )
 
     if not os.path.isdir(output_dir):
@@ -765,3 +1019,26 @@ def search_data(
         f"Mode={mode!r}: Found {len(matching_accessions)} matching accessions. "
         f"Results saved to {output_file}"
     )
+
+
+def format_available_biomes(ingredients) -> str:
+    """
+    Format available biome query terms for CLI output.
+    """
+    available = ingredients.available_biomes()
+    if not any(available.values()):
+        return "No biome annotations are available for this Ingredients object."
+
+    lines = []
+    for level in ("level_1", "level_2"):
+        lines.append(f"{level}:")
+        rows = available.get(level, [])
+        if rows:
+            for row in rows:
+                sample_word = "sample" if int(row["n_samples"]) == 1 else "samples"
+                lines.append(f"  {row['biome']} ({row['n_samples']} {sample_word})")
+        else:
+            lines.append("  none")
+        if level != "level_2":
+            lines.append("")
+    return "\n".join(lines)

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-import pickle
-
+import numpy as np
 import pytest
+import scipy.sparse as sp
 
 from metacooc.filter import filter_data, filter_data_obj
-from metacooc.search import search_data_obj
+from metacooc.pantry import Ingredients, load_ingredients
+from metacooc.search import search_data_obj, search_in_metadata
 
 
 SOIL_SAMPLES = {f"S{i:03d}" for i in range(1, 51)}
 RHIZO_HITS = {f"S{i:03d}" for i in range(1, 61)}
 MICRO_HITS = {f"S{i:03d}" for i in range(25, 76)}
 RHIZO_MICRO_HITS = RHIZO_HITS & MICRO_HITS
+MARINE_SAMPLES = {f"S{i:03d}" for i in range(51, 101)}
 
 
 def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
@@ -51,6 +53,129 @@ def test_taxon_biome_and_metadata_search(raw_ingredients, metadata_file):
         column_names=["env_biome_sam"],
     )
     assert metadata_hits == SOIL_SAMPLES
+
+
+def test_metadata_search_python_backend(monkeypatch, metadata_file):
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "python")
+
+    assert search_in_metadata(
+        str(metadata_file),
+        "SOIL",
+        column_names=["env_biome_sam"],
+    ) == SOIL_SAMPLES
+    assert search_in_metadata(
+        str(metadata_file),
+        "soil",
+        column_names=["env_biome_sam"],
+        inverse=True,
+    ) == MARINE_SAMPLES
+
+
+def test_metadata_search_auto_falls_back_to_python(monkeypatch, metadata_file):
+    import metacooc.search as search
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "auto")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: None)
+
+    hits = search_data_obj(
+        search_mode="metadata",
+        search_string="soil",
+        metadata_file=str(metadata_file),
+        column_names=["env_biome_sam"],
+    )
+
+    assert hits == SOIL_SAMPLES
+
+
+def test_metadata_search_auto_falls_back_when_external_probe_fails(
+    monkeypatch, metadata_file
+):
+    import metacooc.search as search
+
+    class FailedProbe:
+        returncode = 2
+        stdout = ""
+        stderr = "probe failed"
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "auto")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(search.subprocess, "run", lambda *args, **kwargs: FailedProbe())
+    monkeypatch.setattr(search, "_EXTERNAL_METADATA_SEARCH_PROBE", {})
+
+    hits = search_data_obj(
+        search_mode="metadata",
+        search_string="soil",
+        metadata_file=str(metadata_file),
+        column_names=["env_biome_sam"],
+    )
+
+    assert hits == SOIL_SAMPLES
+
+
+def test_metadata_search_forced_external_missing_tools_raises(monkeypatch, metadata_file):
+    import metacooc.search as search
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "external")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: None)
+
+    with pytest.raises(RuntimeError, match="required tool"):
+        search_in_metadata(
+            str(metadata_file),
+            "soil",
+            column_names=["env_biome_sam"],
+        )
+
+
+def test_metadata_search_forced_external_probe_failure_raises(
+    monkeypatch, metadata_file
+):
+    import metacooc.search as search
+
+    class FailedProbe:
+        returncode = 2
+        stdout = ""
+        stderr = "probe failed"
+
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "external")
+    monkeypatch.setattr(search.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(search.subprocess, "run", lambda *args, **kwargs: FailedProbe())
+    monkeypatch.setattr(search, "_EXTERNAL_METADATA_SEARCH_PROBE", {})
+
+    with pytest.raises(RuntimeError, match="probe failed"):
+        search_in_metadata(
+            str(metadata_file),
+            "soil",
+            column_names=["env_biome_sam"],
+        )
+
+
+def test_metadata_search_invalid_backend_raises(monkeypatch, metadata_file):
+    monkeypatch.setenv("METACOOC_METADATA_SEARCH_BACKEND", "bad")
+
+    with pytest.raises(ValueError, match="METACOOC_METADATA_SEARCH_BACKEND"):
+        search_in_metadata(
+            str(metadata_file),
+            "soil",
+            column_names=["env_biome_sam"],
+        )
+
+
+def test_taxa_search_uses_coverage_threshold():
+    ingredients = Ingredients(
+        samples=["S1", "S2"],
+        taxa=["d__Bacteria; p__P; c__C; o__O; f__F; g__G; s__a"],
+        presence_matrix=sp.csr_matrix(np.ones((1, 2), dtype=np.uint8)),
+        coverage_matrix=sp.csr_matrix([[0.5, 2.0]], dtype=float),
+    )
+
+    hits = search_data_obj(
+        search_mode="taxa_context",
+        search_string="s__a",
+        custom_ingredients=ingredients,
+        min_coverage=1.0,
+    )
+
+    assert hits == {"S2"}
 
 
 def test_focal_lhs_rhs_query_resolution(raw_ingredients):
@@ -198,11 +323,10 @@ def test_file_filter_writes_null_and_filtered(tmp_path, raw_ingredients_path):
         tag="test_",
     )
 
-    null_path = out / "test_ingredients_null.pkl"
-    filtered_path = out / "test_ingredients_filtered.pkl"
+    null_path = out / "test_ingredients_null"
+    filtered_path = out / "test_ingredients_filtered"
     assert null_path.exists()
     assert filtered_path.exists()
 
-    with filtered_path.open("rb") as f:
-        filtered = pickle.load(f)
+    filtered = load_ingredients(custom_ingredients=str(filtered_path))
     assert filtered.samples == [f"S{i:03d}" for i in range(1, 51)]

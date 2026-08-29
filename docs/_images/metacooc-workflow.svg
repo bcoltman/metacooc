@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 600"
+     role="img" aria-labelledby="workflow-title workflow-description">
+  <title id="workflow-title">MetaCoOc analysis workflow</title>
+  <desc id="workflow-description">
+    Published taxonomic profiles pass through cohort selection, presence and
+    filtering, analysis, and reporting. Background selection and null-model
+    constraints are separate choices that feed into the analysis.
+  </desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+            orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#33246d"/>
+    </marker>
+    <style>
+      .box { stroke: #33246d; stroke-width: 2.5; }
+      .heading { fill: #33246d; font: 700 23px sans-serif; text-anchor: middle; }
+      .body { fill: #292536; font: 18px sans-serif; text-anchor: middle; }
+      .small { fill: #292536; font: 16px sans-serif; text-anchor: middle; }
+      .arrow { fill: none; stroke: #33246d; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1280" height="600" rx="22" fill="#ffffff"/>
+  <text x="640" y="44" class="heading" font-size="28">From archive query to interpretable result</text>
+
+  <rect x="25" y="85" width="210" height="180" rx="18" fill="#fff0ea" class="box"/>
+  <text x="130" y="123" class="heading">1. Data</text>
+  <text x="130" y="159" class="body">
+    <tspan x="130">taxonomic profiles</tspan>
+    <tspan x="130" dy="27">biome labels</tspan>
+    <tspan x="130" dy="27">optional metadata</tspan>
+  </text>
+
+  <rect x="280" y="85" width="210" height="180" rx="18" fill="#eaf8f2" class="box"/>
+  <text x="385" y="123" class="heading">2. Cohort</text>
+  <text x="385" y="159" class="body">
+    <tspan x="385">biome or metadata</tspan>
+    <tspan x="385" dy="27">taxa context</tspan>
+    <tspan x="385" dy="27">focal taxon</tspan>
+  </text>
+
+  <rect x="535" y="85" width="210" height="180" rx="18" fill="#f0eef9" class="box"/>
+  <text x="640" y="123" class="heading">3. Filter</text>
+  <text x="640" y="159" class="body">
+    <tspan x="640">presence threshold</tspan>
+    <tspan x="640" dy="27">rank and richness</tspan>
+    <tspan x="640" dy="27">taxon support</tspan>
+  </text>
+
+  <rect x="790" y="85" width="210" height="180" rx="18" fill="#eaf8f2" class="box"/>
+  <text x="895" y="123" class="heading">4. Analyse</text>
+  <text x="895" y="159" class="body">
+    <tspan x="895">association</tspan>
+    <tspan x="895" dy="27">co-occurrence</tspan>
+    <tspan x="895" dy="27">community structure</tspan>
+  </text>
+
+  <rect x="1045" y="85" width="210" height="180" rx="18" fill="#fff0ea" class="box"/>
+  <text x="1150" y="123" class="heading">5. Report</text>
+  <text x="1150" y="159" class="body">
+    <tspan x="1150">summary table</tspan>
+    <tspan x="1150" dy="27">detailed metrics</tspan>
+    <tspan x="1150" dy="27">focused plot</tspan>
+  </text>
+
+  <path d="M235 175 H270" class="arrow"/>
+  <path d="M490 175 H525" class="arrow"/>
+  <path d="M745 175 H780" class="arrow"/>
+  <path d="M1000 175 H1035" class="arrow"/>
+
+  <rect x="250" y="350" width="330" height="175" rx="18" fill="#fff0ea" class="box"/>
+  <text x="415" y="390" class="heading">Choose the background</text>
+  <text x="415" y="425" class="body">
+    <tspan x="415">Which samples provide</tspan>
+    <tspan x="415" dy="27">the relevant comparison?</tspan>
+  </text>
+  <text x="415" y="497" class="small">global · biome · metadata · taxa · combined</text>
+
+  <rect x="650" y="350" width="380" height="175" rx="18" fill="#f0eef9" class="box"/>
+  <text x="840" y="390" class="heading">Choose the null constraints</text>
+  <text x="840" y="425" class="body">
+    <tspan x="840">Which matrix properties should</tspan>
+    <tspan x="840" dy="27">be explained by the null?</tspan>
+  </text>
+  <text x="840" y="497" class="small">FE baseline · FF · EF · EE</text>
+
+  <path d="M580 438 C690 438 720 285 820 270" class="arrow"/>
+  <path d="M840 350 V280" class="arrow"/>
+
+  <text x="640" y="570" class="small">
+    The cohort defines the question; the background and null model define the comparison.
+  </text>
+</svg>
