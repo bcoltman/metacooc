@@ -207,7 +207,7 @@ def determine_taxa_context(
             # shared sample counts between each frontier taxon and every taxon
             shared = (P[frontier_rows, :] @ P.T)  # (n_frontier x n_taxa)
             # require co-occurrence with at least one frontier taxon in >= K samples
-            shared_max = np.asarray(shared.max(axis=0)).ravel()
+            shared_max = shared.max(axis=0).toarray().ravel()
             candidate_taxa &= (shared_max >= min_shared_samples_between_taxa)
             
         new_taxa = candidate_taxa & ~visited_taxa
