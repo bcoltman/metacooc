@@ -955,6 +955,34 @@ def test_cli_filter_and_analysis_commands(tmp_path, cli_formatted_dir):
 
 
 @pytest.mark.cli
+def test_cli_filter_degree_two_shared_sample_threshold(tmp_path, cli_formatted_dir):
+    """Degree-2 taxa contexts accept sparse shared-count reductions."""
+    raw = cli_formatted_dir / "ingredients_raw_cli"
+    output_dir = tmp_path / "degree_two_context"
+
+    run_cli(
+        "filter",
+        "--custom_ingredients",
+        raw,
+        "--output_dir",
+        output_dir,
+        "--filter_rank",
+        "species",
+        "--null_scope",
+        "taxa",
+        "--null_taxa_query",
+        "g__Rhizo",
+        "--taxa_degree",
+        "2",
+        "--min_shared_samples_between_taxa",
+        "2",
+    )
+
+    null_file = output_dir / "ingredients_null"
+    assert (null_file / "manifest.json").exists()
+
+
+@pytest.mark.cli
 def test_cli_full_workflow_commands(tmp_path, cli_formatted_dir):
     raw = cli_formatted_dir / "ingredients_raw_cli"
 
