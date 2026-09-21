@@ -43,13 +43,14 @@ jobs:
         run: python -m twine check dist/*
       - name: Smoke-test wheel and source distribution
         run: |
+          export EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
           python -m venv /tmp/metacooc-artifacts
           /tmp/metacooc-artifacts/bin/python -m pip install dist/*.whl
-          /tmp/metacooc-artifacts/bin/python -c "import metacooc, metacooc.plot; assert metacooc.__version__ == '0.1.0'"
+          /tmp/metacooc-artifacts/bin/python -c "import metacooc, metacooc.plot, os; assert metacooc.__version__ == os.environ['EXPECTED_VERSION']"
           /tmp/metacooc-artifacts/bin/metacooc --version
           /tmp/metacooc-artifacts/bin/python -m pip uninstall --yes metacooc
           /tmp/metacooc-artifacts/bin/python -m pip install --no-deps dist/*.tar.gz
-          /tmp/metacooc-artifacts/bin/python -c "import metacooc, metacooc.plot; assert metacooc.__version__ == '0.1.0'"
+          /tmp/metacooc-artifacts/bin/python -c "import metacooc, metacooc.plot, os; assert metacooc.__version__ == os.environ['EXPECTED_VERSION']"
       - uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions
